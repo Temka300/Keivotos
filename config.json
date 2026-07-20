@@ -1,0 +1,16 @@
+{
+  "data_root": "library",
+  "metadata_dir": ".",
+  "gallery_dl_dir": "gallery-dl",
+  "automation_enabled": false,
+  "automation_enabled_at": null,
+  "automation_interval_minutes": 15,
+  "backup_components": {
+    "user_database": true,
+    "library_database": true,
+    "sidecars": true,
+    "sidecar_history": false,
+    "artist_profile_archive": false
+  },
+  "thumbnail_cache_limit_gb": 10
+}

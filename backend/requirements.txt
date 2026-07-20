@@ -1,0 +1,8 @@
+# Compatibility list for tools that do not consume the root pyproject.toml.
+# The authoritative reproducible environment is uv.lock.
+fastapi==0.139.0
+uvicorn[standard]==0.51.0
+aiosqlite==0.22.1
+Pillow==12.3.0
+gallery-dl==1.32.6
+imageio-ffmpeg==0.6.0

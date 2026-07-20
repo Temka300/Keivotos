@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     width="1254" height="1254" viewBox="0 0 1254 1254"
+     fill="none" shape-rendering="geometricPrecision">
+  <title>Keivotos angular avatar logo</title>
+  <desc>Editable flat-color vector reconstruction with a transparent background.</desc>
+  <metadata>
+    Vector reconstruction from the supplied 1254 by 1254 raster reference.
+    No raster image or background layer is embedded.
+  </metadata>
+
+  <!-- Palette: outline #000A16, white #FFFFFF, cream #FEF3E9,
+       magenta #DE276B, cyan #0096C3, ribbon gray #42404B. -->
+
+  <!-- Ribbon behind the hair silhouette. -->
+  <g id="ribbon">
+    <path id="ribbon-lower-outline" fill="#000A16"
+          d="M264 611 329 637 307 851 279 862 163 756Z"/>
+    <path id="ribbon-lower-gray" fill="#42404B"
+          d="M264 634 316 660 300 780 225 719Z"/>
+    <path id="ribbon-lower-magenta" fill="#EF1F69"
+          d="M225 719 300 780 292 824 207 752Z"/>
+
+    <path id="ribbon-upper-outline" fill="#000A16"
+          d="M141 468 294 413 356 474 352 573 329 650 206 600Z"/>
+    <path id="ribbon-upper-gray" fill="#42404B"
+          d="M180 484 282 447 336 503 332 570 323 627 207 582Z"/>
+  </g>
+
+  <!-- Main white hair/silhouette. The outline is drawn first and the fill
+       is layered over its inner half to keep the exterior border clean. -->
+  <g id="hair-silhouette" stroke-linejoin="miter" stroke-miterlimit="10">
+    <path id="hair-outline" stroke="#000A16" stroke-width="66"
+          d="M544 182 764 184 924 332 1046 772 992 874 892 952 882 940 932 696 852 778 842 766 894 488 860 594 848 598 746 354 684 616 602 764 592 764 560 370 462 586 416 586 468 776 410 730 474 984 308 868 358 594 362 372 444 218Z"/>
+    <path id="hair-fill" fill="#FFFFFF"
+          d="M544 182 764 184 924 332 1046 772 992 874 892 952 882 940 932 696 852 778 842 766 894 488 860 594 848 598 746 354 684 616 602 764 592 764 560 370 462 586 416 586 468 776 410 730 474 984 308 868 358 594 362 372 444 218Z"/>
+  </g>
+
+  <!-- Cream face and bang planes. -->
+  <g id="face-planes" stroke-linejoin="miter" stroke-miterlimit="10">
+    <path stroke="#000A16" stroke-width="48"
+          d="M748 458 758 458 842 654 786 758 644 844 606 820 604 806 706 626Z"/>
+    <path fill="#FEF3E9"
+          d="M748 458 758 458 842 654 786 758 644 844 606 820 604 806 706 626Z"/>
+
+    <path stroke="#000A16" stroke-width="48"
+          d="M536 482 548 496 574 792 482 740 450 626 450 614 476 612Z"/>
+    <path fill="#FEF3E9"
+          d="M536 482 548 496 574 792 482 740 450 626 450 614 476 612Z"/>
+  </g>
+
+  <!-- Magenta jacket panels. -->
+  <g id="jacket" stroke-linejoin="miter" stroke-miterlimit="10">
+    <path stroke="#000A16" stroke-width="48"
+          d="M740 852 852 912 786 1026 746 1056 736 1056 736 1042 758 966Z"/>
+    <path fill="#DE276B"
+          d="M740 852 852 912 786 1026 746 1056 736 1056 736 1042 758 966Z"/>
+
+    <path stroke="#000A16" stroke-width="48"
+          d="M552 852 562 862 542 974 564 1050 512 1018 478 916 478 902Z"/>
+    <path fill="#DE276B"
+          d="M552 852 562 862 542 974 564 1050 512 1018 478 916 478 902Z"/>
+  </g>
+
+  <!-- White angular cutouts and collar planes. -->
+  <g id="white-cutouts" stroke-linejoin="miter" stroke-miterlimit="10">
+    <path stroke="#000A16" stroke-width="42"
+          d="M808 768 818 780 806 844 888 784 870 890 746 822 746 810Z"/>
+    <path fill="#FFFFFF"
+          d="M808 768 818 780 806 844 888 784 870 890 746 822 746 810Z"/>
+
+    <path stroke="#000A16" stroke-width="40"
+          d="M702 838 716 840 730 934 660 876Z"/>
+    <path fill="#FFFFFF"
+          d="M702 838 716 840 730 934 660 876Z"/>
+
+    <path stroke="#000A16" stroke-width="40"
+          d="M586 838 638 864 640 878 572 934Z"/>
+    <path fill="#FFFFFF"
+          d="M586 838 638 864 640 878 572 934Z"/>
+
+    <path stroke="#000A16" stroke-width="38"
+          d="M694 946 732 974 716 1038 706 1038 688 976Z"/>
+    <path fill="#FFFFFF"
+          d="M694 946 732 974 716 1038 706 1038 688 976Z"/>
+
+    <path stroke="#000A16" stroke-width="38"
+          d="M596 946 606 946 612 976 596 1032 584 1036 570 972Z"/>
+    <path fill="#FFFFFF"
+          d="M596 946 606 946 612 976 596 1032 584 1036 570 972Z"/>
+
+    <path stroke="#000A16" stroke-width="36"
+          d="M496 782 554 812 554 824 508 846Z"/>
+    <path fill="#FFFFFF"
+          d="M496 782 554 812 554 824 508 846Z"/>
+
+    <path stroke="#000A16" stroke-width="36"
+          d="M454 806 504 844 480 874 466 870Z"/>
+    <path fill="#FFFFFF"
+          d="M454 806 504 844 480 874 466 870Z"/>
+  </g>
+
+  <!-- Cyan center tie. -->
+  <g id="tie" stroke-linejoin="miter" stroke-miterlimit="10">
+    <path stroke="#000A16" stroke-width="44"
+          d="M646 898 680 922 666 970 696 1078 696 1092 656 1122 604 1088 634 972 620 922Z"/>
+    <path fill="#0096C3"
+          d="M646 898 680 922 666 970 696 1078 696 1092 656 1122 604 1088 634 972 620 922Z"/>
+  </g>
+</svg>

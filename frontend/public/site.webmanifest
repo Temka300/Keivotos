@@ -1,0 +1,17 @@
+{
+  "name": "Keivotos - Danbooru",
+  "short_name": "Keivotos",
+  "description": "A local-first home for the media you choose to preserve.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0c17",
+  "theme_color": "#11111a",
+  "icons": [
+    {
+      "src": "/keivotos-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

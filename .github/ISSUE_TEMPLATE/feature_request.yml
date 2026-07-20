@@ -1,0 +1,37 @@
+name: Feature request
+description: Propose a focused improvement or future module
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What local archive workflow is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the user-visible result, not only an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Data ownership and safety
+      description: Explain writes, deletion, migration, downloads, network access, and external tools.
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - Danbooru module
+        - Keivotos shared shell
+        - Future hoarder module
+        - Build or distribution
+    validations:
+      required: true

@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 520" role="img" aria-label="Profile banner">
+  <defs>
+    <linearGradient id="banner-bg" x1="0" y1="0" x2="1600" y2="520" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0b111c"/>
+      <stop offset=".48" stop-color="#11111a"/>
+      <stop offset="1" stop-color="#071417"/>
+    </linearGradient>
+  </defs>
+  <rect width="1600" height="520" fill="url(#banner-bg)"/>
+  <path d="M0 360C198 292 313 306 454 342c142 36 267 68 476-5 214-75 392-79 670 6v177H0V360z" fill="#09090d" opacity=".65"/>
+  <g opacity=".42">
+    <rect x="186" y="86" width="176" height="246" rx="24" fill="#111827" stroke="#334155" stroke-width="4" transform="rotate(-11 274 209)"/>
+    <rect x="363" y="54" width="220" height="292" rx="30" fill="#12121d" stroke="#4338ca" stroke-width="4" transform="rotate(7 473 200)"/>
+    <rect x="647" y="78" width="258" height="300" rx="32" fill="#11111a" stroke="#7c3aed" stroke-width="4"/>
+    <rect x="1001" y="58" width="232" height="306" rx="30" fill="#111827" stroke="#0e7490" stroke-width="4" transform="rotate(-6 1117 211)"/>
+    <rect x="1256" y="96" width="190" height="250" rx="26" fill="#141421" stroke="#be185d" stroke-width="4" transform="rotate(10 1351 221)"/>
+  </g>
+  <image href="/logo.svg" x="610" y="18" width="390" height="390" opacity=".7"/>
+  <g fill="#f8fafc" opacity=".34">
+    <path d="M1342 58l7 19 19 7-19 7-7 19-7-19-19-7 19-7 7-19z"/>
+    <path d="M126 152l5 13 13 5-13 5-5 13-5-13-13-5 13-5 5-13z"/>
+    <path d="M1478 224l4 11 11 4-11 4-4 11-4-11-11-4 11-4 4-11z"/>
+  </g>
+</svg>

@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: dark;
+  font-size: 16px;
+}
+
+html[data-interface-scale='comfortable'] {
+  font-size: 17px;
+}
+
+html[data-motion='reduced'] *,
+html[data-motion='reduced'] *::before,
+html[data-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Settings keeps the blurred app visible, but a continuously moving layer
+   would force Chromium to recompute that full-screen blur every frame. */
+html[data-settings-open='true'] #app *:not(.settings-layer):not(.settings-layer *),
+html[data-settings-open='true'] #app *:not(.settings-layer):not(.settings-layer *)::before,
+html[data-settings-open='true'] #app *:not(.settings-layer):not(.settings-layer *)::after {
+  animation-play-state: paused !important;
+}
+
+html[data-settings-open='true'] .settings-layer {
+  transform: translateZ(0);
+  will-change: backdrop-filter;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: #0f0f14;
+  color: #e0e0e8;
+  overflow: hidden;
+  height: 100vh;
+}
+
+#app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1a1a24;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3a4a;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4a4a5a;
+}

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Profile avatar">
+  <defs>
+    <linearGradient id="avatar-bg" x1="28" y1="24" x2="228" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111827"/>
+      <stop offset=".52" stop-color="#181124"/>
+      <stop offset="1" stop-color="#071014"/>
+    </linearGradient>
+    <linearGradient id="avatar-card" x1="70" y1="50" x2="190" y2="210" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22d3ee"/>
+      <stop offset=".5" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#f472b6"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="44" fill="url(#avatar-bg)"/>
+  <rect x="12" y="12" width="232" height="232" rx="36" fill="none" stroke="#7c3aed" stroke-opacity=".34" stroke-width="4"/>
+  <g opacity=".8">
+    <rect x="54" y="74" width="114" height="128" rx="20" fill="#0c0c13" stroke="#36364a" stroke-width="5" transform="rotate(-9 111 138)"/>
+    <rect x="83" y="52" width="120" height="134" rx="22" fill="#11111a" stroke="#4c1d95" stroke-width="5" transform="rotate(8 143 119)"/>
+    <rect x="70" y="60" width="118" height="140" rx="22" fill="#141421" stroke="#7c3aed" stroke-width="5"/>
+    <path d="M82 167l29-34 21 24 14-18 31 38H82v-10z" fill="#22d3ee" opacity=".36"/>
+    <circle cx="158" cy="89" r="15" fill="#f472b6" opacity=".8"/>
+  </g>
+  <path d="M128 82l42 50-42 64-42-64 42-50z" fill="url(#avatar-card)" stroke="#faf5ff" stroke-opacity=".62" stroke-width="5"/>
+  <path d="M101 132h54M128 86v105M101 132l27 57 27-57" fill="none" stroke="#ffffff" stroke-opacity=".45" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M205 42l6 15 15 6-15 6-6 15-6-15-15-6 15-6 6-15z" fill="#f8fafc" opacity=".86"/>
+</svg>

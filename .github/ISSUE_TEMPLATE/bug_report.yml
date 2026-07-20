@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a reproducible Keivotos failure
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Remove credentials, personal paths, databases, and media from logs.
+  - type: input
+    id: version
+    attributes:
+      label: Keivotos version
+      placeholder: V1.0.0
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Windows and install type
+      placeholder: Windows 11 24H2, portable build or source checkout
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      placeholder: List the smallest exact sequence that triggers the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and safe logs
+    validations:
+      required: true
+  - type: dropdown
+    id: isolated
+    attributes:
+      label: Reproduced with an isolated KEIVOTOS_HOME?
+      options:
+        - Not tested
+        - "Yes"
+        - "No"
+    validations:
+      required: true

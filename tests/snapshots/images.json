@@ -1,0 +1,170 @@
+{
+  "all": {
+    "images": [
+      {
+        "id": 1,
+        "file_id": 1,
+        "thumbnail_token": "aaa",
+        "filename": "general.jpg",
+        "folder": "Seed",
+        "ext": "jpg",
+        "downloaded_at": "2026-01-01",
+        "created_at": "2026-02-01",
+        "width": 800,
+        "height": 1200,
+        "score": 10,
+        "rating": "g",
+        "danbooru_post_id": 101,
+        "is_favorite": false,
+        "favorite_added_at": null,
+        "favorite_pinned_at": null,
+        "collection_added_at": null,
+        "collection_pinned_at": null
+      },
+      {
+        "id": 2,
+        "file_id": 2,
+        "thumbnail_token": "bbb",
+        "filename": "explicit.png",
+        "folder": "Seed",
+        "ext": "png",
+        "downloaded_at": "2026-01-02",
+        "created_at": "2026-02-02",
+        "width": 1200,
+        "height": 800,
+        "score": 20,
+        "rating": "e",
+        "danbooru_post_id": 102,
+        "is_favorite": false,
+        "favorite_added_at": null,
+        "favorite_pinned_at": null,
+        "collection_added_at": null,
+        "collection_pinned_at": null
+      },
+      {
+        "id": 3,
+        "file_id": 3,
+        "thumbnail_token": "ccc",
+        "filename": "unrated.webp",
+        "folder": "Other",
+        "ext": "webp",
+        "downloaded_at": "2026-01-03",
+        "created_at": "2026-02-03",
+        "width": 640,
+        "height": 640,
+        "score": null,
+        "rating": "u",
+        "danbooru_post_id": null,
+        "is_favorite": false,
+        "favorite_added_at": null,
+        "favorite_pinned_at": null,
+        "collection_added_at": null,
+        "collection_pinned_at": null
+      }
+    ],
+    "total": 3,
+    "offset": 0,
+    "limit": 60
+  },
+  "general": {
+    "images": [
+      {
+        "id": 1,
+        "file_id": 1,
+        "thumbnail_token": "aaa",
+        "filename": "general.jpg",
+        "folder": "Seed",
+        "ext": "jpg",
+        "downloaded_at": "2026-01-01",
+        "created_at": "2026-02-01",
+        "width": 800,
+        "height": 1200,
+        "score": 10,
+        "rating": "g",
+        "danbooru_post_id": 101,
+        "is_favorite": false,
+        "favorite_added_at": null,
+        "favorite_pinned_at": null,
+        "collection_added_at": null,
+        "collection_pinned_at": null
+      }
+    ],
+    "total": 1,
+    "offset": 0,
+    "limit": 60
+  },
+  "unrated": {
+    "images": [
+      {
+        "id": 3,
+        "file_id": 3,
+        "thumbnail_token": "ccc",
+        "filename": "unrated.webp",
+        "folder": "Other",
+        "ext": "webp",
+        "downloaded_at": "2026-01-03",
+        "created_at": "2026-02-03",
+        "width": 640,
+        "height": 640,
+        "score": null,
+        "rating": "u",
+        "danbooru_post_id": null,
+        "is_favorite": false,
+        "favorite_added_at": null,
+        "favorite_pinned_at": null,
+        "collection_added_at": null,
+        "collection_pinned_at": null
+      }
+    ],
+    "total": 1,
+    "offset": 0,
+    "limit": 60
+  },
+  "negative_tag": {
+    "images": [
+      {
+        "id": 1,
+        "file_id": 1,
+        "thumbnail_token": "aaa",
+        "filename": "general.jpg",
+        "folder": "Seed",
+        "ext": "jpg",
+        "downloaded_at": "2026-01-01",
+        "created_at": "2026-02-01",
+        "width": 800,
+        "height": 1200,
+        "score": 10,
+        "rating": "g",
+        "danbooru_post_id": 101,
+        "is_favorite": false,
+        "favorite_added_at": null,
+        "favorite_pinned_at": null,
+        "collection_added_at": null,
+        "collection_pinned_at": null
+      },
+      {
+        "id": 3,
+        "file_id": 3,
+        "thumbnail_token": "ccc",
+        "filename": "unrated.webp",
+        "folder": "Other",
+        "ext": "webp",
+        "downloaded_at": "2026-01-03",
+        "created_at": "2026-02-03",
+        "width": 640,
+        "height": 640,
+        "score": null,
+        "rating": "u",
+        "danbooru_post_id": null,
+        "is_favorite": false,
+        "favorite_added_at": null,
+        "favorite_pinned_at": null,
+        "collection_added_at": null,
+        "collection_pinned_at": null
+      }
+    ],
+    "total": 2,
+    "offset": 0,
+    "limit": 60
+  }
+}
