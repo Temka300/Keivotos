@@ -3,7 +3,12 @@
   import { filesApi, type DuplicateGroup, type FileNode, type SourceInfo } from '../lib/filesApi';
   import { SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/stores';
-  import type { FolderBatchResult } from '../lib/suiteApi';
+  import {
+    displayNameForPath,
+    normalizedPath,
+    suiteApi,
+    type FolderBatchResult,
+  } from '../lib/suiteApi';
   import { moduleUi } from '../modules/registry';
   import AppDrawer from './AppDrawer.svelte';
   import ManageFoldersDialog from './ManageFoldersDialog.svelte';
@@ -146,10 +151,25 @@
       if (!picked.native) {
         throw new Error('The native Windows folder picker is unavailable.');
       }
-      if (!picked.path) return;
-      const source = await filesApi.registerSource(picked.path);
-      sources = await filesApi.listSources();
-      await selectSource(source.source_id);
+      const pickedPath = picked.path;
+      if (!pickedPath) return;
+      // A one-item batch through the same path Manage folders uses, so quick-add
+      // cannot accept a folder the dialog would reject.
+      const applied = await suiteApi.applyFolderChanges([
+        {
+          source_id: null,
+          path: pickedPath,
+          display_name: displayNameForPath(pickedPath),
+          role: 'files',
+          visible: true,
+          forget: false,
+        },
+      ]);
+      sources = applied.sources;
+      const added = applied.sources.find(
+        (source) => normalizedPath(source.path) === normalizedPath(pickedPath),
+      );
+      if (added) await selectSource(added.source_id);
     } catch (e) {
       error = (e as Error).message;
     } finally {
@@ -192,10 +212,6 @@
   function clearSearch() {
     searchQuery = '';
     searchResults = null;
-  }
-
-  function normalizedPath(path: string): string {
-    return path.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLocaleLowerCase();
   }
 
   function isSameOrAncestorPath(path: string, child: string): boolean {

@@ -2,6 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import type { SourceInfo } from '../lib/filesApi';
   import {
+    displayNameForPath,
+    normalizedPath,
     suiteApi,
     type FolderBatchResult,
     type FolderChange,
@@ -52,15 +54,6 @@
 
   function moduleName(slug: string): string {
     return modules.find((module) => module.slug === slug)?.name ?? slug;
-  }
-
-  function displayNameForPath(path: string): string {
-    const parts = path.replace(/[\\/]+$/, '').split(/[\\/]/);
-    return parts[parts.length - 1] || path;
-  }
-
-  function normalizedPath(path: string): string {
-    return path.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLocaleLowerCase();
   }
 
   function isStrictDescendantPath(path: string, parent: string): boolean {

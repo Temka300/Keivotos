@@ -98,8 +98,6 @@ async function send<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const filesApi = {
   listSources: () => getJson<SourceInfo[]>('/sources'),
-  registerSource: (path: string, display_name?: string) =>
-    send<SourceInfo>('POST', '/sources', { path, display_name }),
   scanSource: (sourceId: string) =>
     send<ScanSummary>('POST', `/sources/${encodeURIComponent(sourceId)}/scan`),
   browse: (sourceId: string, parent = '') =>

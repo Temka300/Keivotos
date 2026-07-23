@@ -42,6 +42,17 @@ export interface FolderForgetPreview {
   sidecars_preserved: number;
 }
 
+/** The folder's own name, used as the default label for a newly added source. */
+export function displayNameForPath(path: string): string {
+  const parts = path.replace(/[\\/]+$/, '').split(/[\\/]/);
+  return parts[parts.length - 1] || path;
+}
+
+/** Compare two paths the way the backend does: separator- and case-insensitive. */
+export function normalizedPath(path: string): string {
+  return path.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLocaleLowerCase();
+}
+
 async function apiError(res: Response): Promise<Error> {
   let detail = '';
   try {
