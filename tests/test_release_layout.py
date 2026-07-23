@@ -56,54 +56,6 @@ class ReleaseLayoutTests(unittest.TestCase):
         self.assertIn("FOLDERID_LOCAL_APP_DATA", source)
         self.assertIn('local_app_data_directory() / "Keivotos"', source)
 
-    def test_documents_suite_home_is_copied_verified_and_rebased(self) -> None:
-        with isolated_home() as temporary:
-            legacy = temporary / "Documents" / "Keivotos"
-            destination = temporary / "LocalAppData" / "Keivotos"
-            module = legacy / "modules" / "danbooru"
-            (module / "sidecars").mkdir(parents=True)
-            connection = sqlite3.connect(module / "user.sqlite")
-            connection.execute("CREATE TABLE marker(value TEXT NOT NULL)")
-            connection.execute("INSERT INTO marker(value) VALUES ('user-database')")
-            connection.commit()
-            connection.close()
-            (module / "sidecars" / "sample.json").write_text("sidecar", encoding="utf-8")
-            (legacy / "config.json").write_text(
-                json.dumps({
-                    "metadata_dir": str(module),
-                    "gallery_dl_dir": str(module / "gallery-dl"),
-                    "thumbnail_cache_limit_gb": 5,
-                }),
-                encoding="utf-8",
-            )
-            environment = {**os.environ, "KEIVOTOS_HOME": str(temporary / "isolated-import")}
-            code = (
-                "import json, sys; from pathlib import Path; "
-                f"sys.path.insert(0, {str(ROOT / 'backend')!r}); "
-                "import config; "
-                f"result=config.migrate_legacy_suite_home(Path({str(legacy)!r}), Path({str(destination)!r})); "
-                "print(json.dumps(result))"
-            )
-            result = subprocess.run(
-                [sys.executable, "-c", code],
-                cwd=ROOT,
-                env=environment,
-                text=True,
-                capture_output=True,
-                check=True,
-            )
-            migration = json.loads(result.stdout)
-            self.assertTrue(migration["migrated"])
-            self.assertTrue(migration["config_rebased"])
-            for database in (destination / "modules" / "danbooru" / "user.sqlite", module / "user.sqlite"):
-                connection = sqlite3.connect(database)
-                value = connection.execute("SELECT value FROM marker").fetchone()[0]
-                connection.close()
-                self.assertEqual(value, "user-database")
-            migrated_config = json.loads((destination / "config.json").read_text(encoding="utf-8"))
-            self.assertEqual(migrated_config["metadata_dir"], str(destination / "modules" / "danbooru"))
-            self.assertEqual(migrated_config["thumbnail_cache_limit_gb"], 5)
-
     def test_previous_module_home_is_copied_verified_and_rebased(self) -> None:
         with isolated_home() as temporary:
             previous = temporary / "modules" / "retired-module"
@@ -152,6 +104,53 @@ class ReleaseLayoutTests(unittest.TestCase):
             self.assertEqual((destination / "sidecars" / "sample.json").read_text(encoding="utf-8"), "sidecar")
             migrated_config = json.loads((temporary / "config.json").read_text(encoding="utf-8"))
             self.assertEqual(migrated_config["metadata_dir"], str(destination))
+
+    def test_portable_marker_controls_the_writable_home(self) -> None:
+        def resolve(appdir: Path) -> tuple[str, str]:
+            environment = {k: v for k, v in os.environ.items() if k != "KEIVOTOS_HOME"}
+            code = (
+                "import json, sys; sys.frozen = True; "
+                f"sys.executable = {str(appdir / 'Keivotos.exe')!r}; "
+                f"sys.path.insert(0, {str(ROOT / 'backend')!r}); "
+                "import config; "
+                "print(json.dumps([str(config.SUITE_HOME), str(config.DEFAULT_SUITE_HOME)]))"
+            )
+            output = subprocess.run(
+                [sys.executable, "-c", code],
+                cwd=ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=True,
+            ).stdout
+            suite_home, default_home = json.loads(output)
+            return suite_home, default_home
+
+        with isolated_home() as temporary:
+            # An empty marker anchors the writable home next to the executable.
+            empty = temporary / "empty-marker"
+            empty.mkdir(parents=True)
+            (empty / "Keivotos.exe").write_bytes(b"stub")
+            (empty / "portable.txt").write_text("", encoding="utf-8")
+            suite_home, _ = resolve(empty)
+            self.assertEqual(Path(suite_home).resolve(), (empty / "data").resolve())
+
+            # A marker that names a path uses that path verbatim.
+            custom = temporary / "custom-marker"
+            custom.mkdir(parents=True)
+            (custom / "Keivotos.exe").write_bytes(b"stub")
+            target = temporary / "elsewhere" / "KeivotosData"
+            (custom / "portable.txt").write_text(str(target), encoding="utf-8")
+            suite_home, _ = resolve(custom)
+            self.assertEqual(Path(suite_home).resolve(), target.resolve())
+
+            # No marker falls back to the per-user application-data default,
+            # so deleting portable.txt restores installed behaviour.
+            plain = temporary / "no-marker"
+            plain.mkdir(parents=True)
+            (plain / "Keivotos.exe").write_bytes(b"stub")
+            suite_home, default_home = resolve(plain)
+            self.assertEqual(suite_home, default_home)
 
     def test_legacy_metadata_wrapper_is_flattened_without_overwrite(self) -> None:
         with isolated_home() as temporary:
@@ -296,9 +295,34 @@ class ReleaseLayoutTests(unittest.TestCase):
                 check=True,
             )
             status = json.loads(result.stdout)
-            self.assertEqual(Path(status["destination"]), temporary / "backups" / "danbooru")
+            self.assertEqual(Path(status["destination"]), temporary / "backups")
             self.assertFalse(status["snapshot_has_legacy"])
             self.assertFalse(status["saved_has_legacy"])
+
+    def test_module_scoped_backups_are_copied_to_suite_root_and_preserved(self) -> None:
+        with isolated_home() as temporary:
+            legacy = temporary / "backups" / "danbooru"
+            legacy.mkdir(parents=True)
+            (legacy / "backup_old.keivotosbk").write_bytes(b"preserved")
+            environment = {**os.environ, "KEIVOTOS_HOME": str(temporary)}
+            code = (
+                "import json, sys; from pathlib import Path; "
+                f"sys.path.insert(0, {str(ROOT / 'backend')!r}); "
+                "import config; result=config.promote_legacy_module_backups(); "
+                "print(json.dumps(result))"
+            )
+            result = subprocess.run(
+                [sys.executable, "-c", code],
+                cwd=ROOT,
+                env=environment,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            promotion = json.loads(result.stdout)
+            self.assertTrue(promotion["promoted"])
+            self.assertEqual((temporary / "backups" / "backup_old.keivotosbk").read_bytes(), b"preserved")
+            self.assertEqual((legacy / "backup_old.keivotosbk").read_bytes(), b"preserved")
 
     def test_product_identity_and_portable_check(self) -> None:
         with isolated_home() as temporary:
@@ -360,7 +384,7 @@ class ReleaseLayoutTests(unittest.TestCase):
 
     def test_web_document_uses_suite_identity(self) -> None:
         index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
-        self.assertIn("<title>Keivotos - Danbooru</title>", index)
+        self.assertIn("<title>Keivotos</title>", index)
         self.assertIn('href="/favicon.png"', index)
         self.assertTrue((ROOT / "frontend" / "public" / "keivotos-logo.png").is_file())
         self.assertTrue((ROOT / "packaging" / "windows" / "assets" / "keivotos.ico").is_file())
@@ -377,12 +401,12 @@ class ReleaseLayoutTests(unittest.TestCase):
     def test_launcher_and_brand_assets_use_the_keivotos_defaults(self) -> None:
         sys.path.insert(0, str(ROOT / "backend"))
         try:
-            from product import DEFAULT_HOST, DEFAULT_ORIGIN, DEFAULT_PORT, DISPLAY_NAME, MODULE_NAME, SUITE_NAME, WEB_TITLE
+            from product import DEFAULT_HOST, DEFAULT_ORIGIN, DEFAULT_PORT, DISPLAY_NAME, SUITE_NAME, WEB_TITLE
         finally:
             sys.path.pop(0)
         self.assertEqual((DEFAULT_HOST, DEFAULT_PORT), ("localhost", 52325))
         self.assertEqual(DEFAULT_ORIGIN, "http://localhost:52325")
-        self.assertEqual(DISPLAY_NAME, "Keivotos - Danbooru")
+        self.assertEqual(DISPLAY_NAME, "Keivotos")
         self.assertEqual(WEB_TITLE, DISPLAY_NAME)
 
         canonical = (
@@ -406,20 +430,27 @@ class ReleaseLayoutTests(unittest.TestCase):
         profile_view = (ROOT / "frontend" / "src" / "components" / "ProfileView.svelte").read_text(encoding="utf-8")
         stores = (ROOT / "frontend" / "src" / "lib" / "stores.ts").read_text(encoding="utf-8")
         frontend_product = (ROOT / "frontend" / "src" / "lib" / "product.ts").read_text(encoding="utf-8")
+        module_identity = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "identity.ts").read_text(encoding="utf-8")
         app_drawer = (ROOT / "frontend" / "src" / "components" / "AppDrawer.svelte").read_text(encoding="utf-8")
+        ui_registry = (ROOT / "frontend" / "src" / "modules" / "registry.ts").read_text(encoding="utf-8")
         self.assertIn('src="/profile-avatar.svg"', user_menu)
         self.assertNotIn('src="/keivotos-logo.png"', user_menu)
         self.assertIn(": '/profile-avatar.svg';", profile_view)
-        self.assertIn('<img src="/profile-avatar.svg" alt="" class="h-9 w-9', app_drawer)
+        self.assertIn("iconSrc: '/profile-avatar.svg'", ui_registry)
+        self.assertIn('src={action.iconSrc}', app_drawer)
         self.assertIn("{$profileName}", profile_view)
         self.assertIn('aria-label="Edit profile name"', profile_view)
         self.assertIn('maxlength="40"', profile_view)
         self.assertIn("profileName.load()", profile_view)
         self.assertIn(f"export const SUITE_NAME = {SUITE_NAME!r};", frontend_product)
-        self.assertIn(f"export const MODULE_NAME = {MODULE_NAME!r};", frontend_product)
-        self.assertIn("export const MODULE_DISPLAY_NAME = MODULE_NAME.replace('-', ' ');", frontend_product)
+        self.assertNotIn("MODULE_NAME", frontend_product)
+        self.assertIn("export const MODULE_NAME = 'Danbooru';", module_identity)
+        self.assertIn("export const MODULE_DISPLAY_NAME = MODULE_NAME.replace('-', ' ');", module_identity)
         self.assertIn("export const DEFAULT_PROFILE_NAME = SUITE_NAME;", frontend_product)
-        self.assertIn("export const STORAGE_PREFIX = 'danbooru:';", frontend_product)
+        self.assertIn("export const VERSION = '1.1.0';", frontend_product)
+        self.assertIn("export const STORAGE_PREFIX = 'keivotos:';", frontend_product)
+        self.assertIn("const LEGACY_STORAGE_PREFIXES = ['danbooru:'];", frontend_product)
+        self.assertIn("'active-module',", frontend_product)
         self.assertIn("migratePersistedStorage();", frontend_product)
         for component_name in (
             "AppDrawer.svelte",
@@ -431,8 +462,8 @@ class ReleaseLayoutTests(unittest.TestCase):
                 ROOT / "frontend" / "src" / "components" / component_name
             ).read_text(encoding="utf-8")
             self.assertNotIn(SUITE_NAME, component)
-            self.assertNotIn(f"'{MODULE_NAME}'", component)
-            self.assertNotIn(f'"{MODULE_NAME}"', component)
+            self.assertNotIn("'Danbooru'", component)
+            self.assertNotIn('"Danbooru"', component)
         self.assertNotIn("STORAGE_PREFIX", stores)
         self.assertIn("api.getUserSetting('profile_name')", stores)
         self.assertIn("api.putUserSetting('profile_name'", stores)
