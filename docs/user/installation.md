@@ -6,9 +6,7 @@
 2. Extract the entire folder to a normal writable location.
 3. Run `Keivotos.exe`.
 
-Keivotos opens the Danbooru interface in your default browser. Keep the console open while using the app; closing it stops the local server. Portable builds are PC-only and do not provide the source launcher's optional LAN mode.
-
-The executable folder is replaceable application code. Writable state is kept under `%LOCALAPPDATA%\Keivotos`, so an upgrade should replace the application folder, not the application-data folder. An older `Documents\Keivotos` layout is copied and verified on first normal launch, with the original preserved. Always keep independent backups of irreplaceable user state and original media.
+By default data is kept under `%LOCALAPPDATA%\Keivotos`. To keep the data in portable mode, add an empty `portable.txt` beside `Keivotos.exe` then everrything is written to a `data\` subfolder of the portable folder.
 
 ## Source build
 

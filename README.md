@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-Keivotos is a local-first library that indexes the files you already won. Insterad of opening unrelated folders and applications to find your images, videos, music, documents, social-media archives, mangas, animes, and other saved content. Your original fiels remain in their existing folders. Keivotos only indexes them in place and aims to bring them together in one searchable interface.
+Keivotos is a local-first library that indexes the files you already own. Instead of opening unrelated folders and applications to find images, videos, music, documents, social-media archives, manga, anime, and other saved content, Keivotos brings them into one searchable interface. Your original files remain in their existing folders and are indexed in place.
 
 ## Supported platforms
 
@@ -33,6 +33,7 @@ The launcher sets up Python 3.11 from `uv.lock`, builds the frontend if needed, 
 
 ## Features
 
+- [x] Files base: browse/search folders in place, rescan, find duplicates, and assign folder roles
 - [x] Danbooru
 - [ ] Add 3D model viewer
 - [ ] Add Images, pdf other filetypes related formats
@@ -53,7 +54,14 @@ The launcher sets up Python 3.11 from `uv.lock`, builds the frontend if needed, 
 
 ## Where your data lives
 
-Everything Keivotos writes goes to `%LOCALAPPDATA%\Keivotos`:
+By default everything Keivotos writes goes to `%LOCALAPPDATA%\Keivotos`.
+
+To run **portable** — keeping all data next to the executable so the whole
+folder can be moved or copied between machines — put an empty file named
+`portable.txt` beside `Keivotos.exe`. Data then lives in a `data\` subfolder of
+the release folder. Delete `portable.txt` to return to `%LOCALAPPDATA%\Keivotos`
+(your existing `data\` folder is left untouched, just unused). A `portable.txt`
+that contains a folder path uses that path instead of `data\`.
 
 ## Troubleshooting
 

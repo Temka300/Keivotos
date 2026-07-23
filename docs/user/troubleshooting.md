@@ -22,7 +22,7 @@ Confirm `uv --version`, `node --version`, and `npm.cmd --version` work in a new 
 
 ## Keivotos reports invalid config JSON
 
-Open the exact `config.json` path in the error, correct the reported line and column (trailing commas are not valid JSON), then start Keivotos again. The same diagnostic is written to the dated `%LOCALAPPDATA%\Keivotos\logs\danbooru-runtime-YYYY-MM-DD_HH-MM-SS-pPID.log` even when the normal logger could not start. Keivotos does not overwrite or discard a malformed user configuration automatically because it may contain the only pointers to a custom metadata or library location.
+Open the exact `config.json` path in the error, correct the reported line and column (trailing commas are not valid JSON), then start Keivotos again. The same diagnostic is written to the dated `%LOCALAPPDATA%\Keivotos\logs\keivotos-runtime-YYYY-MM-DD_HH-MM-SS-pPID.log` even when the normal logger could not start. Keivotos does not overwrite or discard a malformed user configuration automatically because it may contain the only pointers to a custom metadata or library location.
 
 ## The UI looks stale after a source update
 
