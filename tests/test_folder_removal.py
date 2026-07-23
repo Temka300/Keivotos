@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from routers import folders  # noqa: E402
+from files_base import sources  # noqa: E402
 from schema import ensure_data_schema  # noqa: E402
 from storage_layout import legacy_hashed_sidecar_path  # noqa: E402
 
@@ -70,6 +71,7 @@ class FolderRemovalTests(unittest.TestCase):
 
         self.user_db = self.temp / "user.sqlite"
         connection = sqlite3.connect(self.user_db)
+        connection.row_factory = sqlite3.Row
         connection.execute(
             """CREATE TABLE registered_folders (
                    name TEXT PRIMARY KEY,
@@ -81,6 +83,10 @@ class FolderRemovalTests(unittest.TestCase):
         connection.execute(
             "INSERT INTO registered_folders (name, path, root_id, display_name) VALUES ('external-library', ?, 'root-test', 'external-library')",
             (str(self.library),),
+        )
+        sources.ensure_sources_schema(connection)
+        self.source_id = sources.upsert_module_source(
+            connection, self.library, "external-library", "danbooru"
         )
         connection.commit()
         connection.close()
@@ -169,6 +175,60 @@ class FolderRemovalTests(unittest.TestCase):
         for path in (self.media, self.adjacent, self.history, self.other_root):
             self.assertTrue(path.is_file(), f"removal must preserve {path}")
         self.assertEqual(self.database_count("files"), 0)
+
+    def test_release_to_files_unindexes_danbooru_and_keeps_registry_and_sidecars(self) -> None:
+        result = self.run_with_patches(
+            lambda: folders.release_shared_source(self.source_id, forget=False)
+        )
+        self.assertEqual(result["module_files_unindexed"], 1)
+        self.assertEqual(result["sidecars_preserved"], 3)
+        for path in (
+            self.canonical_json,
+            self.canonical_tags,
+            self.legacy,
+            self.media,
+            self.adjacent,
+            self.history,
+            self.other_root,
+        ):
+            self.assertTrue(path.is_file(), f"release must preserve {path}")
+        with self.user_connection() as connection:
+            released = sources.get_source(connection, self.source_id)
+            self.assertIsNotNone(released)
+            self.assertEqual(released.role, "files")
+            self.assertEqual(connection.execute("SELECT COUNT(*) AS count FROM registered_folders").fetchone()["count"], 0)
+        self.assertEqual(self.database_count("files"), 0)
+
+    def test_adopt_files_source_registers_danbooru_without_moving_originals(self) -> None:
+        plain = self.temp / "plain"
+        plain.mkdir()
+        original = plain / "note.txt"
+        original.write_text("plain", encoding="utf-8")
+        with self.user_connection() as connection:
+            source = sources.register_source(connection, plain, "Plain")
+
+        first, second, third, fourth, fifth = self.patches()
+        with (
+            first,
+            second,
+            third,
+            fourth,
+            fifth,
+            patch.object(folders, "_start_folder_import", return_value={"status": "started"}),
+        ):
+            result = folders.adopt_shared_source(source.source_id)
+
+        self.assertEqual(result["status"], "registered")
+        self.assertTrue(original.is_file())
+        with self.user_connection() as connection:
+            adopted = sources.get_source(connection, source.source_id)
+            self.assertIsNotNone(adopted)
+            self.assertEqual(adopted.role, "danbooru")
+            registered = connection.execute(
+                "SELECT display_name, path FROM registered_folders WHERE path=?",
+                (str(plain.resolve()),),
+            ).fetchone()
+            self.assertEqual(registered["display_name"], "Plain")
 
 
 if __name__ == "__main__":

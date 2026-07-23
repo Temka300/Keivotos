@@ -23,6 +23,7 @@ from models import (
     FolderRemovalResult,
 )
 from storage_layout import LibraryRoot, current_sidecar_files_for_root, new_root_id
+from files_base import sources  # publish Danbooru folders into the shared browse-list
 
 router = APIRouter()
 
@@ -124,7 +125,12 @@ def _folder_removal_details(folder_name: str) -> tuple[dict, list[dict], list[Pa
     return registered, rows, sidecars
 
 
-def _remove_index_rows(folder_name: str, rows: list[dict]) -> int:
+def _remove_index_rows(
+    folder_name: str,
+    rows: list[dict],
+    *,
+    keep_files_source: bool = False,
+) -> int:
     removed_ids = [int(row["id"]) for row in rows]
     removed_paths = [str(row["path"]) for row in rows]
     with get_data_db() as conn:
@@ -150,10 +156,22 @@ def _remove_index_rows(folder_name: str, rows: list[dict]) -> int:
                 pass  # Compatibility with older databases.
         conn.commit()
     with get_user_db() as uconn:
+        published = uconn.execute(
+            "SELECT path FROM registered_folders WHERE root_id=? OR name=?",
+            (folder_name, folder_name),
+        ).fetchone()
         uconn.execute(
             "DELETE FROM registered_folders WHERE root_id=? OR name=?",
             (folder_name, folder_name),
         )
+        # Release keeps the folder in Files; forget/removal withdraws it.
+        if published and published.get("path"):
+            sources.ensure_sources_schema(uconn)
+            source_id = sources.deterministic_source_id(str(published["path"]))
+            if keep_files_source:
+                sources.update_source(uconn, source_id, role="files", commit=False)
+            else:
+                sources.remove_source_by_path(uconn, str(published["path"]))
         uconn.commit()
     return len(removed_ids)
 
@@ -227,9 +245,8 @@ def list_folders():
     return sorted(result, key=lambda folder: (-folder.count, folder.name.casefold(), folder.path or ""))
 
 
-@router.post("/api/folders")
-def register_folder(data: FolderCreate):
-    raw = data.path.strip().strip('"')
+def _register_folder_path(path: str, display_name: str | None = None) -> dict:
+    raw = path.strip().strip('"')
     if not raw:
         raise HTTPException(400, "Folder path is required")
     folder_path = Path(raw).expanduser()
@@ -247,9 +264,10 @@ def register_folder(data: FolderCreate):
         raise HTTPException(400, unsafe_reason)
 
     try:
-        name = str(folder_path.relative_to(resolved_root))
+        default_name = str(folder_path.relative_to(resolved_root))
     except ValueError:
-        name = folder_path.name
+        default_name = folder_path.name
+    name = display_name.strip() if display_name and display_name.strip() else default_name
 
     normalized_path = os.path.normcase(str(folder_path))
     for row in registered_folder_rows():
@@ -264,6 +282,8 @@ def register_folder(data: FolderCreate):
                VALUES (?, ?, ?, ?)""",
             (root_id, str(folder_path), root_id, name),
         )
+        sources.ensure_sources_schema(uconn)
+        sources.upsert_module_source(uconn, str(folder_path), name, "danbooru")
         uconn.commit()
 
     sync = _start_folder_import([str(folder_path)])
@@ -276,6 +296,125 @@ def register_folder(data: FolderCreate):
         "sync": sync["status"],
         "active_tool_id": sync.get("active_tool_id"),
     }
+
+
+@router.post("/api/folders")
+def register_folder(data: FolderCreate):
+    return _register_folder_path(data.path)
+
+
+def _shared_source(source_id: str):
+    with get_user_db() as connection:
+        sources.ensure_sources_schema(connection)
+        source = sources.get_source(connection, source_id)
+    if source is None:
+        raise HTTPException(404, "Registered Files source was not found")
+    return source
+
+
+def _registered_folder_for_path(path: str) -> dict | None:
+    normalized = os.path.normcase(str(Path(path).expanduser().resolve(strict=False)))
+    with get_user_db() as connection:
+        rows = connection.execute(
+            """SELECT name AS registration_key,
+                      COALESCE(NULLIF(display_name, ''), name) AS name,
+                      path, root_id
+                 FROM registered_folders
+                WHERE path IS NOT NULL AND path<>''"""
+        ).fetchall()
+    for row in rows:
+        if not row.get("path"):
+            continue
+        candidate = os.path.normcase(
+            str(Path(str(row["path"])).expanduser().resolve(strict=False))
+        )
+        if candidate == normalized:
+            return row
+    return None
+
+
+def adopt_shared_source(source_id: str) -> dict:
+    """Assign an existing Files source to Danbooru and start local import."""
+    source = _shared_source(source_id)
+    registered = _registered_folder_for_path(source.path)
+    if registered is None:
+        result = _register_folder_path(source.path, source.display_name)
+    else:
+        with get_user_db() as connection:
+            connection.execute(
+                "UPDATE registered_folders SET display_name=? WHERE root_id=?",
+                (source.display_name, registered["root_id"]),
+            )
+            sources.ensure_sources_schema(connection)
+            sources.update_source(connection, source_id, role="danbooru", commit=False)
+            connection.commit()
+        sync = _start_folder_import([source.path])
+        result = {
+            "status": "adopted",
+            "name": source.display_name,
+            "selector": f"@root/{registered['root_id']}",
+            "path": source.path,
+            "root_id": registered["root_id"],
+            "sync": sync["status"],
+            "active_tool_id": sync.get("active_tool_id"),
+        }
+    result["source_id"] = source_id
+    return result
+
+
+def release_shared_source(source_id: str, *, forget: bool = False) -> dict:
+    """Release a Danbooru source without deleting originals or sidecars."""
+    running_tool = active_tool_id()
+    if running_tool is not None:
+        raise HTTPException(409, f"Wait for {running_tool} to finish before releasing a folder")
+    source = _shared_source(source_id)
+    registered = _registered_folder_for_path(source.path)
+    module_files = 0
+    sidecars_preserved = 0
+    if registered is not None:
+        _, rows, sidecars = _folder_removal_details(str(registered["root_id"]))
+        module_files = _remove_index_rows(
+            str(registered["root_id"]),
+            rows,
+            keep_files_source=not forget,
+        )
+        sidecars_preserved = len(sidecars)
+    else:
+        with get_user_db() as connection:
+            sources.ensure_sources_schema(connection)
+            if forget:
+                sources.remove_source(connection, source_id)
+            else:
+                sources.update_source(connection, source_id, role="files")
+    return {
+        "status": "forgotten" if forget else "released",
+        "source_id": source_id,
+        "module_files_unindexed": module_files,
+        "sidecars_preserved": sidecars_preserved,
+    }
+
+
+def shared_source_release_preview(source_id: str) -> dict:
+    source = _shared_source(source_id)
+    registered = _registered_folder_for_path(source.path)
+    if registered is None:
+        return {"module_files": 0, "sidecars_preserved": 0}
+    _, rows, sidecars = _folder_removal_details(str(registered["root_id"]))
+    return {"module_files": len(rows), "sidecars_preserved": len(sidecars)}
+
+
+def update_shared_source_presentation(source_id: str) -> None:
+    """Keep Danbooru's compatibility registration label aligned with Files."""
+    source = _shared_source(source_id)
+    registered = _registered_folder_for_path(source.path)
+    if registered is None:
+        return
+    with get_user_db() as connection:
+        connection.execute(
+            "UPDATE registered_folders SET display_name=? WHERE root_id=?",
+            (source.display_name, registered["root_id"]),
+        )
+        connection.commit()
 
 
 @router.post("/api/folders/browse")
