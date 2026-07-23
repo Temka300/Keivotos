@@ -1,69 +1,40 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import './app.css';
-  import TopBar from './components/TopBar.svelte';
-  import SidebarDock from './components/SidebarDock.svelte';
-  import HomeView from './components/HomeView.svelte';
-  import ProfileView from './components/ProfileView.svelte';
-  import ImageGrid from './components/ImageGrid.svelte';
-  import ImageDetail from './components/ImageDetail.svelte';
-  import CollectionsView from './components/CollectionsView.svelte';
-  import TagsBrowser from './components/TagsBrowser.svelte';
-  import PopularityBrowser from './components/PopularityBrowser.svelte';
-  import TimelapseBrowser from './components/TimelapseBrowser.svelte';
-  import DailyChallengeView from './components/DailyChallengeView.svelte';
-  import { api } from './lib/api';
-  import { viewMode, selectedImageId, selectedArtistProfileAsset, blacklistedTagNames, interfaceScale, motionPreference } from './lib/stores';
+  import { SUITE_NAME } from './lib/product';
+  import { suiteApi } from './lib/suiteApi';
+  import { activeModule, enabledModules, interfaceScale, motionPreference, suiteModules } from './lib/stores';
+  import { surfaceComponent } from './modules/surfaces';
 
   $: if (typeof document !== 'undefined') {
     document.documentElement.dataset.motion = $motionPreference;
     document.documentElement.dataset.interfaceScale = $interfaceScale;
   }
 
+  $: baseDescriptor = $suiteModules.find((module) => module.is_base);
+  $: requestedDescriptor = $suiteModules.find((module) => module.slug === $activeModule);
+  $: activeDescriptor = requestedDescriptor?.enabled ? requestedDescriptor : baseDescriptor;
+  $: ActiveSurface = surfaceComponent(activeDescriptor?.slug ?? 'files');
+  $: if (activeDescriptor && activeDescriptor.slug !== $activeModule) {
+    activeModule.set(activeDescriptor.slug);
+  }
+  $: if (typeof document !== 'undefined') {
+    document.title = activeDescriptor && !activeDescriptor.is_base
+      ? `${SUITE_NAME} - ${activeDescriptor.name}`
+      : SUITE_NAME;
+  }
+
   onMount(async () => {
     try {
-      blacklistedTagNames.set(await api.getBlacklistTagNames());
+      const modules = await suiteApi.listModules();
+      suiteModules.set(modules);
+      enabledModules.set(modules.filter((m) => m.enabled).map((m) => m.id));
     } catch (e) {
-      console.error('Failed to load blacklist tags:', e);
+      console.error('Failed to load modules:', e);
     }
   });
 </script>
 
 <div class="flex flex-col h-screen bg-[#0f0f14] text-gray-200">
-  <TopBar />
-
-  <div class="flex flex-1 overflow-hidden">
-    {#if $viewMode === 'gallery' || $viewMode === 'tags'}
-      <SidebarDock />
-    {/if}
-
-    <main class="min-w-0 flex-1 overflow-hidden">
-      {#if $viewMode === 'home'}
-        <HomeView />
-      {:else if $viewMode === 'profile'}
-        <ProfileView />
-      {:else if $viewMode === 'collections'}
-        <CollectionsView />
-      {:else if $viewMode === 'tags'}
-        <TagsBrowser />
-      {:else if $viewMode === 'popularity'}
-        <PopularityBrowser />
-      {:else if $viewMode === 'timelapse'}
-        <TimelapseBrowser />
-      {:else if $viewMode === 'challenges'}
-        <DailyChallengeView />
-      {:else}
-        <ImageGrid />
-      {/if}
-    </main>
-  </div>
-
-  {#if $selectedArtistProfileAsset !== null}
-    <ImageDetail
-      profileAsset={$selectedArtistProfileAsset}
-      on:close={() => selectedArtistProfileAsset.set(null)}
-    />
-  {:else if $selectedImageId !== null}
-    <ImageDetail postId={$selectedImageId} on:close={() => selectedImageId.set(null)} />
-  {/if}
+  <svelte:component this={ActiveSurface} />
 </div>

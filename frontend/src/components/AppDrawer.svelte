@@ -1,9 +1,11 @@
 <script lang="ts">
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { prepareSettingsPresentation } from '../lib/settingsPresentation';
   import { loadSettingsModal, type SettingsModalModule } from '../lib/settingsLoader';
-  import { MODULE_DISPLAY_NAME, SUITE_NAME } from '../lib/product';
-  import { activeCollectionId, selectedImageId, viewMode } from '../lib/stores';
+  import { SUITE_NAME } from '../lib/product';
+  import { activeModule, enabledModules, suiteModules } from '../lib/stores';
+  import { suiteApi, type SuiteModule } from '../lib/suiteApi';
+  import { activateModule, moduleUi } from '../modules/registry';
 
   const dispatch = createEventDispatcher<{ close: void }>();
   const DRAWER_EXIT_MS = 180;
@@ -11,6 +13,24 @@
   let settingsModule: SettingsModalModule | null = null;
   let closing = false;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
+  let modules: SuiteModule[] = [];
+  let moduleBusy = false;
+
+  $: enabledList = modules.filter((mod) => mod.enabled);
+  $: availableList = modules.filter((mod) => mod.disableable && !mod.enabled);
+  $: footerActions = enabledList.flatMap((mod) => moduleUi(mod.slug).drawerActions);
+
+  onMount(refreshModules);
+
+  async function refreshModules() {
+    try {
+      modules = await suiteApi.listModules();
+      suiteModules.set(modules);
+      enabledModules.set(modules.filter((mod) => mod.enabled).map((mod) => mod.id));
+    } catch (e) {
+      console.error('Failed to load modules:', e);
+    }
+  }
 
   function close() {
     if (showSettings || closing) return;
@@ -24,17 +44,42 @@
     showSettings = true;
   }
 
-  function openDanbooru() {
-    activeCollectionId.set(null);
-    selectedImageId.set(null);
-    viewMode.set('home');
+  function openModule(mod: SuiteModule) {
+    activateModule(mod.slug);
     close();
   }
 
-  function openProfile() {
-    activeCollectionId.set(null);
-    selectedImageId.set(null);
-    viewMode.set('profile');
+  async function enableModule(mod: SuiteModule) {
+    if (moduleBusy) return;
+    moduleBusy = true;
+    try {
+      await suiteApi.enableModule(mod.id);
+      await refreshModules();
+      openModule(mod); // switch straight into the newly added module
+    } catch (e) {
+      console.error('Failed to enable module:', e);
+    } finally {
+      moduleBusy = false;
+    }
+  }
+
+  async function disableModule(mod: SuiteModule, event: Event) {
+    event.stopPropagation();
+    if (moduleBusy) return;
+    moduleBusy = true;
+    try {
+      await suiteApi.disableModule(mod.id);
+      if ($activeModule === mod.id) activeModule.set('files');
+      await refreshModules();
+    } catch (e) {
+      console.error('Failed to disable module:', e);
+    } finally {
+      moduleBusy = false;
+    }
+  }
+
+  function runFooterAction(action: { run: () => void }) {
+    action.run();
     close();
   }
 
@@ -78,18 +123,60 @@
       </button>
     </header>
 
-    <nav class="flex-1 space-y-1 p-3">
-      <button
-        class="group flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm font-semibold text-gray-300 transition-colors hover:bg-purple-500/10 hover:text-purple-100"
-        type="button"
-        on:click={openDanbooru}
-      >
-        <img src="/logo.svg" alt="" class="h-9 w-9 rounded-lg transition-transform group-hover:scale-105" />
-        <span class="min-w-0 flex-1 truncate">{MODULE_DISPLAY_NAME}</span>
-        <svg class="h-4 w-4 translate-x-0 text-gray-600 transition-transform group-hover:translate-x-1 group-hover:text-purple-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-        </svg>
-      </button>
+    <nav class="flex-1 space-y-1 overflow-y-auto p-3">
+      {#each enabledList as mod (mod.id)}
+        <button
+          class="group flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm font-semibold transition-colors {$activeModule === mod.id ? 'bg-purple-500/15 text-purple-100' : 'text-gray-300 hover:bg-purple-500/10 hover:text-purple-100'}"
+          type="button"
+          on:click={() => openModule(mod)}
+        >
+          {#if moduleUi(mod.slug).iconSrc}
+            <img src={moduleUi(mod.slug).iconSrc ?? ''} alt="" class="h-9 w-9 rounded-lg transition-transform group-hover:scale-105" />
+          {:else}
+            <span class="grid h-9 w-9 place-items-center rounded-lg bg-[#15151e] text-purple-200 transition-transform group-hover:scale-105">
+              <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+              </svg>
+            </span>
+          {/if}
+          <span class="min-w-0 flex-1 truncate">{mod.name}</span>
+          {#if mod.is_base}
+            <span class="text-[10px] font-medium uppercase tracking-wide text-gray-600">Base</span>
+          {:else if mod.disableable}
+            <span
+              role="button"
+              tabindex="0"
+              title="Disable module (your data is kept)"
+              class="px-1 text-gray-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+              on:click={(e) => disableModule(mod, e)}
+              on:keydown={(e) => e.key === 'Enter' && disableModule(mod, e)}
+            >✕</span>
+          {/if}
+        </button>
+      {/each}
+
+      <!-- Available modules to add -->
+      {#if availableList.length}
+        <div class="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-600">Add a module</div>
+        {#each availableList as mod (mod.id)}
+          <div class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm">
+            <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#15151e]">
+              {#if moduleUi(mod.slug).iconSrc}
+                <img src={moduleUi(mod.slug).iconSrc ?? ''} alt="" class="h-6 w-6 rounded opacity-50" />
+              {:else}
+                <span class="text-gray-600">◇</span>
+              {/if}
+            </span>
+            <span class="min-w-0 flex-1 truncate text-gray-400">{mod.name}</span>
+            <button
+              class="rounded-md bg-purple-500/20 px-2.5 py-1 text-xs font-medium text-purple-100 transition-colors hover:bg-purple-500/30 disabled:opacity-40"
+              type="button"
+              on:click={() => enableModule(mod)}
+              disabled={moduleBusy}
+            >Enable</button>
+          </div>
+        {/each}
+      {/if}
 
       <div class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-semibold text-gray-600">
         <span class="grid h-9 w-9 place-items-center rounded-lg bg-[#15151e] text-gray-700">
@@ -103,14 +190,19 @@
 
     <footer class="border-t border-[#292937] p-3">
       <div class="flex items-center gap-1">
-        <button
-          class="group flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm font-semibold text-gray-300 transition-colors hover:bg-purple-500/10 hover:text-purple-100"
-          type="button"
-          on:click={openProfile}
-        >
-          <img src="/profile-avatar.svg" alt="" class="h-9 w-9 rounded-lg object-cover transition-transform group-hover:scale-105" />
-          <span class="truncate">Profile</span>
-        </button>
+        {#each footerActions as action (action.id)}
+          <button
+            class="group flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-2 text-left text-sm font-semibold text-gray-300 transition-colors hover:bg-purple-500/10 hover:text-purple-100"
+            type="button"
+            on:click={() => runFooterAction(action)}
+          >
+            <img src={action.iconSrc} alt="" class="h-9 w-9 rounded-lg object-cover transition-transform group-hover:scale-105" />
+            <span class="truncate">{action.label}</span>
+          </button>
+        {/each}
+        {#if footerActions.length === 0}
+          <div class="min-w-0 flex-1"></div>
+        {/if}
         <button
           class="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-purple-500/10 hover:text-purple-100"
           type="button"

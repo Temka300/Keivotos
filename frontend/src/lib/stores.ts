@@ -1,6 +1,7 @@
 import { writable, derived } from 'svelte/store';
 import { api, type ArtistProfileAsset } from './api';
 import { DEFAULT_PROFILE_NAME, persistentStorageKey } from './product';
+import type { SuiteModule } from './suiteApi';
 
 export type ViewMode = 'home' | 'profile' | 'gallery' | 'favorites' | 'collections' | 'collection-detail' | 'tags' | 'popularity' | 'timelapse' | 'challenges';
 export type FitMode = 'fit' | 'contain';
@@ -257,6 +258,24 @@ if (typeof localStorage !== 'undefined') {
     localStorage.setItem(persistentStorageKey('last-view'), JSON.stringify(safeValue));
   });
 }
+
+// V1.1.0 suite shell. The persisted slug is resolved against the descriptor
+// registry loaded from /api/suite/modules; unknown/disabled values fall back to
+// the required base in App.svelte.
+export type ActiveModule = string;
+function normalizeActiveModule(value: unknown): ActiveModule {
+  return typeof value === 'string' && value.trim() ? value : 'files';
+}
+export const activeModule = persistedWritable<ActiveModule>(
+  persistentStorageKey('active-module'),
+  'files',
+  normalizeActiveModule,
+);
+
+// Ids of modules the user has enabled (fetched from /api/suite/modules on load).
+// A module renders only when it is both the active surface AND enabled.
+export const enabledModules = writable<string[]>([]);
+export const suiteModules = writable<SuiteModule[]>([]);
 export const activeFolder = writable<string | null>(null);
 export const activeFolderLabel = writable<string | null>(null);
 export const activeRating = persistedWritable<string | null>(persistentStorageKey('active-rating'), 'g', normalizeRating);
