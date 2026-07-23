@@ -60,11 +60,6 @@ class ScanSummary(BaseModel):
     unavailable: int
 
 
-class RemovalResult(BaseModel):
-    removed: bool
-    unindexed: int
-
-
 class HashProgress(BaseModel):
     hashed: int
     failed: int
@@ -195,23 +190,6 @@ def scan_source(source_id: str) -> ScanSummary:
     with index.open_index(config.FILES_DB_PATH) as index_conn:
         summary = _scan_registered_source(index_conn, source, all_sources)
     return ScanSummary(**summary)
-
-
-@router.delete("/api/files/sources/{source_id}", response_model=RemovalResult)
-def remove_source(source_id: str) -> RemovalResult:
-    with get_user_db() as user_conn:
-        sources.ensure_sources_schema(user_conn)
-        source = sources.get_source(user_conn, source_id)
-        if source is None:
-            raise HTTPException(status_code=404, detail="Unknown source")
-        removed = sources.remove_source(user_conn, source_id)
-        remaining_sources = sources.list_sources(user_conn)
-    with index.open_index(config.FILES_DB_PATH) as index_conn:
-        unindexed = index.drop_source(index_conn, source_id)
-        ancestor = sources.nearest_ancestor_source(source.path, remaining_sources)
-        if ancestor is not None:
-            _scan_registered_source(index_conn, ancestor, remaining_sources)
-    return RemovalResult(removed=True, unindexed=unindexed)
 
 
 @router.get("/api/files/browse", response_model=list[FileNode])

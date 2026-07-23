@@ -40,10 +40,6 @@ def is_known(module_id: str) -> bool:
     return MODULE_REGISTRY.get(module_id) is not None
 
 
-def module_name(module_id: str) -> str:
-    return MODULE_REGISTRY.require(module_id).name
-
-
 def enabled_ids(user_conn: sqlite3.Connection) -> set[str]:
     rows = user_conn.execute("SELECT module FROM suite_enabled_modules").fetchall()
     return {row["module"] for row in rows}

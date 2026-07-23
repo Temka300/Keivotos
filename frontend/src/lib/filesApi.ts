@@ -34,11 +34,6 @@ export interface ScanSummary {
   unavailable: number;
 }
 
-export interface RemovalResult {
-  removed: boolean;
-  unindexed: number;
-}
-
 export interface HashProgress {
   hashed: number;
   failed: number;
@@ -107,8 +102,6 @@ export const filesApi = {
     send<SourceInfo>('POST', '/sources', { path, display_name }),
   scanSource: (sourceId: string) =>
     send<ScanSummary>('POST', `/sources/${encodeURIComponent(sourceId)}/scan`),
-  removeSource: (sourceId: string) =>
-    send<RemovalResult>('DELETE', `/sources/${encodeURIComponent(sourceId)}`),
   browse: (sourceId: string, parent = '') =>
     getJson<FileNode[]>('/browse', { source_id: sourceId, parent }),
   search: (q: string, sourceId?: string) =>

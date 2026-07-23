@@ -173,7 +173,7 @@ class FilesApiRouteTests(unittest.TestCase):
             patcher.stop()
         shutil.rmtree(self.temp, ignore_errors=True)
 
-    def test_register_browse_search_remove_roundtrip(self) -> None:
+    def test_register_browse_and_search_roundtrip(self) -> None:
         files = self.files
         registered = files.register_source(
             files.SourceRegister(path=str(self.library), display_name="Lib")
@@ -192,11 +192,8 @@ class FilesApiRouteTests(unittest.TestCase):
         found = files.search(q="clip", source_id=None, limit=200)
         self.assertEqual([n.name for n in found], ["clip.mp4"])
 
-        removal = files.remove_source(source_id=source_id)
-        self.assertTrue(removal.removed)
-        self.assertEqual(files.list_sources(), [])
-        # Originals on disk are never touched by removal.
-        self.assertTrue((self.library / "a.png").exists())
+        # Forgetting a source is covered in test_folder_roles, against the batch
+        # apply path the app actually uses.
 
     def test_register_rejects_fenced_path(self) -> None:
         from fastapi import HTTPException
@@ -215,7 +212,7 @@ class FilesApiRouteTests(unittest.TestCase):
             self.files.scan_source(source_id="src-nope")
         self.assertEqual(scan_error.exception.status_code, 404)
 
-    def test_nested_source_ownership_survives_parent_rescan_and_reclaims_on_remove(self) -> None:
+    def test_nested_source_ownership_survives_parent_rescan(self) -> None:
         files = self.files
         parent = files.register_source(files.SourceRegister(path=str(self.library)))
         child_path = self.library / "sub"
@@ -239,12 +236,8 @@ class FilesApiRouteTests(unittest.TestCase):
             [node.name for node in files.search(q="clip", source_id=parent.source_id, limit=200)],
             ["clip.mp4"],
         )
-
-        files.remove_source(source_id=child.source_id)
-        self.assertEqual(
-            [node.name for node in files.browse(source_id=parent.source_id, parent="sub")],
-            ["clip.mp4"],
-        )
+        # Reclaiming a nested source's files on forget is covered in
+        # test_folder_roles, against the batch apply path.
 
 
 if __name__ == "__main__":

@@ -2814,24 +2814,6 @@
         "title": "RelatedImageInfo",
         "type": "object"
       },
-      "RemovalResult": {
-        "properties": {
-          "removed": {
-            "title": "Removed",
-            "type": "boolean"
-          },
-          "unindexed": {
-            "title": "Unindexed",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "removed",
-          "unindexed"
-        ],
-        "title": "RemovalResult",
-        "type": "object"
-      },
       "ScanSummary": {
         "properties": {
           "added": {
@@ -5998,45 +5980,6 @@
           }
         },
         "summary": "Register Source"
-      }
-    },
-    "/api/files/sources/{source_id}": {
-      "delete": {
-        "operationId": "remove_source_api_files_sources__source_id__delete",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "source_id",
-            "required": true,
-            "schema": {
-              "title": "Source Id",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RemovalResult"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "summary": "Remove Source"
       }
     },
     "/api/files/sources/{source_id}/scan": {
