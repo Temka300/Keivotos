@@ -98,14 +98,19 @@ from config import (
     ARTIST_PROFILE_ARCHIVE_DIR,
     DATA_DB_PATH,
     DATA_ROOT,
+    DANBOORU_MODULE,
     GALLERY_DL_DIR,
     METADATA_DIR,
+    MODULE_REGISTRY,
     SCAN_FOLDERS,
     SIDECAR_DIR,
     USER_DB_PATH,
     migrate_legacy_default_metadata,
+    promote_legacy_module_backups,
+    promote_user_database,
 )
-from product import DISPLAY_NAME, USER_AGENT, VERSION
+import suite_modules
+from product import DISPLAY_NAME, VERSION
 from security import validate_local_browser_request
 from storage_layout import (
     LibraryRoot,
@@ -122,6 +127,8 @@ from services.query_helpers import (
     user_file_lookup_sql,
     user_file_match,
 )
+
+USER_AGENT = DANBOORU_MODULE.user_agent
 
 
 logger = logging.getLogger(__name__)
@@ -933,14 +940,17 @@ def build_image_relations(conn, row: dict[str, Any]) -> ImageRelations:
 SIDECAR_LAYOUT_MIGRATION_KEY = "sidecar_layout_v2_complete"
 
 
-def run_startup_maintenance() -> None:
-    """Run safe maintenance after the HTTP server is ready to accept requests."""
+def run_user_recovery_checkpoint() -> None:
+    """Checkpoint the shared, irreplaceable user DB. Suite-level; always safe."""
     try:
         checkpoint = create_local_recovery_checkpoint("startup")
         logger.info("Local recovery checkpoint: %s", checkpoint["message"])
     except Exception as exc:  # noqa: BLE001 - recovery must not prevent startup.
         logger.warning("Local recovery checkpoint failed: %s", exc)
 
+
+def run_sidecar_layout_migration() -> None:
+    """Danbooru-only: fold legacy sidecars into the canonical layout, once."""
     try:
         with get_data_db() as migration_connection:
             completed = migration_connection.execute(
@@ -972,8 +982,54 @@ def run_startup_maintenance() -> None:
         logger.warning("Sidecar layout migration failed: %s", exc)
 
 
+def run_startup_maintenance() -> None:
+    """Compatibility wrapper: suite recovery checkpoint + Danbooru sidecar migration."""
+    run_user_recovery_checkpoint()
+    run_sidecar_layout_migration()
+
+
+def reconcile_danbooru_folders() -> None:
+    """Publish Danbooru's registered folders into the shared Files browse-list.
+
+    Danbooru keeps ``registered_folders`` as its own source of truth; this mirrors
+    them into the base list as role='danbooru' so they appear in Files, and prunes
+    any stale danbooru-role rows. Self-healing: catches any register/remove hook
+    that didn't fire. Module -> base only.
+    """
+    try:
+        with get_user_db() as connection:
+            MODULE_REGISTRY.require("danbooru").publish(connection)
+    except Exception as exc:  # noqa: BLE001 - never block startup.
+        logger.warning("Could not reconcile Danbooru folders into the Files base: %s", exc)
+
+
+def danbooru_module_enabled() -> bool:
+    """Whether the Danbooru module is enabled in the shared user DB.
+
+    Fail-safe: if the enabled set cannot be read, assume enabled so an existing
+    library is never hidden by a transient error.
+    """
+    try:
+        with get_user_db() as connection:
+            suite_modules.ensure_schema(connection)
+            return "danbooru" in suite_modules.enabled_ids(connection)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not read enabled modules; assuming Danbooru enabled: %s", exc)
+        return True
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    # Suite-level startup — always runs, independent of any module.
+    promotion = promote_user_database()
+    if promotion.get("promoted"):
+        logger.info("Promoted user database to suite root: %s", promotion["destination"])
+    backup_promotion = promote_legacy_module_backups()
+    if backup_promotion.get("promoted"):
+        logger.info(
+            "Copied and verified %s legacy module backups into the suite backup directory; source preserved",
+            backup_promotion["files"],
+        )
     migration = migrate_legacy_default_metadata()
     if migration["migrated"]:
         logger.info(
@@ -983,17 +1039,33 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
     init_data_db()
     init_user_db()
-    maintenance_task = asyncio.create_task(
-        asyncio.to_thread(run_startup_maintenance),
-        name="danbooru-startup-maintenance",
+
+    # Protect the irreplaceable user DB regardless of which modules are enabled.
+    checkpoint_task = asyncio.create_task(
+        asyncio.to_thread(run_user_recovery_checkpoint),
+        name="suite-recovery-checkpoint",
     )
-    automation_task = asyncio.create_task(automation_loop(), name="danbooru-auto-ingest")
+    background_tasks = [checkpoint_task]
+
+    # Danbooru's background work (sidecar file-walk + the auto-ingest watcher)
+    # runs only when the module is enabled — the app boots without it otherwise.
+    if danbooru_module_enabled():
+        reconcile_danbooru_folders()
+        sidecar_task = asyncio.create_task(
+            asyncio.to_thread(run_sidecar_layout_migration),
+            name="danbooru-sidecar-migration",
+        )
+        automation_task = asyncio.create_task(automation_loop(), name="danbooru-auto-ingest")
+        background_tasks += [sidecar_task, automation_task]
+    else:
+        logger.info("Danbooru module not enabled; skipping its background startup")
+
     try:
         yield
     finally:
-        for task in (automation_task, maintenance_task):
+        for task in background_tasks:
             task.cancel()
-        for task in (automation_task, maintenance_task):
+        for task in background_tasks:
             with suppress(asyncio.CancelledError):
                 await task
 
