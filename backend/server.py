@@ -1,13 +1,15 @@
-"""FastAPI composition root for Danbooru."""
+"""FastAPI composition root for Keivotos."""
 
 from config import CODE_ROOT
 from fastapi.responses import FileResponse
 from core import app
-from routers import artists, collections, discovery, folders, images_media, stats, tags, tools, user_library
+from routers import artists, collections, discovery, files, folders, images_media, stats, suite, tags, tools, user_library
 
 for domain_router in (
     images_media.router, discovery.router, tags.router, artists.router,
     folders.router, user_library.router, collections.router, stats.router, tools.router,
+    files.router,  # Files base (V1.1.0) — always mounted, isolated from core
+    suite.router,  # Suite module registry (V1.1.0) — isolated from core
 ):
     app.include_router(domain_router)
 
