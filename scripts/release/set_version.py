@@ -66,6 +66,13 @@ def main() -> int:
         f'version = "{version}"',
     )
 
+    # Frontend runtime identity, mirroring backend/product.py.
+    rewrite(
+        ROOT / "frontend" / "src" / "lib" / "product.ts",
+        r"^export const VERSION = '.*';$",
+        f"export const VERSION = '{version}';",
+    )
+
     # Frontend package + lockfile (npm ci verifies they agree; the first two
     # "version" fields in the lock are the root package entries).
     rewrite(
@@ -117,8 +124,8 @@ def main() -> int:
     )
 
     print(
-        f"Version set to {version} across product.py, pyproject.toml, "
-        "uv.lock, package.json, package-lock.json, version_info.txt, and the OpenAPI snapshot."
+        f"Version set to {version} across product.py, pyproject.toml, uv.lock, "
+        "product.ts, package.json, package-lock.json, version_info.txt, and the OpenAPI snapshot."
     )
     return 0
 

@@ -376,7 +376,10 @@ class ReleaseLayoutTests(unittest.TestCase):
         self.assertIn('$UserProfileDirectory ".local\\bin\\uv.exe"', script)
         self.assertIn("& $UvPath sync --locked --python 3.11 --group build", script)
         self.assertIn('[str(uv), "lock", "--project", str(ROOT)]', version_script)
-        self.assertIn('"uv.lock, package.json, package-lock.json', version_script)
+        # The frontend carries its own VERSION constant, so it is a version
+        # location too and must be rewritten alongside the backend.
+        self.assertIn('"frontend" / "src" / "lib" / "product.ts"', version_script)
+        self.assertIn('"product.ts, package.json, package-lock.json', version_script)
         self.assertIn("Start-Process -FilePath $Executable", script)
         self.assertIn("-WindowStyle Hidden -PassThru", script)
         self.assertIn("Invoke-WebRequest", script)
