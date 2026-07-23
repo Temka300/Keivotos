@@ -951,6 +951,27 @@
         "title": "DanbooruCredentialsUpdate",
         "type": "object"
       },
+      "DuplicateGroup": {
+        "properties": {
+          "content_hash": {
+            "title": "Content Hash",
+            "type": "string"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/FileNode"
+            },
+            "title": "Files",
+            "type": "array"
+          }
+        },
+        "required": [
+          "content_hash",
+          "files"
+        ],
+        "title": "DuplicateGroup",
+        "type": "object"
+      },
       "FavoriteBatchUpdate": {
         "properties": {
           "action": {
@@ -1034,6 +1055,195 @@
         "title": "FavoriteTagComboInfo",
         "type": "object"
       },
+      "FileNode": {
+        "properties": {
+          "available": {
+            "title": "Available",
+            "type": "boolean"
+          },
+          "ext": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ext"
+          },
+          "is_dir": {
+            "title": "Is Dir",
+            "type": "boolean"
+          },
+          "mtime": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mtime"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          },
+          "relative_path": {
+            "title": "Relative Path",
+            "type": "string"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "relative_path",
+          "parent",
+          "name",
+          "ext",
+          "is_dir",
+          "size",
+          "mtime",
+          "available"
+        ],
+        "title": "FileNode",
+        "type": "object"
+      },
+      "FolderBatchPayload": {
+        "properties": {
+          "folders": {
+            "items": {
+              "$ref": "#/components/schemas/FolderChangePayload"
+            },
+            "title": "Folders",
+            "type": "array"
+          }
+        },
+        "required": [
+          "folders"
+        ],
+        "title": "FolderBatchPayload",
+        "type": "object"
+      },
+      "FolderBatchResult": {
+        "properties": {
+          "adopted": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Adopted",
+            "type": "array"
+          },
+          "forgotten": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Forgotten",
+            "type": "array"
+          },
+          "operations": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "released": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Released",
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "$ref": "#/components/schemas/ManagedFolder"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sources",
+          "adopted",
+          "released",
+          "forgotten",
+          "operations"
+        ],
+        "title": "FolderBatchResult",
+        "type": "object"
+      },
+      "FolderChangePayload": {
+        "properties": {
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "forget": {
+            "default": false,
+            "title": "Forget",
+            "type": "boolean"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "visible": {
+            "default": true,
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "display_name",
+          "role"
+        ],
+        "title": "FolderChangePayload",
+        "type": "object"
+      },
       "FolderCreate": {
         "properties": {
           "path": {
@@ -1045,6 +1255,39 @@
           "path"
         ],
         "title": "FolderCreate",
+        "type": "object"
+      },
+      "FolderForgetPreview": {
+        "properties": {
+          "base_files": {
+            "title": "Base Files",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "module_files": {
+            "title": "Module Files",
+            "type": "integer"
+          },
+          "sidecars_preserved": {
+            "title": "Sidecars Preserved",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "display_name",
+          "base_files",
+          "module_files",
+          "sidecars_preserved"
+        ],
+        "title": "FolderForgetPreview",
         "type": "object"
       },
       "FolderInfo": {
@@ -1265,6 +1508,62 @@
         "title": "FolderRemovalResult",
         "type": "object"
       },
+      "FsEntry": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "FsEntry",
+        "type": "object"
+      },
+      "FsListing": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/FsEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "is_root": {
+            "title": "Is Root",
+            "type": "boolean"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "parent",
+          "is_root",
+          "entries"
+        ],
+        "title": "FsListing",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -1276,6 +1575,29 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "HashProgress": {
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "hashed": {
+            "title": "Hashed",
+            "type": "integer"
+          },
+          "remaining": {
+            "title": "Remaining",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "hashed",
+          "failed",
+          "remaining"
+        ],
+        "title": "HashProgress",
         "type": "object"
       },
       "HomeCoverCandidate": {
@@ -2168,6 +2490,50 @@
         "title": "ImportRunRequest",
         "type": "object"
       },
+      "ManagedFolder": {
+        "properties": {
+          "added_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added At"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source_id",
+          "path",
+          "display_name",
+          "role",
+          "visible"
+        ],
+        "title": "ManagedFolder",
+        "type": "object"
+      },
       "PaginatedImages": {
         "properties": {
           "images": {
@@ -2228,6 +2594,31 @@
           "limit"
         ],
         "title": "PaginatedTags",
+        "type": "object"
+      },
+      "PickResult": {
+        "properties": {
+          "native": {
+            "title": "Native",
+            "type": "boolean"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "required": [
+          "path",
+          "native"
+        ],
+        "title": "PickResult",
         "type": "object"
       },
       "PopularityPeriod": {
@@ -2423,6 +2814,125 @@
         "title": "RelatedImageInfo",
         "type": "object"
       },
+      "RemovalResult": {
+        "properties": {
+          "removed": {
+            "title": "Removed",
+            "type": "boolean"
+          },
+          "unindexed": {
+            "title": "Unindexed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "removed",
+          "unindexed"
+        ],
+        "title": "RemovalResult",
+        "type": "object"
+      },
+      "ScanSummary": {
+        "properties": {
+          "added": {
+            "title": "Added",
+            "type": "integer"
+          },
+          "directories": {
+            "title": "Directories",
+            "type": "integer"
+          },
+          "files": {
+            "title": "Files",
+            "type": "integer"
+          },
+          "unavailable": {
+            "title": "Unavailable",
+            "type": "integer"
+          },
+          "updated": {
+            "title": "Updated",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "added",
+          "updated",
+          "files",
+          "directories",
+          "unavailable"
+        ],
+        "title": "ScanSummary",
+        "type": "object"
+      },
+      "SourceInfo": {
+        "properties": {
+          "added_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Added At"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          },
+          "visible": {
+            "title": "Visible",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "source_id",
+          "path",
+          "display_name",
+          "role",
+          "visible"
+        ],
+        "title": "SourceInfo",
+        "type": "object"
+      },
+      "SourceRegister": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "SourceRegister",
+        "type": "object"
+      },
       "Stats": {
         "properties": {
           "average_score": {
@@ -2599,6 +3109,49 @@
           "total_collections"
         ],
         "title": "Stats",
+        "type": "object"
+      },
+      "SuiteModule": {
+        "properties": {
+          "api_prefix": {
+            "title": "Api Prefix",
+            "type": "string"
+          },
+          "disableable": {
+            "title": "Disableable",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "is_base": {
+            "title": "Is Base",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "enabled",
+          "disableable",
+          "is_base",
+          "api_prefix"
+        ],
+        "title": "SuiteModule",
         "type": "object"
       },
       "TagInfo": {
@@ -3519,8 +4072,8 @@
     }
   },
   "info": {
-    "title": "Keivotos - Danbooru",
-    "version": "1.0.0"
+    "title": "Keivotos",
+    "version": "1.1.0"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5123,6 +5676,408 @@
         "summary": "Toggle Favorite Pin"
       }
     },
+    "/api/files/browse": {
+      "get": {
+        "operationId": "browse_api_files_browse_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "parent",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Parent",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FileNode"
+                  },
+                  "title": "Response Browse Api Files Browse Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Browse"
+      }
+    },
+    "/api/files/duplicates": {
+      "get": {
+        "operationId": "list_duplicates_api_files_duplicates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DuplicateGroup"
+                  },
+                  "title": "Response List Duplicates Api Files Duplicates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Duplicates"
+      }
+    },
+    "/api/files/fs": {
+      "get": {
+        "description": "List sub-directories so the UI can pick a folder to register.",
+        "operationId": "browse_filesystem_api_files_fs_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FsListing"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Browse Filesystem"
+      }
+    },
+    "/api/files/hash": {
+      "post": {
+        "description": "Lazily hash size-colliding files so duplicates become detectable.",
+        "operationId": "compute_hashes_api_files_hash_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 500,
+              "maximum": 5000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HashProgress"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Compute Hashes"
+      }
+    },
+    "/api/files/pick": {
+      "post": {
+        "description": "Open the native Windows folder dialog (same one Danbooru uses).\n\nOn non-Windows, reports ``native=false`` so the UI can fall back to the\nin-app folder picker.",
+        "operationId": "pick_folder_api_files_pick_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PickResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Pick Folder"
+      }
+    },
+    "/api/files/search": {
+      "get": {
+        "operationId": "search_api_files_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FileNode"
+                  },
+                  "title": "Response Search Api Files Search Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Search"
+      }
+    },
+    "/api/files/sources": {
+      "get": {
+        "operationId": "list_sources_api_files_sources_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SourceInfo"
+                  },
+                  "title": "Response List Sources Api Files Sources Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Sources"
+      },
+      "post": {
+        "operationId": "register_source_api_files_sources_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceRegister"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Register Source"
+      }
+    },
+    "/api/files/sources/{source_id}": {
+      "delete": {
+        "operationId": "remove_source_api_files_sources__source_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RemovalResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remove Source"
+      }
+    },
+    "/api/files/sources/{source_id}/scan": {
+      "post": {
+        "operationId": "scan_source_api_files_sources__source_id__scan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Scan Source"
+      }
+    },
     "/api/folders": {
       "get": {
         "operationId": "list_folders_api_folders_get",
@@ -6493,6 +7448,183 @@
           }
         },
         "summary": "Storage Configuration"
+      }
+    },
+    "/api/suite/folders/apply": {
+      "post": {
+        "operationId": "apply_folder_changes_api_suite_folders_apply_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderBatchPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderBatchResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Apply Folder Changes"
+      }
+    },
+    "/api/suite/folders/{source_id}/forget-preview": {
+      "get": {
+        "operationId": "preview_folder_forget_api_suite_folders__source_id__forget_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderForgetPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Preview Folder Forget"
+      }
+    },
+    "/api/suite/modules": {
+      "get": {
+        "operationId": "list_modules_api_suite_modules_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/SuiteModule"
+                  },
+                  "title": "Response List Modules Api Suite Modules Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Modules"
+      }
+    },
+    "/api/suite/modules/{module_id}/disable": {
+      "post": {
+        "operationId": "disable_module_api_suite_modules__module_id__disable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteModule"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Disable Module"
+      }
+    },
+    "/api/suite/modules/{module_id}/enable": {
+      "post": {
+        "operationId": "enable_module_api_suite_modules__module_id__enable_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuiteModule"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Enable Module"
       }
     },
     "/api/tags": {
