@@ -6,3 +6,5 @@
 *.sqlite binary
 *.whbackup binary
 *.keivotosbk binary
+frontend/dist/** linguist-generated=true
+tests/snapshots/** linguist-generated=true

@@ -14,8 +14,6 @@ _gallery_dl/
 /build/
 develop-eggs/
 /dist/
-!frontend/dist/
-!frontend/dist/**
 downloads/
 artifacts/
 /Keivotos-V*-windows-x64/
