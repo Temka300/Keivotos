@@ -99,6 +99,7 @@ from config import (
     DATA_DB_PATH,
     DATA_ROOT,
     DANBOORU_MODULE,
+    DANBOORU_SLUG,
     GALLERY_DL_DIR,
     METADATA_DIR,
     MODULE_REGISTRY,
@@ -128,7 +129,13 @@ from services.query_helpers import (
     user_file_match,
 )
 
-USER_AGENT = DANBOORU_MODULE.user_agent
+# The scraper identifies as the module, falling back to the suite when the
+# Danbooru descriptor is absent from the registry.
+USER_AGENT = (
+    DANBOORU_MODULE.user_agent
+    if DANBOORU_MODULE is not None
+    else f"{DISPLAY_NAME}/{VERSION}"
+)
 
 
 logger = logging.getLogger(__name__)
@@ -988,31 +995,41 @@ def run_startup_maintenance() -> None:
     run_sidecar_layout_migration()
 
 
-def reconcile_danbooru_folders() -> None:
-    """Publish Danbooru's registered folders into the shared Files browse-list.
+def reconcile_module_folders() -> None:
+    """Let every registered module publish its folders into the shared list.
 
-    Danbooru keeps ``registered_folders`` as its own source of truth; this mirrors
-    them into the base list as role='danbooru' so they appear in Files, and prunes
-    any stale danbooru-role rows. Self-healing: catches any register/remove hook
-    that didn't fire. Module -> base only.
+    A module keeps its own storage as the source of truth and mirrors the
+    folders it owns into the base browse-list under its own role, pruning stale
+    rows for that role. Self-healing: catches any register/remove hook that
+    didn't fire. Module -> base only, never the reverse.
+
+    The base has no publish hook, so iterating the whole registry is a no-op for
+    it and no module is named here.
     """
     try:
         with get_user_db() as connection:
-            MODULE_REGISTRY.require("danbooru").publish(connection)
+            for descriptor in MODULE_REGISTRY:
+                descriptor.publish(connection)
     except Exception as exc:  # noqa: BLE001 - never block startup.
-        logger.warning("Could not reconcile Danbooru folders into the Files base: %s", exc)
+        logger.warning("Could not reconcile module folders into the Files base: %s", exc)
 
 
 def danbooru_module_enabled() -> bool:
     """Whether the Danbooru module is enabled in the shared user DB.
 
+    Returns False when the module is not registered at all, so a suite built
+    without it never starts Danbooru's background work.
+
     Fail-safe: if the enabled set cannot be read, assume enabled so an existing
     library is never hidden by a transient error.
     """
+    descriptor = MODULE_REGISTRY.get(DANBOORU_SLUG)
+    if descriptor is None:
+        return False
     try:
         with get_user_db() as connection:
             suite_modules.ensure_schema(connection)
-            return "danbooru" in suite_modules.enabled_ids(connection)
+            return descriptor.slug in suite_modules.enabled_ids(connection)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not read enabled modules; assuming Danbooru enabled: %s", exc)
         return True
@@ -1050,7 +1067,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Danbooru's background work (sidecar file-walk + the auto-ingest watcher)
     # runs only when the module is enabled — the app boots without it otherwise.
     if danbooru_module_enabled():
-        reconcile_danbooru_folders()
+        reconcile_module_folders()
         sidecar_task = asyncio.create_task(
             asyncio.to_thread(run_sidecar_layout_migration),
             name="danbooru-sidecar-migration",

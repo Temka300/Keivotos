@@ -140,14 +140,23 @@ else:
 MODULES_DIR = SUITE_HOME / "modules"
 _DEFAULT_MODULE_REGISTRY = build_registry(SUITE_HOME, VERSION)
 _DEFAULT_FILES_MODULE = _DEFAULT_MODULE_REGISTRY.require("files")
-_DEFAULT_DANBOORU_MODULE = _DEFAULT_MODULE_REGISTRY.require("danbooru")
-MODULE_HOME = _DEFAULT_DANBOORU_MODULE.home
+# Danbooru is optional: its package can be removed from the registry. Nothing at
+# suite level may require it, so the descriptor is looked up leniently. The
+# compatibility paths below keep their conventional locations when it is absent,
+# where they are simply unused.
+DANBOORU_SLUG = "danbooru"
+_DEFAULT_DANBOORU_MODULE = _DEFAULT_MODULE_REGISTRY.get(DANBOORU_SLUG)
+MODULE_HOME = (
+    _DEFAULT_DANBOORU_MODULE.home
+    if _DEFAULT_DANBOORU_MODULE is not None
+    else MODULES_DIR / DANBOORU_SLUG
+)
 DEFAULT_LIBRARY_DIR = MODULE_HOME / "library"
 DEFAULT_METADATA_DIR = MODULE_HOME
 LEGACY_DEFAULT_METADATA_DIR = MODULE_HOME / "metadata"
 DEFAULT_GALLERY_DL_DIR = MODULE_HOME / "gallery-dl"
 DEFAULT_BACKUP_DIR = SUITE_HOME / "backups"
-LEGACY_MODULE_BACKUP_DIR = DEFAULT_BACKUP_DIR / _DEFAULT_DANBOORU_MODULE.slug
+LEGACY_MODULE_BACKUP_DIR = DEFAULT_BACKUP_DIR / DANBOORU_SLUG
 LOG_DIR = SUITE_HOME / "logs"
 LOG_FILE_LIMIT_MB = 5
 LOG_ROLLOVER_FILES = 5
@@ -566,16 +575,15 @@ FILES_THUMB_DIR = BASE_HOME / "thumbnails"
 # still supports an explicitly configured metadata directory, so its module DB
 # and credential paths are rebound while its stable module home remains fixed.
 FILES_MODULE = replace(_DEFAULT_FILES_MODULE, home=BASE_HOME, database=FILES_DB_PATH)
-DANBOORU_MODULE = replace(
-    _DEFAULT_DANBOORU_MODULE,
-    database=DATA_DB_PATH,
-    credentials=CREDENTIALS_PATH,
-)
-MODULE_REGISTRY: ModuleRegistry = (
-    _DEFAULT_MODULE_REGISTRY
-    .replacing(FILES_MODULE)
-    .replacing(DANBOORU_MODULE)
-)
+MODULE_REGISTRY: ModuleRegistry = _DEFAULT_MODULE_REGISTRY.replacing(FILES_MODULE)
+DANBOORU_MODULE = None
+if _DEFAULT_DANBOORU_MODULE is not None:
+    DANBOORU_MODULE = replace(
+        _DEFAULT_DANBOORU_MODULE,
+        database=DATA_DB_PATH,
+        credentials=CREDENTIALS_PATH,
+    )
+    MODULE_REGISTRY = MODULE_REGISTRY.replacing(DANBOORU_MODULE)
 
 
 def _merge_legacy_entry(source: Path, destination: Path) -> tuple[int, int]:
