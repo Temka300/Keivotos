@@ -140,9 +140,7 @@
             </span>
           {/if}
           <span class="min-w-0 flex-1 truncate">{mod.name}</span>
-          {#if mod.is_base}
-            <span class="text-[10px] font-medium uppercase tracking-wide text-gray-600">Base</span>
-          {:else if mod.disableable}
+          {#if mod.disableable}
             <span
               role="button"
               tabindex="0"
