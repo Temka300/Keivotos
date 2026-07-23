@@ -10,9 +10,13 @@ import sqlite3
 import sys
 import uuid
 from ctypes import wintypes
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from module_registry import ModuleRegistry, build_registry
+from product import SUITE_NAME, VERSION
 
 
 def _resource_root() -> Path:
@@ -37,7 +41,6 @@ class _Guid(ctypes.Structure):
         return cls.from_buffer_copy(uuid.UUID(value).bytes_le)
 
 
-FOLDERID_DOCUMENTS = _Guid.parse("FDD39AD0-238F-46AF-ADB4-6C85480369C7")
 FOLDERID_LOCAL_APP_DATA = _Guid.parse("F1B32785-6FBA-4FCF-9D55-7B8E7F157091")
 
 
@@ -73,18 +76,9 @@ def _windows_known_folder(folder_id: _Guid) -> Path | None:
         ole32.CoTaskMemFree(raw_path)
 
 
-def windows_documents_directory() -> Path | None:
-    """Return the Windows Documents known folder, including redirected paths."""
-    return _windows_known_folder(FOLDERID_DOCUMENTS)
-
-
 def windows_local_app_data_directory() -> Path | None:
     """Return the machine-local Windows application-data known folder."""
     return _windows_known_folder(FOLDERID_LOCAL_APP_DATA)
-
-
-def documents_directory() -> Path:
-    return windows_documents_directory() or (Path.home() / "Documents")
 
 
 def local_app_data_directory() -> Path:
@@ -95,29 +89,73 @@ def local_app_data_directory() -> Path:
     return Path(configured).expanduser() if configured else Path.home() / ".local" / "share"
 
 
-_suite_home_override = os.environ.get("KEIVOTOS_HOME", "").strip()
+def _executable_directory() -> Path:
+    """Directory that holds the running program.
+
+    For a frozen (PyInstaller) build this is the folder next to Keivotos.exe;
+    from source it is the repository root.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+PORTABLE_MARKER_NAME = "portable.txt"
+
+
+def _portable_suite_home() -> Path | None:
+    """Return a portable data home when a ``portable.txt`` marker sits next to
+    the program, otherwise ``None``.
+
+    An empty marker means ``<program folder>/data``; a marker that contains a
+    path uses that path instead. Deleting the marker restores the per-user
+    application-data default without touching any data left behind.
+    """
+    marker = _executable_directory() / PORTABLE_MARKER_NAME
+    if not marker.is_file():
+        return None
+    try:
+        configured = marker.read_text(encoding="utf-8").strip()
+    except OSError:
+        configured = ""
+    return Path(configured).expanduser() if configured else _executable_directory() / "data"
+
+
+# Writable-data home precedence, highest first:
+#   1. KEIVOTOS_HOME environment variable (explicit override; used by launchers)
+#   2. a portable.txt marker beside the program -> <program folder>/data
+#   3. the per-user application-data default (%LOCALAPPDATA%\Keivotos)
 DEFAULT_SUITE_HOME = local_app_data_directory() / "Keivotos"
-LEGACY_SUITE_HOME = documents_directory() / "Keivotos"
-SUITE_HOME = (
-    Path(_suite_home_override).expanduser()
-    if _suite_home_override
-    else DEFAULT_SUITE_HOME
-)
-MODULE_SLUG = "danbooru"
+_explicit_suite_home = os.environ.get("KEIVOTOS_HOME", "").strip()
+_portable_suite_home_path = None if _explicit_suite_home else _portable_suite_home()
+if _explicit_suite_home:
+    SUITE_HOME = Path(_explicit_suite_home).expanduser()
+    _home_is_external = True
+elif _portable_suite_home_path is not None:
+    SUITE_HOME = _portable_suite_home_path
+    _home_is_external = True
+else:
+    SUITE_HOME = DEFAULT_SUITE_HOME
+    _home_is_external = False
 MODULES_DIR = SUITE_HOME / "modules"
-MODULE_HOME = MODULES_DIR / MODULE_SLUG
+_DEFAULT_MODULE_REGISTRY = build_registry(SUITE_HOME, VERSION)
+_DEFAULT_FILES_MODULE = _DEFAULT_MODULE_REGISTRY.require("files")
+_DEFAULT_DANBOORU_MODULE = _DEFAULT_MODULE_REGISTRY.require("danbooru")
+MODULE_HOME = _DEFAULT_DANBOORU_MODULE.home
 DEFAULT_LIBRARY_DIR = MODULE_HOME / "library"
 DEFAULT_METADATA_DIR = MODULE_HOME
 LEGACY_DEFAULT_METADATA_DIR = MODULE_HOME / "metadata"
 DEFAULT_GALLERY_DL_DIR = MODULE_HOME / "gallery-dl"
-DEFAULT_BACKUP_DIR = SUITE_HOME / "backups" / MODULE_SLUG
+DEFAULT_BACKUP_DIR = SUITE_HOME / "backups"
+LEGACY_MODULE_BACKUP_DIR = DEFAULT_BACKUP_DIR / _DEFAULT_DANBOORU_MODULE.slug
 LOG_DIR = SUITE_HOME / "logs"
 LOG_FILE_LIMIT_MB = 5
 LOG_ROLLOVER_FILES = 5
 LOG_RETENTION_FILES = 30
 LOG_SESSION_ID = f"{datetime.now().astimezone():%Y-%m-%d_%H-%M-%S}-p{os.getpid()}"
-RUNTIME_LOG_FILE = LOG_DIR / f"{MODULE_SLUG}-runtime-{LOG_SESSION_ID}.log"
-ACCESS_LOG_FILE = LOG_DIR / f"{MODULE_SLUG}-access-{LOG_SESSION_ID}.log"
+SUITE_LOG_PREFIX = SUITE_NAME.casefold()
+RUNTIME_LOG_FILE = LOG_DIR / f"{SUITE_LOG_PREFIX}-runtime-{LOG_SESSION_ID}.log"
+ACCESS_LOG_FILE = LOG_DIR / f"{SUITE_LOG_PREFIX}-access-{LOG_SESSION_ID}.log"
 RUNTIME_CONFIG_FILE = SUITE_HOME / "config.json"
 
 # Compatibility name used by existing APIs; it means the module's writable
@@ -275,62 +313,6 @@ def _verify_module_databases(module_home: Path) -> None:
             raise RuntimeError(f"Application-data migration SQLite check failed for {database_name}: {row!r}")
 
 
-def _verify_migrated_databases(staging_home: Path) -> None:
-    modules = staging_home / "modules"
-    if not modules.is_dir():
-        return
-    for module_home in sorted(modules.iterdir(), key=lambda item: item.name.casefold()):
-        if module_home.is_symlink():
-            raise RuntimeError(f"Refused symbolic-link module migration: {module_home}")
-        if module_home.is_dir():
-            _verify_module_databases(module_home)
-
-
-def migrate_legacy_suite_home(
-    source: Path | None = None,
-    destination: Path | None = None,
-) -> dict[str, Any]:
-    """Copy-and-verify Documents/Keivotos into the local app-data layout."""
-    source_home = (source or LEGACY_SUITE_HOME).expanduser().resolve(strict=False)
-    destination_home = (destination or DEFAULT_SUITE_HOME).expanduser().resolve(strict=False)
-    if _suite_home_override and source is None and destination is None:
-        return {"migrated": False, "reason": "override", "files": 0, "bytes": 0}
-    if destination_home.exists():
-        return {"migrated": False, "reason": "destination-exists", "files": 0, "bytes": 0}
-    if not source_home.is_dir():
-        return {"migrated": False, "reason": "legacy-missing", "files": 0, "bytes": 0}
-    if source_home.is_symlink():
-        raise RuntimeError(f"Refused symbolic-link application-data migration: {source_home}")
-    if source_home == destination_home or source_home in destination_home.parents or destination_home in source_home.parents:
-        raise RuntimeError("Application-data migration source and destination must be separate directories")
-
-    staging = destination_home.with_name(destination_home.name + ".migration-staging")
-    if staging.resolve(strict=False).parent != destination_home.parent:
-        raise RuntimeError("Application-data migration staging escaped its destination parent")
-    if staging.exists() and (staging.is_symlink() or not staging.is_dir()):
-        raise RuntimeError(f"Application-data migration staging is unsafe: {staging}")
-    destination_home.parent.mkdir(parents=True, exist_ok=True)
-    staging.mkdir(parents=True, exist_ok=True)
-
-    files = copied_bytes = 0
-    for child in sorted(source_home.iterdir(), key=lambda item: item.name.casefold()):
-        child_files, child_bytes = _copy_verified_tree(child, staging / child.name)
-        files += child_files
-        copied_bytes += child_bytes
-    _verify_migrated_databases(staging)
-    config_rebased = _rebase_migrated_config(staging / "config.json", source_home, destination_home)
-    staging.replace(destination_home)
-    return {
-        "migrated": True,
-        "reason": "copied-and-verified",
-        "files": files,
-        "bytes": copied_bytes,
-        "config_rebased": config_rebased,
-        "source": str(source_home),
-        "destination": str(destination_home),
-    }
-
-
 def _configured_previous_module_homes() -> list[Path]:
     modules = MODULES_DIR.resolve(strict=False)
     candidates: dict[str, Path] = {}
@@ -369,7 +351,7 @@ def _discover_previous_module_home() -> tuple[Path | None, str]:
         for path in MODULES_DIR.iterdir()
         if path.is_dir()
         and not path.is_symlink()
-        and path.name != MODULE_SLUG
+        and path.name != _DEFAULT_DANBOORU_MODULE.slug
         and any((path / marker).exists() for marker in markers)
     ]
     if len(candidates) > 1:
@@ -434,12 +416,101 @@ def migrate_previous_module_home(
     }
 
 
+def promote_user_database(
+    legacy: Path | None = None,
+    destination: Path | None = None,
+) -> dict[str, Any]:
+    """Promote the shared user database to the suite root once (verified copy).
+
+    ``user.sqlite`` is the one irreplaceable file and must live at suite level so
+    it exists even with no module enabled. This copies a legacy
+    ``modules/<module>/user.sqlite`` up to ``SUITE_HOME/user.sqlite``, verifies
+    the copy (size + ``PRAGMA quick_check``), atomically installs it, and leaves
+    the legacy source untouched. Idempotent (skips once the suite-level file
+    exists) and fail-closed. See docs/important/SUITE_MODULE_CONTRACT.md 3.1.
+    """
+    destination_db = (destination or (SUITE_HOME / "user.sqlite")).expanduser().resolve(strict=False)
+    legacy_db = (legacy or (MODULE_HOME / "user.sqlite")).expanduser().resolve(strict=False)
+    if destination_db.exists():
+        return {"promoted": False, "reason": "already-suite-level"}
+    if legacy_db == destination_db:
+        return {"promoted": False, "reason": "same-path"}
+    if not legacy_db.is_file():
+        return {"promoted": False, "reason": "no-legacy"}
+    if legacy_db.is_symlink():
+        raise RuntimeError(f"Refused symbolic-link user database promotion: {legacy_db}")
+
+    # Fold any write-ahead log back into the main file so a single-file copy is
+    # complete before we duplicate it.
+    checkpoint_connection = sqlite3.connect(legacy_db)
+    try:
+        checkpoint_connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        checkpoint_connection.close()
+
+    destination_db.parent.mkdir(parents=True, exist_ok=True)
+    staging = destination_db.with_name(destination_db.name + ".promoting")
+    if staging.exists() and (staging.is_symlink() or not staging.is_file()):
+        raise RuntimeError(f"User database promotion staging is unsafe: {staging}")
+    if staging.exists():
+        staging.unlink()
+    shutil.copy2(legacy_db, staging)
+    try:
+        if not _files_match(legacy_db, staging):
+            raise RuntimeError(f"User database promotion verification failed: {legacy_db}")
+        verify_connection = sqlite3.connect(f"file:{staging.as_posix()}?mode=ro", uri=True)
+        try:
+            row = verify_connection.execute("PRAGMA quick_check").fetchone()
+        finally:
+            verify_connection.close()
+        if not row or row[0] != "ok":
+            raise RuntimeError(f"User database promotion SQLite check failed: {row!r}")
+    except Exception:
+        staging.unlink(missing_ok=True)
+        raise
+    staging.replace(destination_db)  # atomic install; legacy source is preserved
+    return {
+        "promoted": True,
+        "reason": "copied-and-verified",
+        "source": str(legacy_db),
+        "destination": str(destination_db),
+    }
+
+
+def promote_legacy_module_backups(
+    source: Path | None = None,
+    destination: Path | None = None,
+) -> dict[str, Any]:
+    """Copy old module-scoped backups into the suite backup directory.
+
+    The legacy directory is deliberately preserved. Existing identical files
+    are verified and conflicts fail closed rather than being overwritten.
+    """
+    source_dir = (source or LEGACY_MODULE_BACKUP_DIR).expanduser().resolve(strict=False)
+    destination_dir = (destination or DEFAULT_BACKUP_DIR).expanduser().resolve(strict=False)
+    if not source_dir.is_dir():
+        return {"promoted": False, "reason": "source-missing", "files": 0, "bytes": 0}
+    if source_dir.is_symlink():
+        raise RuntimeError(f"Refused symbolic-link backup migration: {source_dir}")
+    if source_dir == destination_dir:
+        return {"promoted": False, "reason": "same-path", "files": 0, "bytes": 0}
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    files = copied_bytes = 0
+    for child in sorted(source_dir.iterdir(), key=lambda item: item.name.casefold()):
+        child_files, child_bytes = _copy_verified_tree(child, destination_dir / child.name)
+        files += child_files
+        copied_bytes += child_bytes
+    return {
+        "promoted": files > 0,
+        "reason": "copied-and-verified" if files else "empty-source",
+        "files": files,
+        "bytes": copied_bytes,
+        "source": str(source_dir),
+        "destination": str(destination_dir),
+    }
+
+
 _migration_requested = os.environ.pop("KEIVOTOS_MIGRATE_LEGACY_HOME", "") == "1"
-SUITE_HOME_MIGRATION = (
-    migrate_legacy_suite_home()
-    if _migration_requested
-    else {"migrated": False, "reason": "not-requested", "files": 0, "bytes": 0}
-)
 MODULE_HOME_MIGRATION = (
     migrate_previous_module_home()
     if _migration_requested
@@ -449,9 +520,9 @@ MODULE_HOME_MIGRATION = (
 
 def _load() -> dict[str, Any]:
     config = {**_defaults, **_read_json(SOURCE_CONFIG_FILE)}
-    # Tests and portable verification can redirect every writable default with
-    # one environment variable, regardless of the checked-in template paths.
-    if "KEIVOTOS_HOME" in os.environ:
+    # An external home (KEIVOTOS_HOME or a portable.txt marker) ignores the
+    # checked-in template paths and anchors every writable default under it.
+    if _home_is_external:
         config.update(_external_path_defaults)
     config.update(_read_json(RUNTIME_CONFIG_FILE))
     config.pop("backup_destination", None)
@@ -474,11 +545,37 @@ if METADATA_DIR.resolve(strict=False) == LEGACY_DEFAULT_METADATA_DIR.resolve(str
 GALLERY_DL_DIR = _resolve_path(str(_cfg.get("gallery_dl_dir", DEFAULT_GALLERY_DL_DIR)))
 
 DATA_DB_PATH = METADATA_DIR / "danbooru.sqlite"
-USER_DB_PATH = METADATA_DIR / "user.sqlite"
+# The shared, irreplaceable user DB lives at suite level (not under a module),
+# so it exists with zero modules enabled. A legacy module-home copy is promoted
+# here on startup via promote_user_database(). See SUITE_MODULE_CONTRACT.md 3.1.
+USER_DB_PATH = SUITE_HOME / "user.sqlite"
 THUMB_DIR = METADATA_DIR / "thumbnails"
 SIDECAR_DIR = METADATA_DIR / "sidecars"
 ARTIST_PROFILE_ARCHIVE_DIR = METADATA_DIR / "artist_profile_archive"
 CREDENTIALS_PATH = METADATA_DIR / "danbooru_credentials.json"
+
+# --- Files base (V1.1.0) ---
+# The always-on neutral file layer. Its index is disposable (rebuildable from
+# disk) and lives at suite level, NOT under modules/, because the base exists
+# even with zero modules enabled. See docs/important/SUITE_MODULE_CONTRACT.md.
+BASE_HOME = _DEFAULT_FILES_MODULE.home
+FILES_DB_PATH = _DEFAULT_FILES_MODULE.database
+FILES_THUMB_DIR = BASE_HOME / "thumbnails"
+
+# Effective descriptors are the registry consumed by the suite shell. Danbooru
+# still supports an explicitly configured metadata directory, so its module DB
+# and credential paths are rebound while its stable module home remains fixed.
+FILES_MODULE = replace(_DEFAULT_FILES_MODULE, home=BASE_HOME, database=FILES_DB_PATH)
+DANBOORU_MODULE = replace(
+    _DEFAULT_DANBOORU_MODULE,
+    database=DATA_DB_PATH,
+    credentials=CREDENTIALS_PATH,
+)
+MODULE_REGISTRY: ModuleRegistry = (
+    _DEFAULT_MODULE_REGISTRY
+    .replacing(FILES_MODULE)
+    .replacing(DANBOORU_MODULE)
+)
 
 
 def _merge_legacy_entry(source: Path, destination: Path) -> tuple[int, int]:

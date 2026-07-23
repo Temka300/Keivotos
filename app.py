@@ -293,14 +293,6 @@ def main(argv: list[str] | None = None) -> int:
     if lan_host is not None:
         logger.warning("Trusted-network LAN access is enabled at http://%s:%s/", lan_host, args.port)
         logger.warning("Devices on this network can use Keivotos while this process is running")
-    migration = configuration.SUITE_HOME_MIGRATION
-    if migration.get("migrated"):
-        logger.info(
-            "Copied and verified legacy application data: %s files from %s to %s; the original was preserved",
-            migration["files"],
-            migration["source"],
-            migration["destination"],
-        )
     logger.info("Writable application data: %s", configuration.SUITE_HOME)
     logger.info("Runtime log: %s", runtime_log_path)
     logger.info("HTTP access log: %s", access_log_path)
