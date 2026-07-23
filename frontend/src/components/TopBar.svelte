@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from '../lib/api';
-  import { MODULE_DISPLAY_NAME, SUITE_NAME } from '../lib/product';
+  import { SUITE_NAME } from '../lib/product';
+  import { MODULE_DISPLAY_NAME } from '../modules/danbooru/identity';
   import { viewMode, sortBy, sortOrder, activeFolder, activeRating, activeTags, activeCollectionId, selectedImageId, fitMode, imageSize, imageSizeOptions, imagePageSize, imagePageSizeOptions, duplicatesOnly, duplicateScope, blacklistedTagNames, searchString, browseTagSelection, artistNotificationsEnabled } from '../lib/stores';
   import type { DuplicateScope, ViewMode } from '../lib/stores';
   import SearchBar from './SearchBar.svelte';

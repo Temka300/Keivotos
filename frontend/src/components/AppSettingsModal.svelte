@@ -12,7 +12,8 @@
   import BackupRestoreSettings from './BackupRestoreSettings.svelte';
   import LibraryImportSettings from './LibraryImportSettings.svelte';
   import ThumbnailCacheSettings from './ThumbnailCacheSettings.svelte';
-  import { MODULE_NAME, SUITE_NAME } from '../lib/product';
+  import { SUITE_NAME } from '../lib/product';
+  import { MODULE_NAME } from '../modules/danbooru/identity';
   import { prepareSettingsPresentation, restoreSettingsPresentation } from '../lib/settingsPresentation';
   import {
     activeRating,

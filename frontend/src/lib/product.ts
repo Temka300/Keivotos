@@ -1,16 +1,17 @@
 export const SUITE_NAME = 'Keivotos';
-export const MODULE_NAME = 'Danbooru';
-export const MODULE_DISPLAY_NAME = MODULE_NAME.replace('-', ' ');
-export const DISPLAY_NAME = `${SUITE_NAME} - ${MODULE_NAME}`;
+export const VERSION = '1.1.0';
+export const DISPLAY_NAME = SUITE_NAME;
 export const DEFAULT_PROFILE_NAME = SUITE_NAME;
 
-export const STORAGE_PREFIX = 'danbooru:';
+export const STORAGE_PREFIX = 'keivotos:';
+const LEGACY_STORAGE_PREFIXES = ['danbooru:'];
 
 const persistedSuffixes = new Set([
   'profile-name',
   'startup-view',
   'home-layout',
   'last-view',
+  'active-module',
   'active-rating',
   'browse-sort',
   'browse-sort-order',
@@ -36,9 +37,9 @@ function migratePersistedStorage(): void {
       .filter((key): key is string => key !== null);
     for (const key of keys) {
       if (key.startsWith(STORAGE_PREFIX)) continue;
-      const separator = key.indexOf(':');
-      if (separator < 0) continue;
-      const suffix = key.slice(separator + 1);
+      const legacyPrefix = LEGACY_STORAGE_PREFIXES.find((prefix) => key.startsWith(prefix));
+      if (!legacyPrefix) continue;
+      const suffix = key.slice(legacyPrefix.length);
       if (!persistedSuffixes.has(suffix) && !persistedSuffixFamilies.some(prefix => suffix.startsWith(prefix))) continue;
       const currentKey = `${STORAGE_PREFIX}${suffix}`;
       if (localStorage.getItem(currentKey) === null) {

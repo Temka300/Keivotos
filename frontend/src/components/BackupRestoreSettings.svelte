@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, type BackupComponents, type BackupConfiguration, type BackupEstimate, type BackupManifest, type LocalRecoveryStatus } from '../lib/api';
-  import { MODULE_NAME } from '../lib/product';
+  import { MODULE_NAME } from '../modules/danbooru/identity';
 
   export let toolRunning = false;
 

@@ -36,7 +36,9 @@ class SidebarGripContractTests(unittest.TestCase):
         self.assertEqual(source.count("<Sidebar />"), 1)
 
     def test_browse_and_tags_mount_the_sidebar_dock(self) -> None:
-        source = (ROOT / "frontend" / "src" / "App.svelte").read_text(encoding="utf-8")
+        source = (
+            ROOT / "frontend" / "src" / "modules" / "danbooru" / "DanbooruSurface.svelte"
+        ).read_text(encoding="utf-8")
         self.assertIn("$viewMode === 'gallery' || $viewMode === 'tags'", source)
         self.assertIn("<SidebarDock />", source)
 

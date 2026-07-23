@@ -13,6 +13,7 @@ from config import (
     LOG_RETENTION_FILES,
     LOG_ROLLOVER_FILES,
     RUNTIME_LOG_FILE,
+    SUITE_LOG_PREFIX,
 )
 
 
@@ -69,8 +70,8 @@ def _file_handler(path: Path, formatter: logging.Formatter) -> RotatingFileHandl
 
 def configure_runtime_logging() -> tuple[Path, Path]:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    _prune_old_log_files("danbooru-runtime", RUNTIME_LOG_FILE)
-    _prune_old_log_files("danbooru-access", ACCESS_LOG_FILE)
+    _prune_old_log_files(f"{SUITE_LOG_PREFIX}-runtime", RUNTIME_LOG_FILE)
+    _prune_old_log_files(f"{SUITE_LOG_PREFIX}-access", ACCESS_LOG_FILE)
 
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)

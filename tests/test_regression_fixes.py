@@ -171,7 +171,6 @@ class RegressionFixTests(unittest.TestCase):
     def test_developer_lan_binds_only_the_discovered_adapter(self) -> None:
         configuration = SimpleNamespace(
             SUITE_HOME=self.temp,
-            SUITE_HOME_MIGRATION={"migrated": False},
         )
         runtime_logging = SimpleNamespace(
             configure_runtime_logging=lambda: (self.temp / "runtime.log", self.temp / "access.log")
@@ -201,7 +200,7 @@ class RegressionFixTests(unittest.TestCase):
             text=True,
             capture_output=True,
         )
-        log_files = list((self.temp / "logs").glob("danbooru-runtime-*.log"))
+        log_files = list((self.temp / "logs").glob("keivotos-runtime-*.log"))
         self.assertEqual(result.returncode, 2)
         self.assertIn("Invalid JSON", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
@@ -233,8 +232,8 @@ class RegressionFixTests(unittest.TestCase):
             check=True,
         )
         runtime_name, access_name, storage = json.loads(result.stdout)
-        self.assertRegex(Path(runtime_name).name, r"^danbooru-runtime-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-p\d+\.log$")
-        self.assertRegex(Path(access_name).name, r"^danbooru-access-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-p\d+\.log$")
+        self.assertRegex(Path(runtime_name).name, r"^keivotos-runtime-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-p\d+\.log$")
+        self.assertRegex(Path(access_name).name, r"^keivotos-access-\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-p\d+\.log$")
         self.assertEqual(storage["runtime_log_file"], runtime_name)
         self.assertEqual(storage["access_log_file"], access_name)
         self.assertEqual(storage["log_retention_files"], 30)
