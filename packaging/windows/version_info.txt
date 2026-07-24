@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 1, 0, 0),
-    prodvers=(1, 1, 0, 0),
+    filevers=(1, 1, 1, 0),
+    prodvers=(1, 1, 1, 0),
     mask=0x3F,
     flags=0x0,
     OS=0x40004,
@@ -16,12 +16,12 @@ VSVersionInfo(
         [
           StringStruct("CompanyName", "Keivotos contributors"),
           StringStruct("FileDescription", "Keivotos - Danbooru"),
-          StringStruct("FileVersion", "1.1.0"),
+          StringStruct("FileVersion", "1.1.1"),
           StringStruct("InternalName", "Keivotos"),
           StringStruct("LegalCopyright", "Copyright 2026 Keivotos contributors"),
           StringStruct("OriginalFilename", "Keivotos.exe"),
           StringStruct("ProductName", "Keivotos"),
-          StringStruct("ProductVersion", "1.1.0"),
+          StringStruct("ProductVersion", "1.1.1"),
         ],
       )
     ]),
