@@ -18,6 +18,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 import credentials  # noqa: E402
 import core  # noqa: E402
 import danbooru_gallery_dl as gallery  # noqa: E402
+from modules.danbooru import artist_profiles  # noqa: E402
 from routers import tools as tool_routes  # noqa: E402
 from routers import images_media as image_routes  # noqa: E402
 
@@ -212,16 +213,18 @@ class AcquisitionTests(unittest.TestCase):
         self.assertEqual(caught, [])
 
     def test_repo_venv_gallery_dl_is_found_when_server_python_is_global(self) -> None:
-        backend_dir = self.temp / "repo" / "backend"
+        # The lookup used to be `__file__`-relative, which quietly depended on
+        # the code living one directory below the code root. It now resolves
+        # against CODE_ROOT, so that is the seam this pins. Called through
+        # `core` so the compatibility re-export stays covered too.
         bundled = self.temp / "repo" / ".venv" / "Scripts" / "gallery-dl.exe"
-        backend_dir.mkdir(parents=True)
         bundled.parent.mkdir(parents=True)
         bundled.write_bytes(b"")
         with (
-            patch.object(core.shutil, "which", return_value=None),
-            patch.object(core.sys, "platform", "win32"),
-            patch.object(core.sys, "executable", str(self.temp / "global" / "python.exe")),
-            patch.object(core, "__file__", str(backend_dir / "core.py")),
+            patch.object(artist_profiles.shutil, "which", return_value=None),
+            patch.object(artist_profiles.sys, "platform", "win32"),
+            patch.object(artist_profiles.sys, "executable", str(self.temp / "global" / "python.exe")),
+            patch.object(artist_profiles, "CODE_ROOT", self.temp / "repo"),
         ):
             self.assertEqual(core.gallery_dl_command(), [str(bundled)])
 

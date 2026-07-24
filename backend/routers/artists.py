@@ -1,7 +1,33 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
-from core import *  # shared query, database, and media helpers
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
+
+from config import ARTIST_PROFILE_ARCHIVE_DIR
+from database import get_data_db, get_user_db
+from models import (
+    ArtistFollowCheckResult,
+    ArtistFollowInfo,
+    ArtistProfileArchiveResult,
+    ArtistProfileAsset,
+    ArtistProfileBulkArchiveResult,
+    TagInfo,
+)
+from modules.danbooru.artist_follows import (
+    artist_follow_info_from_row,
+    fetch_artist_danbooru_post_ids,
+    load_artist_follow,
+    seed_artist_follow_posts_from_cache,
+)
+from modules.danbooru.artist_profiles import (
+    archive_artist_profile_media,
+    list_artist_profile_assets_from_conn,
+)
+from services.tag_names import normalize_search_tag, normalize_user_tag_category
+from services.value_helpers import int_or_none
 
 router = APIRouter()
 
