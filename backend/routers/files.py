@@ -14,12 +14,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
 import config
 from database import get_user_db
-from files_base import filesystem, hashing, index, sources
+from files_base import filesystem, hashing, index, serving, sources
 
 router = APIRouter()
 
@@ -210,6 +211,66 @@ def browse(
             _scan_registered_source(index_conn, source, all_sources)
         entries = index.list_directory(index_conn, source_id, parent)
     return [_entry_to_node(entry) for entry in entries]
+
+
+@router.get("/api/files/file")
+def serve_file(
+    request: Request,
+    source_id: str = Query(...),
+    path: str = Query("", description="Path relative to the source root"),
+):
+    """Stream one file's bytes from a registered source, safely.
+
+    The path is resolved against the source root, symlinks and traversal are
+    rejected, Keivotos's own data tree is denied, and only an allowlist of inert
+    media renders inline (everything else downloads with ``nosniff``). Range
+    requests are supported so video/audio can seek.
+    """
+    with get_user_db() as user_conn:
+        sources.ensure_sources_schema(user_conn)
+        source = sources.get_source(user_conn, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Unknown source")
+
+    try:
+        resolved = serving.resolve_served_file(
+            source.path, path, _forbidden_source_paths()
+        )
+    except serving.ServeDenied as denied:
+        raise HTTPException(status_code=denied.status_code, detail=denied.detail) from denied
+
+    media_type, is_inline = serving.inline_media_type(resolved)
+    disposition = serving.content_disposition(resolved.name, inline=is_inline)
+    base_headers = {
+        "Accept-Ranges": "bytes",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": disposition,
+        "Cache-Control": "private, no-cache",
+    }
+
+    file_size = resolved.stat().st_size
+    range_header = request.headers.get("range")
+    byte_range = serving.parse_range_header(range_header, file_size)
+    if range_header and byte_range is None:
+        return Response(
+            status_code=416,
+            headers={"Accept-Ranges": "bytes", "Content-Range": f"bytes */{file_size}"},
+        )
+
+    if byte_range is not None:
+        start, end = byte_range
+        return StreamingResponse(
+            serving.file_range_iter(resolved, start, end),
+            status_code=206,
+            media_type=media_type,
+            headers={
+                **base_headers,
+                "Content-Length": str(end - start + 1),
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+            },
+        )
+
+    return FileResponse(resolved, media_type=media_type, headers=base_headers)
 
 
 @router.post("/api/files/hash", response_model=HashProgress)

@@ -108,4 +108,12 @@ export const filesApi = {
   listDuplicates: () => getJson<DuplicateGroup[]>('/duplicates'),
   browseFs: (path = '') => getJson<FsListing>('/fs', { path }),
   pickFolder: () => send<PickResult>('POST', '/pick'),
+  // URL for streaming a file's bytes (preview/open). The backend resolves it
+  // against the source root and refuses anything outside it.
+  fileUrl: (sourceId: string, relativePath: string) => {
+    const url = new URL(BASE + '/file', window.location.origin);
+    url.searchParams.set('source_id', sourceId);
+    url.searchParams.set('path', relativePath);
+    return url.toString();
+  },
 };

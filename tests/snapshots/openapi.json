@@ -5733,6 +5733,56 @@
         "summary": "List Duplicates"
       }
     },
+    "/api/files/file": {
+      "get": {
+        "description": "Stream one file's bytes from a registered source, safely.\n\nThe path is resolved against the source root, symlinks and traversal are\nrejected, Keivotos's own data tree is denied, and only an allowlist of inert\nmedia renders inline (everything else downloads with ``nosniff``). Range\nrequests are supported so video/audio can seek.",
+        "operationId": "serve_file_api_files_file_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Path relative to the source root",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Path relative to the source root",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Serve File"
+      }
+    },
     "/api/files/fs": {
       "get": {
         "description": "List sub-directories so the UI can pick a folder to register.",
