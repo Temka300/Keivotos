@@ -129,6 +129,20 @@ from services.query_helpers import (
     user_file_lookup_sql,
     user_file_match,
 )
+# Extracted leaf services. Imported here so `from core import *` keeps supplying
+# these names to routers that have not been migrated to explicit imports yet.
+from services.collections import (
+    collection_preview_items_from_rows,
+    load_collection_info,
+)
+from services.profile import profile_asset, profile_asset_token
+from services.user_library import (
+    _combo_from_row,
+    _combo_key,
+    _combo_name,
+    _normalize_combo_tags,
+    _normalize_tag_name,
+)
 
 # The scraper identifies as the module, falling back to the suite when the
 # Danbooru descriptor is absent from the registry.
@@ -2728,35 +2742,7 @@ def fetch_artist_danbooru_post_ids(tag_name: str, limit: int) -> list[int]:
 
 
 
-def _normalize_combo_tags(tags: list[str]) -> list[str]:
-    normalized: list[str] = []
-    seen: set[str] = set()
-    for tag in tags:
-        name = _normalize_tag_name(tag)
-        if not name or name in seen:
-            continue
-        seen.add(name)
-        normalized.append(name)
-    return normalized
-
-
-def _combo_key(tags: list[str]) -> str:
-    return "\n".join(sorted(tags))
-
-
-def _combo_name(name: str | None, tags: list[str]) -> str:
-    if name and name.strip():
-        return name.strip()
-    return " + ".join(tag.replace("_", " ") for tag in tags[:4])
-
-
-def _combo_from_row(row: dict[str, Any]) -> FavoriteTagComboInfo:
-    return FavoriteTagComboInfo(
-        id=row["id"],
-        name=row["name"],
-        tags=json.loads(row["tags_json"]),
-        added_at=row["added_at"],
-    )
+# Moved to services/user_library.py; imported at the top and re-exported here.
 
 
 
@@ -2770,8 +2756,7 @@ def _combo_from_row(row: dict[str, Any]) -> FavoriteTagComboInfo:
 # ---------------------------------------------------------------------------
 
 
-def _normalize_tag_name(tag_name: str) -> str:
-    return re.sub(r"\s+", "_", tag_name.strip().lower())
+# Moved to services/user_library.py; imported at the top and re-exported here.
 
 
 
@@ -2786,64 +2771,7 @@ def _normalize_tag_name(tag_name: str) -> str:
 # Collections
 # ---------------------------------------------------------------------------
 
-def collection_preview_items_from_rows(rows) -> list[CollectionPreviewItem]:
-    items: list[CollectionPreviewItem] = []
-    for row in rows:
-        file_id = row["file_id"]
-        if file_id is None:
-            continue
-        path = row["path"]
-        local_md5 = row["local_md5"]
-        items.append(
-            CollectionPreviewItem(
-                file_id=file_id,
-                thumbnail_token=(local_md5 or thumbnail_cache_token(path)) if path else local_md5,
-                filename=row["filename"],
-                ext=row["ext"],
-                width=row["width"],
-                height=row["height"],
-            )
-        )
-    return items
-
-
-def load_collection_info(conn, collection_id: int) -> CollectionInfo | None:
-    row = conn.execute(
-        f"""SELECT c.id, c.name, c.description, c.created_at, c.pinned_at,
-                  COUNT(DISTINCT COALESCE(f.id, ci.file_id)) as image_count
-           FROM collections c
-           LEFT JOIN collection_items ci ON ci.collection_id = c.id
-           LEFT JOIN datadb.files f ON {user_file_match("ci")}
-           WHERE c.id=?
-           GROUP BY c.id""",
-        (collection_id,),
-    ).fetchone()
-    if not row:
-        return None
-    previews = conn.execute(
-        f"""SELECT COALESCE(f.id, ci.file_id) as file_id,
-                  f.path as path,
-                  COALESCE(f.local_md5, ci.local_md5) as local_md5,
-                  f.name as filename,
-                  f.ext as ext,
-                  p.width as width,
-                  p.height as height
-            FROM collection_items ci
-            LEFT JOIN datadb.files f ON {user_file_match("ci")}
-            LEFT JOIN datadb.posts p ON p.file_id = f.id
-            WHERE ci.collection_id=?
-            ORDER BY CASE WHEN ci.pinned_at IS NULL THEN 1 ELSE 0 END,
-                     ci.pinned_at DESC,
-                     ci.added_at DESC
-            LIMIT 4""",
-        (collection_id,),
-    ).fetchall()
-    preview_items = collection_preview_items_from_rows(previews)
-    return CollectionInfo(
-        **row,
-        preview_ids=[item.file_id for item in preview_items],
-        preview_items=preview_items,
-    )
+# Moved to services/collections.py; imported at the top and re-exported here.
 
 
 
@@ -2864,39 +2792,7 @@ def load_collection_info(conn, collection_id: int) -> CollectionInfo | None:
 # Stats
 # ---------------------------------------------------------------------------
 
-def profile_asset(conn, folder_names: list[str], ratio_clause: str) -> dict[str, Any] | None:
-    names = [name.casefold() for name in folder_names]
-    placeholders = ",".join("?" for _ in names)
-    image_exts = "'jpg','jpeg','png','webp','gif'"
-    base_where = (
-        f"LOWER(COALESCE(f.folder, '')) IN ({placeholders}) "
-        f"AND LOWER(COALESCE(f.ext, '')) IN ({image_exts})"
-    )
-
-    for clause in (ratio_clause, ""):
-        where = base_where
-        if clause:
-            where = f"{where} AND {clause}"
-        row = conn.execute(
-            f"""SELECT f.id as file_id, f.path, f.local_md5
-                FROM files f
-                LEFT JOIN posts p ON p.file_id = f.id
-                WHERE {where}
-                ORDER BY COALESCE(p.score, -999999) DESC,
-                         COALESCE(f.downloaded_at, '') DESC,
-                         f.name ASC
-                LIMIT 1""",
-            names,
-        ).fetchone()
-        if row:
-            return row
-    return None
-
-
-def profile_asset_token(row: dict[str, Any] | None) -> str | None:
-    if not row:
-        return None
-    return row["local_md5"] or thumbnail_cache_token(row["path"])
+# Moved to services/profile.py; imported at the top and re-exported here.
 
 
 
