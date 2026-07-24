@@ -70,18 +70,18 @@ def _has_traversal_segment(relative_path: str) -> bool:
     return any(part == ".." for part in parts)
 
 
-def resolve_served_file(
+def resolve_within_source(
     source_root: str | Path,
     relative_path: str,
     forbidden_roots: list[Path],
 ) -> Path:
-    """Resolve ``source_root`` + ``relative_path`` to a safe, real file path.
+    """Resolve ``source_root`` + ``relative_path`` to a safe, existing path.
 
-    Raises :class:`ServeDenied` with the right status on any failure so the HTTP
-    layer maps it directly. The order matters: reject a hostile relative path
-    (400) before touching disk, then confirm containment (403) after resolving
-    symlinks, then reject the suite's own tree (403), then require a real file
-    (404).
+    Allows a file *or* a directory (annotations attach to both). Raises
+    :class:`ServeDenied` with the right status on any failure. The order matters:
+    reject a hostile relative path (400) before touching disk, then confirm
+    containment (403) after resolving symlinks, then reject the suite's own tree
+    (403), then require the path to exist (404).
     """
     if _DRIVE_OR_ABSOLUTE.match(relative_path or "") or _has_traversal_segment(relative_path):
         raise ServeDenied(400, "Path must be relative and stay inside the source")
@@ -102,6 +102,16 @@ def resolve_served_file(
 
     if not resolved.exists():
         raise ServeDenied(404, "File not found on disk")
+    return resolved
+
+
+def resolve_served_file(
+    source_root: str | Path,
+    relative_path: str,
+    forbidden_roots: list[Path],
+) -> Path:
+    """Like :func:`resolve_within_source` but require a regular file (404 if not)."""
+    resolved = resolve_within_source(source_root, relative_path, forbidden_roots)
     if not resolved.is_file():
         raise ServeDenied(404, "Not a file")
     return resolved

@@ -62,6 +62,47 @@ export interface PickResult {
   native: boolean;
 }
 
+export type LinkKind = 'source' | 'discussion' | 'mirror' | 'author' | 'other';
+
+export interface AnnotationLink {
+  url: string;
+  label: string;
+  kind: string;
+}
+
+export interface AnnotationAttachment {
+  id: number;
+  content_hash: string;
+  file_name: string;
+  media_type: string;
+  size: number;
+  width: number | null;
+  height: number | null;
+  caption: string;
+  is_cover: boolean;
+  position: number;
+}
+
+export interface Annotation {
+  id: number;
+  subject_kind: string;
+  content_hash: string | null;
+  source_id: string;
+  relative_path: string;
+  description: string;
+  created_at: string | null;
+  updated_at: string | null;
+  links: AnnotationLink[];
+  attachments: AnnotationAttachment[];
+}
+
+export interface AnnotationRequest {
+  source_id: string;
+  path: string;
+  description: string;
+  links: AnnotationLink[];
+}
+
 async function apiError(res: Response): Promise<Error> {
   let detail = '';
   try {
@@ -116,4 +157,17 @@ export const filesApi = {
     url.searchParams.set('path', relativePath);
     return url.toString();
   },
+  getInfo: (sourceId: string, path: string) =>
+    getJson<Annotation | null>('/info', { source_id: sourceId, path }),
+  saveInfo: (request: AnnotationRequest) =>
+    send<Annotation | null>('PUT', '/info', request),
+  deleteInfo: (sourceId: string, path: string) =>
+    send<{ deleted: boolean }>(
+      'DELETE',
+      `/info?source_id=${encodeURIComponent(sourceId)}&path=${encodeURIComponent(path)}`,
+    ),
+  openFile: (sourceId: string, path: string) =>
+    send<{ status: string }>('POST', '/open', { source_id: sourceId, path }),
+  revealFile: (sourceId: string, path: string) =>
+    send<{ status: string }>('POST', '/reveal', { source_id: sourceId, path }),
 };

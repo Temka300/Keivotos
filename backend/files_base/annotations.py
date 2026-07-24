@@ -222,6 +222,23 @@ def get_annotation(
     return _load(user_conn, row) if row is not None else None
 
 
+def get_file_annotation_by_location(
+    user_conn: sqlite3.Connection, source_id: str, relative_path: str
+) -> Annotation | None:
+    """A file note found by its last-known location, when the hash isn't handy.
+
+    Used as a read-time fallback for a file whose index hash is momentarily
+    absent. It matches only unmoved files (the stored hint is refreshed on every
+    write); a genuinely moved file is re-found by hash once it is re-hashed.
+    """
+    row = user_conn.execute(
+        "SELECT * FROM files_annotations "
+        "WHERE content_hash IS NOT NULL AND source_id = ? AND relative_path = ?",
+        (source_id, relative_path),
+    ).fetchone()
+    return _load(user_conn, row) if row is not None else None
+
+
 def _touch(user_conn: sqlite3.Connection, annotation_id: int) -> None:
     user_conn.execute(
         "UPDATE files_annotations SET updated_at = ? WHERE id = ?",

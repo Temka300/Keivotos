@@ -33,6 +33,35 @@ def _md5_of_file(path: Path) -> str | None:
     return digest.hexdigest()
 
 
+def md5_of_file(path: Path) -> str | None:
+    """Public content-MD5 of a file, or ``None`` if it cannot be read."""
+    return _md5_of_file(path)
+
+
+def ensure_index_hash(connection: sqlite3.Connection, path: Path) -> str | None:
+    """Return a file's content hash, computing it on demand (the annotate moment).
+
+    Reuses an already-indexed hash when present; otherwise reads the file once,
+    stores the digest back on its index row when that row exists (so duplicate
+    detection benefits too), and returns it. Returns ``None`` if unreadable.
+    """
+    row = connection.execute(
+        "SELECT id, content_hash FROM files_index WHERE path = ?", (str(path),)
+    ).fetchone()
+    if row is not None and row["content_hash"]:
+        return row["content_hash"]
+    digest = _md5_of_file(path)
+    if digest is None:
+        return None
+    if row is not None:
+        connection.execute(
+            "UPDATE files_index SET content_hash = ?, hashed_at = ? WHERE id = ?",
+            (digest, datetime.now(timezone.utc).isoformat(), row["id"]),
+        )
+        connection.commit()
+    return digest
+
+
 def hash_candidate_ids(connection: sqlite3.Connection, source_id: str | None = None) -> list[int]:
     """Ids of unhashed files whose size collides with another file's size.
 
