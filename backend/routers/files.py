@@ -527,6 +527,31 @@ def delete_info(
     return {"deleted": deleted}
 
 
+@router.get("/api/files/annotated", response_model=list[str])
+def annotated_paths(source_id: str = Query(...)) -> list[str]:
+    """Relative paths within a source that carry an origin note, for tile badges.
+
+    Folder notes match by their stored path; file notes are resolved from their
+    content hash back to the file's *current* index path, so a badge follows a
+    move once the file is re-hashed.
+    """
+    with get_user_db() as user_conn:
+        annotations.ensure_annotations_schema(user_conn)
+        hashes, folders = annotations.annotated_keys(user_conn)
+    paths = {rel for (sid, rel) in folders if sid == source_id}
+    if hashes:
+        hash_list = list(hashes)
+        placeholders = ",".join("?" for _ in hash_list)
+        with index.open_index(config.FILES_DB_PATH) as index_conn:
+            rows = index_conn.execute(
+                f"SELECT relative_path FROM files_index "
+                f"WHERE source_id = ? AND content_hash IN ({placeholders})",
+                [source_id, *hash_list],
+            ).fetchall()
+        paths.update(row["relative_path"] for row in rows)
+    return sorted(paths)
+
+
 @router.post("/api/files/open")
 def open_file(payload: SubjectRef) -> dict[str, str]:
     """Open the subject in the OS default application."""

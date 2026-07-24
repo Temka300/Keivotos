@@ -30,6 +30,7 @@
   let duplicateGroups: DuplicateGroup[] | null = null;
   let dedupBusy = false;
   let selectedEntry: FileNode | null = null;
+  let annotatedPaths = new Set<string>();
   const INFO_OPEN_KEY = persistentStorageKey('files-info-open');
   let infoPanelOpen = readInfoPanelOpen();
 
@@ -110,6 +111,18 @@
     );
   }
 
+  async function loadAnnotatedPaths() {
+    if (!selectedSourceId) {
+      annotatedPaths = new Set();
+      return;
+    }
+    try {
+      annotatedPaths = new Set(await filesApi.listAnnotated(selectedSourceId));
+    } catch {
+      // Badges are non-essential; a failure just leaves them off.
+    }
+  }
+
   function selectEntry(entry: FileNode): void {
     selectedEntry = entry;
     if (!infoPanelOpen) setInfoPanelOpen(true);
@@ -153,6 +166,7 @@
     } finally {
       loading = false;
     }
+    void loadAnnotatedPaths();
   }
 
   async function navigate(parent: string) {
@@ -524,7 +538,12 @@
               on:click={() => openEntry(entry)}
               title={entry.relative_path}
             >
-              <span class="text-3xl leading-none">{iconFor(entry)}</span>
+              <span class="relative text-3xl leading-none">
+                {iconFor(entry)}
+                {#if annotatedPaths.has(entry.relative_path)}
+                  <span class="absolute -right-1 -top-0.5 h-2 w-2 rounded-full bg-purple-400 ring-2 ring-[#0b0b10]" title="Has origin info"></span>
+                {/if}
+              </span>
               <span class="w-full truncate text-xs text-gray-200">{entry.name}</span>
               <span class="text-[10px] text-gray-500">
                 {entry.is_dir ? 'Folder' : formatSize(entry.size)}
@@ -538,7 +557,11 @@
   </section>
 
   {#if infoPanelOpen && subject}
-    <FileInfoPanel {subject} on:close={() => setInfoPanelOpen(false)} />
+    <FileInfoPanel
+      {subject}
+      on:close={() => setInfoPanelOpen(false)}
+      on:changed={loadAnnotatedPaths}
+    />
   {/if}
 </div>
 

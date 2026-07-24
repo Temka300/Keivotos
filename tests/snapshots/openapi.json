@@ -5883,6 +5883,50 @@
         "summary": "Toggle Favorite Pin"
       }
     },
+    "/api/files/annotated": {
+      "get": {
+        "description": "Relative paths within a source that carry an origin note, for tile badges.\n\nFolder notes match by their stored path; file notes are resolved from their\ncontent hash back to the file's *current* index path, so a badge follows a\nmove once the file is re-hashed.",
+        "operationId": "annotated_paths_api_files_annotated_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Annotated Paths Api Files Annotated Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Annotated Paths"
+      }
+    },
     "/api/files/browse": {
       "get": {
         "operationId": "browse_api_files_browse_get",

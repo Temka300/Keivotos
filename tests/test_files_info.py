@@ -154,6 +154,23 @@ class FilesInfoRouteTests(unittest.TestCase):
             )
         self.assertEqual(traversal.exception.status_code, 400)
 
+    def test_annotated_paths_lists_noted_files_and_folders(self) -> None:
+        files = self.files
+        files.put_info(
+            files.AnnotationRequest(
+                source_id=self._sid(), path="3D/iroha.zip", description="a file note", links=[]
+            )
+        )
+        files.put_info(
+            files.AnnotationRequest(
+                source_id=self._sid(), path="Piano Sheets", description="a folder note", links=[]
+            )
+        )
+        paths = files.annotated_paths(source_id=self._sid())
+        self.assertEqual(set(paths), {"3D/iroha.zip", "Piano Sheets"})
+        # A file's badge is resolved via its content hash in the index.
+        self.assertIn("3D/iroha.zip", paths)
+
     def test_open_and_reveal_are_guarded_and_dispatch(self) -> None:
         from fastapi import HTTPException
 

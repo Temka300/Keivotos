@@ -1,12 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { filesApi, type Annotation } from '../lib/filesApi';
+  import { filesApi, type Annotation, type AnnotationLink } from '../lib/filesApi';
   import { fileGlyph, linkKindLabel, previewMode, type Subject } from '../lib/filePreview';
 
   export let subject: Subject;
 
-  const dispatch = createEventDispatcher<{ close: void }>();
+  const dispatch = createEventDispatcher<{ close: void; changed: void }>();
   const TEXT_CAP = 1024 * 1024;
+  const LINK_KINDS = ['source', 'discussion', 'mirror', 'author', 'other'];
 
   let annotation: Annotation | null = null;
   let loading = false;
@@ -15,6 +16,11 @@
   let textPreview: string | null = null;
   let textTruncated = false;
   let loadedKey = '';
+
+  let editing = false;
+  let saving = false;
+  let draftDescription = '';
+  let draftLinks: AnnotationLink[] = [];
 
   $: key = `${subject.sourceId}::${subject.path}`;
   $: if (key !== loadedKey) {
@@ -34,6 +40,7 @@
     error = '';
     actionError = '';
     annotation = null;
+    editing = false;
     textPreview = null;
     textTruncated = false;
     try {
@@ -45,6 +52,71 @@
     }
     if (!current.isDir && previewMode(current.ext) === 'text') {
       await loadText(current);
+    }
+  }
+
+  function startEditing() {
+    draftDescription = annotation?.description ?? '';
+    draftLinks = (annotation?.links ?? []).map((link) => ({ ...link }));
+    if (draftLinks.length === 0) addLink();
+    actionError = '';
+    editing = true;
+  }
+
+  function cancelEditing() {
+    editing = false;
+    actionError = '';
+  }
+
+  function addLink() {
+    draftLinks = [...draftLinks, { url: '', label: '', kind: 'source' }];
+  }
+
+  function removeLink(index: number) {
+    draftLinks = draftLinks.filter((_, i) => i !== index);
+  }
+
+  async function save() {
+    const links = draftLinks
+      .map((link) => ({ url: link.url.trim(), label: link.label.trim(), kind: link.kind }))
+      .filter((link) => link.url !== '');
+    for (const link of links) {
+      if (!/^https?:\/\//i.test(link.url)) {
+        actionError = `Links must start with http:// or https:// — check: ${link.url}`;
+        return;
+      }
+    }
+    saving = true;
+    actionError = '';
+    try {
+      // Local-state-first: adopt the server's normalized note, then fan out.
+      annotation = await filesApi.saveInfo({
+        source_id: subject.sourceId,
+        path: subject.path,
+        description: draftDescription.trim(),
+        links,
+      });
+      editing = false;
+      dispatch('changed');
+    } catch (e) {
+      actionError = (e as Error).message;
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function deleteInfo() {
+    saving = true;
+    actionError = '';
+    try {
+      await filesApi.deleteInfo(subject.sourceId, subject.path);
+      annotation = null;
+      editing = false;
+      dispatch('changed');
+    } catch (e) {
+      actionError = (e as Error).message;
+    } finally {
+      saving = false;
     }
   }
 
@@ -198,11 +270,101 @@
 
     <!-- Origin -->
     <div class="border-t border-white/5 px-4 py-3">
-      <h3 class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Origin</h3>
+      <div class="mb-2 flex items-center justify-between">
+        <h3 class="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Origin</h3>
+        {#if !editing && !loading}
+          <button
+            type="button"
+            class="text-[11px] text-purple-300 hover:text-purple-200"
+            on:click={startEditing}
+          >{hasOrigin ? 'Edit' : 'Add info'}</button>
+        {/if}
+      </div>
+
       {#if loading}
         <p class="text-xs text-gray-600">Loading…</p>
       {:else if error}
         <p class="text-xs text-red-300">{error}</p>
+      {:else if editing}
+        <div class="space-y-3">
+          <div>
+            <label class="mb-1 block text-[10px] uppercase tracking-wide text-gray-500" for="origin-desc">Description</label>
+            <textarea
+              id="origin-desc"
+              rows="4"
+              bind:value={draftDescription}
+              placeholder="Where is this from? What is it?"
+              class="w-full resize-y rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1.5 text-xs text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+            ></textarea>
+          </div>
+
+          <div class="space-y-2">
+            <span class="block text-[10px] uppercase tracking-wide text-gray-500">Links</span>
+            {#each draftLinks as link, index (index)}
+              <div class="space-y-1 rounded-lg border border-white/5 bg-black/20 p-2">
+                <div class="flex gap-1.5">
+                  <select
+                    bind:value={link.kind}
+                    class="shrink-0 rounded border border-[#2a2a3a] bg-[#1e1e2e] px-1 py-1 text-[11px] text-gray-300 outline-none focus:border-purple-500"
+                  >
+                    {#each LINK_KINDS as kind}
+                      <option value={kind}>{linkKindLabel(kind)}</option>
+                    {/each}
+                  </select>
+                  <input
+                    bind:value={link.label}
+                    placeholder="Label (optional)"
+                    class="min-w-0 flex-1 rounded border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1 text-[11px] text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+                  />
+                  <button
+                    type="button"
+                    class="shrink-0 rounded px-1.5 text-gray-500 hover:text-red-300"
+                    title="Remove link"
+                    aria-label="Remove link"
+                    on:click={() => removeLink(index)}
+                  >✕</button>
+                </div>
+                <input
+                  bind:value={link.url}
+                  placeholder="https://…"
+                  class="w-full rounded border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1 text-[11px] text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+                />
+              </div>
+            {/each}
+            <button
+              type="button"
+              class="text-[11px] text-purple-300 hover:text-purple-200"
+              on:click={addLink}
+            >＋ Add link</button>
+          </div>
+
+          {#if actionError}
+            <p class="text-[11px] text-red-300">{actionError}</p>
+          {/if}
+
+          <div class="flex items-center gap-2 pt-1">
+            <button
+              type="button"
+              class="rounded-lg bg-purple-500/30 px-3 py-1.5 text-xs font-medium text-purple-100 transition-colors hover:bg-purple-500/40 disabled:opacity-40"
+              on:click={save}
+              disabled={saving}
+            >{saving ? 'Saving…' : 'Save'}</button>
+            <button
+              type="button"
+              class="rounded-lg border border-[#2a2a3a] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white disabled:opacity-40"
+              on:click={cancelEditing}
+              disabled={saving}
+            >Cancel</button>
+            {#if hasOrigin}
+              <button
+                type="button"
+                class="ml-auto text-[11px] text-red-300/80 hover:text-red-300 disabled:opacity-40"
+                on:click={deleteInfo}
+                disabled={saving}
+              >Remove all</button>
+            {/if}
+          </div>
+        </div>
       {:else if hasOrigin && annotation}
         {#if annotation.description}
           <p class="mb-3 whitespace-pre-wrap break-words text-xs leading-relaxed text-gray-300">{annotation.description}</p>

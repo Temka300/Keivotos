@@ -157,6 +157,8 @@ export const filesApi = {
     url.searchParams.set('path', relativePath);
     return url.toString();
   },
+  listAnnotated: (sourceId: string) =>
+    getJson<string[]>('/annotated', { source_id: sourceId }),
   getInfo: (sourceId: string, path: string) =>
     getJson<Annotation | null>('/info', { source_id: sourceId, path }),
   saveInfo: (request: AnnotationRequest) =>
