@@ -2,11 +2,17 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sqlite3
+import urllib.error
+import urllib.parse
+import urllib.request
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from automation import automation_status, set_automation_enabled
 from backup_bundle import (
     backup_configuration,
@@ -16,9 +22,40 @@ from backup_bundle import (
     restore_backup_bundle,
     update_backup_configuration,
 )
-from config import get_backup_config, public_storage_config, save_config
-from core import *  # shared query, database, and media helpers
+from config import (
+    DATA_DB_PATH,
+    DATA_ROOT,
+    GALLERY_DL_DIR,
+    METADATA_DIR,
+    SCAN_FOLDERS,
+    get_backup_config,
+    public_storage_config,
+    save_config,
+)
+from credentials import (
+    clear_credentials,
+    credential_environment,
+    credentials_status,
+    effective_credentials,
+    save_credentials,
+)
+from database import get_data_db
 from local_recovery import create_local_recovery_checkpoint, local_recovery_status
+from modules.danbooru.client import USER_AGENT
+from modules.danbooru.folder_registry import registered_folder_rows
+from modules.danbooru.tools import (
+    _cancel_tool,
+    _extra_root_args,
+    _import_discover_command,
+    _import_enrich_command,
+    _import_finalize_command,
+    _launch_tool,
+    _sync_command,
+    _sync_scan_paths,
+    _tool_base_command,
+    exclusive_tool_operation,
+    tool_task_snapshot,
+)
 from models import (
     AutomationStatus,
     AutomationUpdate,
@@ -28,6 +65,14 @@ from models import (
     ImportRunRequest,
     ThumbnailCacheLimitUpdate,
     ToolStatusInfo,
+)
+from models import (
+    BackfillToolRequest,
+    DanbooruCredentialsUpdate,
+    DanbooruCredentialStatus,
+    ToolFolderInfo,
+    ToolInfo,
+    ToolRunResult,
 )
 from thumbnails import cleanup_thumbnail_cache, clear_thumbnail_cache, prune_thumbnail_cache, thumbnail_cache_status, thumbnail_cache_token
 from tag_history import record_removed_tags_from_archive

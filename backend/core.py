@@ -139,6 +139,62 @@ from services.tag_names import (
     normalize_user_tag_category,
 )
 from services.value_helpers import int_or_none, unique_ints
+from modules.danbooru.search import (
+    BARE_FILENAME_RE,
+    DATE_FILTER_PREFIXES,
+    DIMENSION_FILTER_PREFIXES,
+    DIMENSION_TOKEN_RE,
+    FILENAME_FILTER_PREFIXES,
+    HEART_SPAM_FILTER_PREFIXES,
+    NUMERIC_FILTERS,
+    POST_ID_FILTER_PREFIXES,
+    SHAPE_FILTER_PREFIXES,
+    SHAPE_PRESET_ALIASES,
+    USER_TAG_CATEGORY,
+    _add_date_filter,
+    _add_numeric,
+    _date_filter_value,
+    _filename_like_value,
+    add_dimension_filter,
+    add_filename_filter,
+    add_post_id_filter,
+    add_shape_filter,
+    add_where_clause,
+    build_where,
+    combined_image_search,
+    normalize_dimension_tokens,
+    normalize_search_phrases,
+    normalize_shape_term,
+    parse_search_terms,
+    search_has_post_id_filter,
+    search_requires_user_db,
+    shape_filter_clause,
+)
+from modules.danbooru.folder_registry import registered_folder_rows
+from modules.danbooru.tools import (
+    PROJECT_ROOT,
+    SCRIPT_PATH,
+    TOOL_WORKING_DIRECTORY,
+    _active_tool_id,
+    _cancel_tool,
+    _extra_root_args,
+    _import_discover_command,
+    _import_enrich_command,
+    _import_finalize_command,
+    _launch_tool,
+    _running_processes,
+    _running_tasks,
+    _start_folder_import,
+    _start_sync_run,
+    _sync_command,
+    _sync_scan_paths,
+    _tool_base_command,
+    _tool_operation_lock,
+    _tool_state_lock,
+    active_tool_id,
+    exclusive_tool_operation,
+    tool_task_snapshot,
+)
 from modules.danbooru.artist_profiles import (
     ARTIST_PROFILE_ALLOWED_IMAGE_HOSTS,
     ARTIST_PROFILE_MAX_BYTES,
@@ -314,15 +370,7 @@ def file_range_iter(path: Path, start: int, end: int):
             yield chunk
 
 
-def registered_folder_rows() -> list[dict[str, Any]]:
-    with get_user_db() as uconn:
-        return uconn.execute(
-            """SELECT name AS registration_key,
-                      COALESCE(NULLIF(display_name, ''), name) AS name,
-                      path, root_id
-                 FROM registered_folders"""
-        ).fetchall()
-
+# registered_folder_rows moved to modules/danbooru/folder_registry.py.
 
 def library_roots() -> list[LibraryRoot]:
     return [
@@ -1089,406 +1137,7 @@ async def add_server_timing_header(request: Request, call_next):
 # ---------------------------------------------------------------------------
 # Search / filter helpers (adapted from danbooru_gallery_dl.py)
 # ---------------------------------------------------------------------------
-
-# TAG_CATEGORIES moved to services/tag_names.py; imported at the top.
-USER_TAG_CATEGORY = "user"
-NUMERIC_FILTERS = {"width", "w", "height", "h", "pixels", "mp", "ratio", "score"}
-HEART_SPAM_FILTER_PREFIXES = {"heart", "hearts", "heart_spam", "heartspam"}
-DIMENSION_FILTER_PREFIXES = {"res", "resolution", "dim", "dims", "dimension", "dimensions", "size"}
-POST_ID_FILTER_PREFIXES = {"id", "post", "post_id", "danbooru", "danbooru_id", "danbooru_post_id"}
-FILENAME_FILTER_PREFIXES = {"filename", "file", "name"}
-SHAPE_FILTER_PREFIXES = {"shape", "aspect", "aspect_ratio", "preset"}
-SHAPE_PRESET_ALIASES = {
-    "vertical": "vertical",
-    "portrait": "vertical",
-    "horizontal": "horizontal",
-    "landscape": "horizontal",
-    "wide": "horizontal",
-    "phone": "phone",
-    "phones": "phone",
-    "phone_sized": "phone",
-    "phone_size": "phone",
-    "phone_wallpaper": "phone",
-    "phone_wallpapers": "phone",
-    "mobile": "phone",
-    "mobile_sized": "phone",
-    "mobile_wallpaper": "phone",
-    "banner": "banner",
-    "banners": "banner",
-    "banner_sized": "banner",
-    "banner_size": "banner",
-    "wide_banner": "banner",
-    "header": "banner",
-    "headers": "banner",
-    "logo": "logo",
-    "logos": "logo",
-    "logo_sized": "logo",
-    "logo_size": "logo",
-    "icon": "logo",
-    "icons": "logo",
-    "avatar": "logo",
-    "avatars": "logo",
-    "square": "logo",
-}
-DIMENSION_TOKEN_RE = re.compile(r"(\d+)\s*[xX\u00d7]\s*(\d+)")
-BARE_FILENAME_RE = re.compile(r".+\.(?:jpe?g|png|webp|gif|jfif|mp4|webm)$", re.IGNORECASE)
-DATE_FILTER_PREFIXES = {
-    "created": "uploaded",
-    "created_at": "uploaded",
-    "created_date": "uploaded",
-    "uploaded": "uploaded",
-    "uploaded_at": "uploaded",
-    "upload_date": "uploaded",
-    "downloaded": "downloaded",
-    "downloaded_at": "downloaded",
-    "downloaded_date": "downloaded",
-}
-
-
-def normalize_dimension_tokens(raw: str) -> str:
-    return DIMENSION_TOKEN_RE.sub(r"\1x\2", raw)
-
-
-def normalize_shape_term(value: str) -> str:
-    return re.sub(r"[\s-]+", "_", value.strip().strip("\"'").lower())
-
-
-def normalize_search_phrases(raw: str) -> str:
-    value = normalize_dimension_tokens(raw)
-    value = re.sub(r"\b(phone|mobile|banner|logo)\s+(sized?|wallpapers?)\b", r"\1_\2", value, flags=re.IGNORECASE)
-    value = re.sub(r"\bwide\s+banner\b", "wide_banner", value, flags=re.IGNORECASE)
-    return value
-
-
-def add_dimension_filter(filters: dict[str, Any], value: str) -> bool:
-    match = re.fullmatch(r"(>=|<=|>|<|=)?(\d+)x(\d+)", normalize_dimension_tokens(value).strip())
-    if not match:
-        return False
-
-    op = match.group(1) or "="
-    filters.setdefault("width", [])
-    filters["width"].append(f"{op}{match.group(2)}")
-    filters.setdefault("height", [])
-    filters["height"].append(f"{op}{match.group(3)}")
-    return True
-
-
-def add_shape_filter(filters: dict[str, Any], value: str, negate: bool = False) -> bool:
-    preset = SHAPE_PRESET_ALIASES.get(normalize_shape_term(value))
-    if not preset:
-        return False
-
-    key = "exclude_shape" if negate else "shape"
-    filters.setdefault(key, [])
-    if preset not in filters[key]:
-        filters[key].append(preset)
-    return True
-
-
-def add_post_id_filter(filters: dict[str, Any], value: str, negate: bool = False) -> bool:
-    match = re.fullmatch(r"#?(\d+)", value.strip())
-    if not match:
-        return False
-
-    key = "exclude_danbooru_post_id" if negate else "danbooru_post_id"
-    filters.setdefault(key, [])
-    filters[key].append(int(match.group(1)))
-    return True
-
-
-def add_filename_filter(filters: dict[str, Any], value: str, negate: bool = False) -> bool:
-    filename = value.strip().strip("\"'").strip()
-    if not filename:
-        return False
-    key = "exclude_filename" if negate else "filename"
-    filters.setdefault(key, [])
-    filters[key].append(filename)
-    return True
-
-
-def parse_search_terms(
-    raw: str,
-) -> tuple[list[tuple[str | None, str]], list[tuple[str | None, str]], dict[str, Any]]:
-    include_tags: list[tuple[str | None, str]] = []
-    exclude_tags: list[tuple[str | None, str]] = []
-    filters: dict[str, Any] = {}
-
-    for term in normalize_search_phrases(raw).split():
-        term = term.strip().strip("\"'")
-        if not term:
-            continue
-        negate = term.startswith("-")
-        if negate:
-            term = term[1:]
-        lowered = term.lower()
-
-        if add_post_id_filter(filters, term, negate):
-            continue
-
-        if add_dimension_filter(filters, term):
-            continue
-
-        if add_shape_filter(filters, term, negate):
-            continue
-
-        if BARE_FILENAME_RE.fullmatch(term) and add_filename_filter(filters, term, negate):
-            continue
-
-        if ":" in term:
-            prefix, value = term.split(":", 1)
-            prefix = prefix.lower()
-            if prefix in POST_ID_FILTER_PREFIXES and add_post_id_filter(filters, value, negate):
-                continue
-            if prefix in SHAPE_FILTER_PREFIXES and add_shape_filter(filters, value, negate):
-                continue
-            if prefix in FILENAME_FILTER_PREFIXES and add_filename_filter(filters, value, negate):
-                continue
-            if prefix == "rating":
-                filters["rating"] = value
-                continue
-            if prefix == "ext":
-                filters["ext"] = value.lower().lstrip(".")
-                continue
-            if prefix == "folder":
-                filters["folder"] = value
-                continue
-            if prefix == "orientation":
-                filters["orientation"] = value.lower()
-                continue
-            if prefix in DATE_FILTER_PREFIXES:
-                filters.setdefault(DATE_FILTER_PREFIXES[prefix], [])
-                filters[DATE_FILTER_PREFIXES[prefix]].append(value)
-                continue
-            if prefix in DIMENSION_FILTER_PREFIXES and add_dimension_filter(filters, value):
-                continue
-            if prefix in HEART_SPAM_FILTER_PREFIXES:
-                filters.setdefault("heart_spam", [])
-                filters["heart_spam"].append(value)
-                continue
-            if prefix in NUMERIC_FILTERS:
-                filters.setdefault(prefix, [])
-                filters[prefix].append(value)
-                continue
-            if prefix == USER_TAG_CATEGORY:
-                (exclude_tags if negate else include_tags).append((USER_TAG_CATEGORY, normalize_user_tag(value)))
-                continue
-            if prefix in TAG_CATEGORIES:
-                (exclude_tags if negate else include_tags).append((prefix, normalize_search_tag(value)))
-                continue
-
-        (exclude_tags if negate else include_tags).append((None, lowered))
-
-    return include_tags, exclude_tags, filters
-
-
-def search_has_post_id_filter(raw: str) -> bool:
-    if not raw.strip():
-        return False
-    _, _, filters = parse_search_terms(raw.strip())
-    return bool(filters.get("danbooru_post_id"))
-
-
-def combined_image_search(
-    q: str,
-    folder: str | None = None,
-    rating: str | None = None,
-) -> tuple[str, bool, str | None]:
-    search = q.strip()
-    exact_post_id = search_has_post_id_filter(search)
-    selected_root_id: str | None = None
-    if not exact_post_id:
-        if folder:
-            if folder.startswith("@root/"):
-                selected_root_id = folder[len("@root/"):]
-            else:
-                search += f" folder:{folder}"
-        if rating:
-            search += f" rating:{rating}"
-    return search, exact_post_id, selected_root_id
-
-
-def search_requires_user_db(
-    include_tags: list[tuple[str | None, str]],
-    exclude_tags: list[tuple[str | None, str]],
-    filters: dict[str, Any],
-) -> bool:
-    return bool(include_tags or exclude_tags or filters.get("heart_spam"))
-
-
-def _add_numeric(where: list[str], params: list[Any], expr: str, raw: str) -> None:
-    m = re.fullmatch(r"\s*(>=|<=|>|<|=)?\s*(\d+(?:\.\d+)?)\s*", raw.strip("\"'"))
-    if not m:
-        return
-    op = m.group(1) or ">="
-    where.append(f"{expr} {op} ?")
-    params.append(float(m.group(2)))
-
-
-def _date_filter_value(raw: str) -> str:
-    lowered = raw.strip().lower()
-    if lowered == "today":
-        return date.today().isoformat()
-    if lowered == "yesterday":
-        return (date.today() - timedelta(days=1)).isoformat()
-    return raw.strip()
-
-
-def _filename_like_value(value: str) -> str:
-    escaped = value.casefold().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
-
-
-def _add_date_filter(where: list[str], params: list[Any], expr: str, raw: str) -> None:
-    value = raw.strip().strip("\"'")
-    if not value:
-        return
-    if ".." in value:
-        start, end = value.split("..", 1)
-        if start.strip():
-            where.append(f"date({expr}) >= date(?)")
-            params.append(_date_filter_value(start))
-        if end.strip():
-            where.append(f"date({expr}) <= date(?)")
-            params.append(_date_filter_value(end))
-        return
-
-    m = re.fullmatch(r"\s*(>=|<=|>|<|=)?\s*(.+?)\s*", value)
-    if not m:
-        return
-    op = m.group(1) or "="
-    where.append(f"date({expr}) {op} date(?)")
-    params.append(_date_filter_value(m.group(2)))
-
-
-def shape_filter_clause(preset: str) -> str | None:
-    ratio_expr = "(CAST(p.width AS REAL)/NULLIF(p.height, 0))"
-    if preset == "vertical":
-        return "p.height > p.width"
-    if preset == "horizontal":
-        return "p.width > p.height"
-    if preset == "phone":
-        return f"p.height > p.width AND p.height >= 1280 AND {ratio_expr} BETWEEN 0.45 AND 0.75"
-    if preset == "banner":
-        return f"p.width >= 1200 AND {ratio_expr} >= 1.8"
-    if preset == "logo":
-        return f"{ratio_expr} BETWEEN 0.75 AND 1.35"
-    return None
-
-
-def build_where(
-    include_tags: list[tuple[str | None, str]],
-    exclude_tags: list[tuple[str | None, str]],
-    filters: dict[str, Any],
-) -> tuple[str, list[Any]]:
-    where: list[str] = []
-    params: list[Any] = []
-
-    def tag_condition(cat: str | None, name: str) -> str:
-        clauses: list[str] = []
-        if cat != USER_TAG_CATEGORY:
-            parts = ["EXISTS (SELECT 1 FROM post_tags pt JOIN tags t ON t.id=pt.tag_id WHERE pt.post_id=p.id AND t.name=?"]
-            params.append(name)
-            if cat:
-                parts.append("AND t.category=?")
-                params.append(cat)
-            parts.append(")")
-            clauses.append(" ".join(parts))
-        if cat is None or cat == USER_TAG_CATEGORY or cat in TAG_CATEGORIES:
-            user_parts = [
-                f"EXISTS (SELECT 1 FROM userdb.user_image_tags uit WHERE {user_file_match('uit')} AND uit.tag_name=?"
-            ]
-            params.append(name)
-            if cat in TAG_CATEGORIES:
-                user_parts.append("AND uit.tag_category=?")
-                params.append(cat)
-            user_parts.append(")")
-            clauses.append(" ".join(user_parts))
-        return "(" + " OR ".join(clauses) + ")"
-
-    for cat, name in include_tags:
-        where.append(tag_condition(cat, name))
-
-    for cat, name in exclude_tags:
-        where.append(f"NOT {tag_condition(cat, name)}")
-
-    if ratings := normalize_rating_values(str(filters.get("rating") or "")):
-        placeholders = ",".join("?" for _ in ratings)
-        where.append(f"COALESCE(NULLIF(p.rating, ''), 'u') IN ({placeholders})")
-        params.extend(ratings)
-    if e := filters.get("ext"):
-        where.append("f.ext=?")
-        params.append(e)
-    if fo := filters.get("folder"):
-        where.append("f.folder LIKE ?")
-        params.append(f"%{fo}%")
-    if root_id := filters.get("root_id"):
-        where.append("f.root_id=?")
-        params.append(root_id)
-    for filename in filters.get("filename", []):
-        where.append("LOWER(f.name) LIKE ? ESCAPE '\\'")
-        params.append(_filename_like_value(str(filename)))
-    for filename in filters.get("exclude_filename", []):
-        where.append("LOWER(f.name) NOT LIKE ? ESCAPE '\\'")
-        params.append(_filename_like_value(str(filename)))
-
-    if ids := filters.get("danbooru_post_id"):
-        placeholders = ",".join("?" for _ in ids)
-        where.append(f"p.danbooru_post_id IN ({placeholders})")
-        params.extend(ids)
-    if excluded_ids := filters.get("exclude_danbooru_post_id"):
-        placeholders = ",".join("?" for _ in excluded_ids)
-        where.append(f"(p.danbooru_post_id IS NULL OR p.danbooru_post_id NOT IN ({placeholders}))")
-        params.extend(excluded_ids)
-
-    for v in filters.get("uploaded", []):
-        _add_date_filter(where, params, "p.created_at", v)
-    for v in filters.get("downloaded", []):
-        _add_date_filter(where, params, "f.downloaded_at", v)
-
-    for v in filters.get("width", []) or filters.get("w", []):
-        _add_numeric(where, params, "p.width", v)
-    for v in filters.get("height", []) or filters.get("h", []):
-        _add_numeric(where, params, "p.height", v)
-    for v in filters.get("pixels", []) or filters.get("mp", []):
-        _add_numeric(where, params, "(p.width*p.height)", v)
-    for v in filters.get("ratio", []):
-        _add_numeric(where, params, "(CAST(p.width AS REAL)/NULLIF(p.height,0))", v)
-    for v in filters.get("score", []):
-        _add_numeric(where, params, "p.score", v)
-    for v in filters.get("heart_spam", []):
-        _add_numeric(
-            where,
-            params,
-            f"COALESCE((SELECT MAX(iv_heart.heart_spam_count) FROM userdb.image_views iv_heart WHERE {user_file_match('iv_heart')}), 0)",
-            v,
-        )
-
-    orient = filters.get("orientation")
-    if orient in ("portrait", "vertical"):
-        where.append("p.height > p.width")
-    elif orient in ("landscape", "horizontal"):
-        where.append("p.width > p.height")
-    elif orient == "square":
-        where.append("p.width = p.height")
-
-    for preset in filters.get("shape", []):
-        clause = shape_filter_clause(preset)
-        if clause:
-            where.append(f"({clause})")
-    for preset in filters.get("exclude_shape", []):
-        clause = shape_filter_clause(preset)
-        if clause:
-            where.append(f"NOT ({clause})")
-
-    sql = f"WHERE {' AND '.join(where)}" if where else ""
-    return sql, params
-
-
-def add_where_clause(where_sql: str, clause: str) -> str:
-    if where_sql:
-        return f"{where_sql} AND {clause}"
-    return f"WHERE {clause}"
-
+# Moved to modules/danbooru/search.py; imported at the top.
 
 # ---------------------------------------------------------------------------
 # Image endpoints
@@ -1661,328 +1310,10 @@ from services.challenges import *  # compatibility facade for daily challenge se
 # ---------------------------------------------------------------------------
 # Tools (run danbooru_gallery_dl.py commands)
 # ---------------------------------------------------------------------------
-
-SCRIPT_PATH = Path(__file__).resolve().parent.parent / "scripts" / "danbooru_gallery_dl.py"
-PROJECT_ROOT = DATA_ROOT
-TOOL_WORKING_DIRECTORY = SCRIPT_PATH.parent.parent
-
-_running_tasks: dict[str, dict[str, Any]] = {}
-_running_processes: dict[str, subprocess.Popen[str]] = {}
-_tool_state_lock = threading.RLock()
-_tool_operation_lock = threading.RLock()
-_active_tool_id: str | None = None
+# Moved to modules/danbooru/tools.py; imported at the top.
 
 
-def active_tool_id() -> str | None:
-    """Return the live tool owner while holding the shared state lock."""
-    with _tool_state_lock:
-        return _active_tool_id
-
-
-def tool_task_snapshot(tool_id: str) -> dict[str, Any] | None:
-    """Return request-safe task state while the worker may still be updating it."""
-    with _tool_state_lock:
-        task = _running_tasks.get(tool_id)
-        return copy.deepcopy(task) if task is not None else None
-
-
-@contextmanager
-def exclusive_tool_operation(operation_name: str):
-    """Prevent a restore/backup window from racing a newly launched tool."""
-    with _tool_operation_lock:
-        with _tool_state_lock:
-            if _active_tool_id:
-                raise RuntimeError(f"Wait for {_active_tool_id} to finish before {operation_name}")
-        yield
-
-
-def _tool_base_command() -> list[str]:
-    launcher = (
-        [sys.executable, "--pipeline"]
-        if getattr(sys, "frozen", False)
-        else [sys.executable, "-Bu", str(SCRIPT_PATH)]
-    )
-    return [
-        *launcher,
-        "--root", str(PROJECT_ROOT),
-        "--gallery-dl-dir", str(GALLERY_DL_DIR),
-        "--sidecar-dir", str(SIDECAR_DIR),
-        "--user-db", str(USER_DB_PATH),
-    ]
-
-
-def _sync_scan_paths() -> list[str]:
-    """Every folder a full sync should cover: scan folders plus registered folders."""
-    paths: list[str] = []
-    seen: set[str] = set()
-
-    def add(path: Path) -> None:
-        if not path.is_dir():
-            return
-        key = os.path.normcase(str(path))
-        if key in seen:
-            return
-        seen.add(key)
-        paths.append(str(path))
-
-    for name in SCAN_FOLDERS:
-        add(DATA_ROOT / name)
-    if not paths:
-        add(DATA_ROOT)
-    for row in registered_folder_rows():
-        if row["path"]:
-            add(Path(row["path"]))
-        else:
-            add(DATA_ROOT / row["name"])
-    return paths
-
-
-def _extra_root_args() -> list[str]:
-    """--extra-root flags for registered folders living outside the data root."""
-    args: list[str] = []
-    resolved_root = DATA_ROOT.resolve(strict=False)
-    for row in registered_folder_rows():
-        if not row["path"]:
-            continue
-        resolved = Path(row["path"]).resolve(strict=False)
-        try:
-            resolved.relative_to(resolved_root)
-        except ValueError:
-            args.extend(["--extra-root", str(resolved)])
-    return args
-
-
-def _sync_command(paths: list[str]) -> list[str]:
-    return [
-        *_tool_base_command(),
-        "sync", "--output", str(DATA_DB_PATH), "--no-raw-json",
-        *paths,
-    ]
-
-
-def _import_discover_command(paths: list[str]) -> list[str]:
-    return [
-        *_tool_base_command(),
-        "import-discover", "--output", str(DATA_DB_PATH),
-        *paths,
-    ]
-
-
-def _import_enrich_command(paths: list[str]) -> list[str]:
-    return [
-        *_tool_base_command(),
-        "import-enrich", "--output", str(DATA_DB_PATH), "--workers", "3",
-        *paths,
-    ]
-
-
-def _import_finalize_command(paths: list[str]) -> list[str]:
-    return [
-        *_tool_base_command(),
-        "import-finalize", "--output", str(DATA_DB_PATH), "--no-raw-json",
-        *paths,
-    ]
-
-
-def _start_sync_run(paths: list[str]) -> dict[str, Any]:
-    return _launch_tool("sync", [_sync_command(paths)])
-
-
-def _start_folder_import(paths: list[str]) -> dict[str, Any]:
-    return _start_sync_run(paths)
-
-
-
-
-
-
-
-
-
-
-def _launch_tool(
-    tool_id: str,
-    tool_commands: list[list[str]],
-    *,
-    environment: dict[str, str] | None = None,
-    stage_names: list[str] | None = None,
-    on_success: Callable[[], str | None] | None = None,
-) -> dict[str, Any]:
-    global _active_tool_id
-    with _tool_operation_lock:
-        with _tool_state_lock:
-            if _active_tool_id:
-                status = "already_running" if _active_tool_id == tool_id else "busy"
-                return {"status": status, "active_tool_id": _active_tool_id}
-            _active_tool_id = tool_id
-            _running_tasks[tool_id] = {
-                "status": "running",
-                "output": "",
-                "progress": 0,
-                "total": 0,
-                "stage": (stage_names or [None])[0],
-                "stage_index": 1,
-                "stage_total": len(tool_commands),
-                "cancellable": True,
-                "current_file": None,
-                "current_file_path": None,
-                "current_file_status": None,
-                "file_results": [],
-                "result_counts": {"matched": 0, "no_match": 0, "error": 0},
-            }
-
-    def _run():
-        global _active_tool_id
-        try:
-            # Keep only the console tail exposed to Settings. A 40k-file import
-            # must not retain every subprocess line for the lifetime of the job.
-            lines: deque[str] = deque(maxlen=100)
-            for step_index, cmd in enumerate(tool_commands, 1):
-                with _tool_state_lock:
-                    task = _running_tasks[tool_id]
-                    if task["status"] == "cancelling":
-                        task["status"] = "cancelled"
-                        return
-                    stage = (
-                        stage_names[step_index - 1]
-                        if stage_names and step_index <= len(stage_names)
-                        else f"Step {step_index} of {len(tool_commands)}"
-                    )
-                    task["stage_index"] = step_index
-                    task["stage"] = stage
-                    if len(tool_commands) > 1:
-                        lines.append(f"{stage}\n")
-                        task.update(
-                            {
-                                "output": "".join(lines),
-                                "progress": 0,
-                                "total": 0,
-                                "current_file": None,
-                                "current_file_path": None,
-                                "current_file_status": None,
-                            }
-                        )
-                proc = subprocess.Popen(
-                    cmd,
-                    cwd=str(TOOL_WORKING_DIRECTORY),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    env=environment or credential_environment(),
-                )
-                with _tool_state_lock:
-                    _running_processes[tool_id] = proc
-                assert proc.stdout is not None
-                while True:
-                    line = proc.stdout.readline()
-                    if not line:
-                        break
-                    if line.startswith("STAGE:"):
-                        with _tool_state_lock:
-                            _running_tasks[tool_id]["stage"] = line.strip().split(":", 1)[1].replace("_", " ").title()
-                        continue
-                    if line.startswith("PROGRESS:"):
-                        parts = line.strip().split(":", 1)[1].split("/")
-                        if len(parts) == 2:
-                            try:
-                                progress = int(parts[0])
-                                total = int(parts[1])
-                            except ValueError:
-                                pass
-                            else:
-                                with _tool_state_lock:
-                                    _running_tasks[tool_id].update({"progress": progress, "total": total})
-                        continue
-                    if line.startswith("FILE_STATUS:"):
-                        try:
-                            event = json.loads(line.split(":", 1)[1])
-                        except (json.JSONDecodeError, TypeError):
-                            continue
-                        filename = str(event.get("filename") or Path(str(event.get("path") or "")).name)
-                        status = str(event.get("status") or "working")
-                        with _tool_state_lock:
-                            task = _running_tasks[tool_id]
-                            task["current_file"] = filename or None
-                            task["current_file_path"] = str(event.get("path") or "") or None
-                            task["current_file_status"] = status
-                            if status in {"matched", "no_match", "error"}:
-                                result = {
-                                    "filename": filename,
-                                    "path": str(event.get("path") or ""),
-                                    "status": status,
-                                    "detail": str(event.get("detail") or ""),
-                                    "index": event.get("index"),
-                                    "total": event.get("total"),
-                                }
-                                results = task.setdefault("file_results", [])
-                                results.append(result)
-                                if len(results) > 250:
-                                    del results[:-250]
-                                counts = task.setdefault("result_counts", {})
-                                counts[status] = int(counts.get(status, 0)) + 1
-                        continue
-                    lines.append(line)
-                    with _tool_state_lock:
-                        _running_tasks[tool_id]["output"] = "".join(lines)
-                proc.stdout.close()
-                proc.wait()
-                with _tool_state_lock:
-                    _running_processes.pop(tool_id, None)
-                    task = _running_tasks[tool_id]
-                    if task["status"] == "cancelling":
-                        task.update({"status": "cancelled", "cancellable": False})
-                        return
-                    if proc.returncode != 0:
-                        task.update({"status": "error", "output": "".join(lines), "cancellable": False})
-                        return
-            if on_success is not None:
-                post_step_output = on_success()
-                if post_step_output:
-                    lines.append(post_step_output.rstrip() + "\n")
-            if any("sync" in command for command in tool_commands):
-                try:
-                    checkpoint = create_local_recovery_checkpoint("sync")
-                    lines.append(checkpoint["message"].rstrip() + "\n")
-                except Exception as exc:  # noqa: BLE001 - sync itself succeeded.
-                    lines.append(f"Local recovery checkpoint failed: {exc}\n")
-            clear_home_caches()
-            with _tool_state_lock:
-                _running_tasks[tool_id].update(
-                    {"status": "done", "output": "".join(lines), "cancellable": False}
-                )
-        except Exception as exc:
-            with _tool_state_lock:
-                task = _running_tasks.setdefault(tool_id, {})
-                task.update({"status": "error", "output": str(exc), "cancellable": False})
-        finally:
-            with _tool_state_lock:
-                _running_processes.pop(tool_id, None)
-                if _active_tool_id == tool_id:
-                    _active_tool_id = None
-
-    threading.Thread(target=_run, daemon=True).start()
-    return {"status": "started"}
-
-
-def _cancel_tool(tool_id: str) -> dict[str, Any]:
-    with _tool_state_lock:
-        task = _running_tasks.get(tool_id)
-        if not task or task.get("status") not in {"running", "cancelling"}:
-            return {"status": task.get("status", "idle") if task else "idle"}
-        task["status"] = "cancelling"
-        task["cancellable"] = False
-        process = _running_processes.get(tool_id)
-    if process and process.poll() is None:
-        if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-            )
-        else:
-            process.terminate()
-    return {"status": "cancelling"}
-
+# Every name this facade holds — including the private helpers extracted modules
+# re-export — stays available to routers that still use `from core import *`.
 __all__ = [name for name in globals() if not name.startswith("__")]
+
