@@ -200,5 +200,103 @@ class MetadataBackupBundleTests(unittest.TestCase):
         self.assertTrue(restore_finished.is_set())
 
 
+class AttachmentBackupTests(unittest.TestCase):
+    """The Files-base attachment byte-store backup/restore (the durability goal)."""
+
+    def _prepare(self):
+        from files_base import annotations, attachment_store
+
+        self.temp = ROOT / "tests" / ".tmp-attach-backup"
+        shutil.rmtree(self.temp, ignore_errors=True)
+        self.metadata = self.temp / "metadata"
+        self.destination = self.temp / "backups"
+        self.store_root = self.temp / "library"  # the user's "first Files folder"
+        self.user_db = self.metadata / "user.sqlite"
+        self.metadata.mkdir(parents=True)
+        self.store_root.mkdir(parents=True)
+
+        self.data = b"a-real-screenshot-bytes"
+        self.hash = attachment_store.md5_bytes(self.data)
+        attachment_store.write_attachment(self.store_root, self.hash, "png", self.data)
+        self.stored_path = attachment_store.attachment_path(self.store_root, self.hash, "png")
+
+        connection = sqlite3.connect(self.user_db)
+        connection.row_factory = sqlite3.Row
+        annotations.ensure_annotations_schema(connection)
+        note = annotations.upsert_annotation(
+            connection, subject_kind="file", content_hash="deadbeef", source_id="s", relative_path="model.zip"
+        )
+        annotations.add_attachment(
+            connection, note.id, content_hash=self.hash, file_name="shot.png",
+            media_type="image/png", size=len(self.data), stored_root=str(self.store_root),
+        )
+        connection.close()
+
+        self.originals = {
+            "METADATA_DIR": backup_bundle.METADATA_DIR,
+            "USER_DB_PATH": backup_bundle.USER_DB_PATH,
+            "DATA_DB_PATH": backup_bundle.DATA_DB_PATH,
+            "SIDECAR_DIR": backup_bundle.SIDECAR_DIR,
+            "COMPONENTS": backup_bundle.COMPONENTS,
+            "get_backup_config": backup_bundle.get_backup_config,
+        }
+        backup_bundle.METADATA_DIR = self.metadata
+        backup_bundle.USER_DB_PATH = self.user_db
+        backup_bundle.DATA_DB_PATH = self.metadata / "danbooru.sqlite"
+        backup_bundle.SIDECAR_DIR = self.metadata / "sidecars"
+        backup_bundle.COMPONENTS = {
+            "user_database": ("databases/user.sqlite", self.user_db),
+            "library_database": ("databases/danbooru.sqlite", backup_bundle.DATA_DB_PATH),
+            "sidecars": ("sidecars", backup_bundle.SIDECAR_DIR),
+            "sidecar_history": ("sidecar_archive", self.metadata / "sidecar_archive"),
+            "artist_profile_archive": ("artist_profile_archive", self.metadata / "artist_profile_archive"),
+        }
+        backup_bundle.get_backup_config = lambda: {
+            "destination": str(self.destination),
+            "components": {"user_database": True, "file_attachments": True},
+        }
+        backup_bundle._estimate_cache.clear()
+
+    def _teardown(self) -> None:
+        for name, value in getattr(self, "originals", {}).items():
+            setattr(backup_bundle, name, value)
+        backup_bundle._estimate_cache.clear()
+        shutil.rmtree(self.temp, ignore_errors=True)
+
+    def test_attachment_bytes_backup_survive_folder_loss_and_restore(self) -> None:
+        self._prepare()
+        try:
+            estimate = backup_bundle.backup_estimate()
+            self.assertEqual(estimate["details"]["file_attachments"]["files"], 1)
+
+            created = backup_bundle.create_backup_bundle()
+            with zipfile.ZipFile(created["path"], "r") as archive:
+                names = archive.namelist()
+            self.assertIn(f"file_attachments/{self.hash}.png", names)
+
+            # Simulate the user's folder backup being gone: the bytes vanish.
+            self.stored_path.unlink()
+            self.assertFalse(self.stored_path.exists())
+
+            backup_bundle.restore_backup_bundle(created["name"])
+
+            # The Keivotos bundle brought the screenshot back to its folder.
+            self.assertTrue(self.stored_path.is_file())
+            self.assertEqual(self.stored_path.read_bytes(), self.data)
+        finally:
+            self._teardown()
+
+    def test_restore_is_create_only_and_never_overwrites(self) -> None:
+        self._prepare()
+        try:
+            created = backup_bundle.create_backup_bundle()
+            # A newer/edited byte already sits at the target; restore must not clobber it.
+            self.stored_path.write_bytes(b"user-current-version")
+            backup_bundle.restore_backup_bundle(created["name"])
+            self.assertEqual(self.stored_path.read_bytes(), b"user-current-version")
+        finally:
+            self._teardown()
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from database import exclusive_database_access
+from files_base import attachment_store
 
 from config import (
     ARTIST_PROFILE_ARCHIVE_DIR,
@@ -32,6 +33,8 @@ BACKUP_FORMAT = "danbooru-metadata-backup"
 BACKUP_SUFFIX = ".keivotosbk"
 LEGACY_BACKUP_SUFFIXES = (".whbackup",)
 SUPPORTED_BACKUP_SUFFIXES = (BACKUP_SUFFIX, *LEGACY_BACKUP_SUFFIXES)
+# Tree-shaped components: one source path each, backed up/restored by _write_tree
+# and the rollback machinery (which requires them under METADATA_DIR/suite).
 COMPONENTS = {
     "user_database": ("databases/user.sqlite", USER_DB_PATH),
     "library_database": ("databases/danbooru.sqlite", DATA_DB_PATH),
@@ -39,6 +42,12 @@ COMPONENTS = {
     "sidecar_history": ("sidecar_archive", METADATA_DIR / "sidecar_archive"),
     "artist_profile_archive": ("artist_profile_archive", ARTIST_PROFILE_ARCHIVE_DIR),
 }
+# Files-base attachment bytes live inside the user's own folder (outside the
+# metadata tree), keyed by content hash. They are handled specially: bundled by
+# hash on backup, and re-materialized additively (create-only) after the atomic
+# restore, so the fragile metadata-tree rollback logic is never involved.
+ATTACHMENTS_COMPONENT = "file_attachments"
+ATTACHMENTS_ARCHIVE_ROOT = "file_attachments"
 _bundle_lock = threading.Lock()
 _estimate_cache_lock = threading.Lock()
 _estimate_cache: dict[tuple[str, str], tuple[float, int, int]] = {}
@@ -105,11 +114,92 @@ def _format_bytes(value: int) -> str:
     return f"{value} B"
 
 
+def _component_keys() -> tuple[str, ...]:
+    return (*COMPONENTS.keys(), ATTACHMENTS_COMPONENT)
+
+
 def normalized_components(value: dict[str, Any] | None = None) -> dict[str, bool]:
+    keys = _component_keys()
     configured = dict(get_backup_config()["components"])
     if value:
-        configured.update({key: bool(item) for key, item in value.items() if key in COMPONENTS})
-    return {key: bool(configured.get(key, False)) for key in COMPONENTS}
+        configured.update({key: bool(item) for key, item in value.items() if key in keys})
+    return {key: bool(configured.get(key, False)) for key in keys}
+
+
+def _attachment_arcname(content_hash: str, ext: str) -> str:
+    suffix = ("." + ext) if ext else ""
+    return f"{content_hash}{suffix}"
+
+
+def _attachment_records(user_db_path: Path) -> dict[str, Path]:
+    """Map ``<hash><ext>`` -> the on-disk attachment file, de-duplicated by hash.
+
+    Reads the attachment rows from ``user_db_path`` read-only and resolves each
+    to its byte-store location. Rows whose bytes are missing (e.g. an unplugged
+    folder) are skipped. Returns empty for an older user DB without the table.
+    """
+    path = Path(user_db_path)
+    if not path.exists():
+        return {}
+    connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        try:
+            rows = connection.execute(
+                "SELECT content_hash, file_name, media_type, stored_root "
+                "FROM files_annotation_attachments WHERE stored_root IS NOT NULL"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return {}
+    finally:
+        connection.close()
+    records: dict[str, Path] = {}
+    for row in rows:
+        ext = attachment_store.extension_for(row["file_name"], row["media_type"])
+        arcname = _attachment_arcname(row["content_hash"], ext)
+        if arcname in records:
+            continue
+        source = attachment_store.attachment_path(row["stored_root"], row["content_hash"], ext)
+        if source.is_file():
+            records[arcname] = source
+    return records
+
+
+def _restore_attachments(bundle_dir: Path, user_db_path: Path) -> None:
+    """Re-materialize bundled attachment bytes to their recorded store location.
+
+    Additive and create-only: it never overwrites an existing file and never
+    deletes anything, so it cannot corrupt the just-completed restore. Each file
+    is attempted independently; a missing target drive skips only that file.
+    """
+    if not bundle_dir.is_dir():
+        return
+    path = Path(user_db_path)
+    if not path.exists():
+        return
+    connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        try:
+            rows = connection.execute(
+                "SELECT content_hash, file_name, media_type, stored_root "
+                "FROM files_annotation_attachments WHERE stored_root IS NOT NULL"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return
+    finally:
+        connection.close()
+    for row in rows:
+        ext = attachment_store.extension_for(row["file_name"], row["media_type"])
+        bundled = bundle_dir / _attachment_arcname(row["content_hash"], ext)
+        target = attachment_store.attachment_path(row["stored_root"], row["content_hash"], ext)
+        if not bundled.is_file() or target.exists():
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(bundled, target)
+        except OSError:
+            continue  # e.g. the stored folder's drive is not present on restore.
 
 
 def backup_estimate(components: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -127,6 +217,26 @@ def backup_estimate(components: dict[str, Any] | None = None) -> dict[str, Any]:
         }
         total_files += count
         total_bytes += size
+
+    # Attachments are sized directly (not a single tree), so the estimate scan
+    # count for the tree components stays unchanged.
+    attachment_records = _attachment_records(USER_DB_PATH) if selected[ATTACHMENTS_COMPONENT] else {}
+    attachment_bytes = 0
+    for source in attachment_records.values():
+        try:
+            attachment_bytes += source.stat().st_size
+        except OSError:
+            continue
+    details[ATTACHMENTS_COMPONENT] = {
+        "enabled": selected[ATTACHMENTS_COMPONENT],
+        "exists": bool(attachment_records),
+        "files": len(attachment_records),
+        "bytes": attachment_bytes,
+        "display_size": _format_bytes(attachment_bytes),
+    }
+    total_files += len(attachment_records)
+    total_bytes += attachment_bytes
+
     # JSON/text/SQLite data usually compresses well; this is deliberately
     # conservative and the completed bundle reports its exact size.
     estimated_compressed = int(total_bytes * 0.45)
@@ -273,6 +383,9 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
                         continue
                     actual_source = staged.get(key, source)
                     _write_tree(archive, actual_source, archive_name)
+                if selected[ATTACHMENTS_COMPONENT]:
+                    for arcname, source in _attachment_records(USER_DB_PATH).items():
+                        archive.write(source, f"{ATTACHMENTS_ARCHIVE_ROOT}/{arcname}")
                 sanitized_config = runtime_config_snapshot()
                 archive.writestr("config.json", json.dumps(sanitized_config, indent=2, ensure_ascii=False))
                 manifest["files"] = [
@@ -430,6 +543,11 @@ def restore_backup_bundle(name: str) -> dict[str, Any]:
                         if previous is not None and previous.exists():
                             previous.replace(live)
                     raise
+
+            if components[ATTACHMENTS_COMPONENT]:
+                # Additive, create-only, and outside the atomic block: it reads the
+                # now-restored user DB and can never corrupt the completed restore.
+                _restore_attachments(staging / ATTACHMENTS_ARCHIVE_ROOT, USER_DB_PATH)
 
         return {
             "status": "restored",

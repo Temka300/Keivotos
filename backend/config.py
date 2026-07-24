@@ -184,6 +184,7 @@ _defaults: dict[str, Any] = {
         "sidecars": True,
         "sidecar_history": False,
         "artist_profile_archive": False,
+        "file_attachments": True,
     },
     "thumbnail_cache_limit_gb": 10,
 }

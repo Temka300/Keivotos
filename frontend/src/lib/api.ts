@@ -836,6 +836,7 @@ export interface BackupComponents {
   sidecars: boolean;
   sidecar_history: boolean;
   artist_profile_archive: boolean;
+  file_attachments: boolean;
 }
 
 export interface BackupEstimateDetail {

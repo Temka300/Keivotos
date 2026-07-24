@@ -13,6 +13,7 @@
     sidecars: true,
     sidecar_history: false,
     artist_profile_archive: false,
+    file_attachments: true,
   };
   let estimate: BackupEstimate | null = null;
   let selectedBackup = '';
@@ -30,6 +31,7 @@
     { key: 'sidecars', label: 'Current sidecars', description: 'Durable metadata used to rebuild the library database.', recommended: true },
     { key: 'sidecar_history', label: 'Sidecar history', description: 'Archived metadata versions from manual refreshes.' },
     { key: 'artist_profile_archive', label: 'Artist profile archive', description: 'Locally preserved artist avatars and banners.' },
+    { key: 'file_attachments', label: 'File attachments', description: 'Screenshots and clips you attached to files, so they survive a lost source folder.', recommended: true },
   ];
 
   function applyConfiguration(value: BackupConfiguration) {
