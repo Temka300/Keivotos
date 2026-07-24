@@ -450,7 +450,7 @@ class ReleaseLayoutTests(unittest.TestCase):
         self.assertIn("export const MODULE_NAME = 'Danbooru';", module_identity)
         self.assertIn("export const MODULE_DISPLAY_NAME = MODULE_NAME.replace('-', ' ');", module_identity)
         self.assertIn("export const DEFAULT_PROFILE_NAME = SUITE_NAME;", frontend_product)
-        self.assertIn("export const VERSION = '1.1.0';", frontend_product)
+        self.assertIn(f"export const VERSION = '{VERSION}';", frontend_product)
         self.assertIn("export const STORAGE_PREFIX = 'keivotos:';", frontend_product)
         self.assertIn("const LEGACY_STORAGE_PREFIXES = ['danbooru:'];", frontend_product)
         self.assertIn("'active-module',", frontend_product)
