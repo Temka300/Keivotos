@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { filesApi, type DuplicateGroup, type FileNode, type SourceInfo } from '../lib/filesApi';
-  import { SUITE_NAME } from '../lib/product';
+  import { fileGlyph, type Subject } from '../lib/filePreview';
+  import { persistentStorageKey, SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/stores';
   import {
     displayNameForPath,
@@ -11,6 +12,7 @@
   } from '../lib/suiteApi';
   import { moduleUi } from '../modules/registry';
   import AppDrawer from './AppDrawer.svelte';
+  import FileInfoPanel from './FileInfoPanel.svelte';
   import ManageFoldersDialog from './ManageFoldersDialog.svelte';
 
   let sources: SourceInfo[] = [];
@@ -27,6 +29,9 @@
   let showAppMenu = false;
   let duplicateGroups: DuplicateGroup[] | null = null;
   let dedupBusy = false;
+  let selectedEntry: FileNode | null = null;
+  const INFO_OPEN_KEY = persistentStorageKey('files-info-open');
+  let infoPanelOpen = readInfoPanelOpen();
 
   $: selectedSource = sources.find((s) => s.source_id === selectedSourceId) ?? null;
   $: sidebarSources = sources.filter((source) => source.visible);
@@ -38,8 +43,77 @@
     : [];
   $: crumbs = currentParent === '' ? [] : currentParent.split('/');
   $: displayed = searchResults ?? entries;
+  $: subject = buildSubject(selectedEntry, selectedSource, currentParent, sources);
 
   onMount(loadSources);
+
+  function readInfoPanelOpen(): boolean {
+    try {
+      return localStorage.getItem(INFO_OPEN_KEY) !== 'false';
+    } catch {
+      return true;
+    }
+  }
+
+  function setInfoPanelOpen(value: boolean): void {
+    infoPanelOpen = value;
+    try {
+      localStorage.setItem(INFO_OPEN_KEY, String(value));
+    } catch {
+      // Storage can be unavailable; the panel still toggles for this session.
+    }
+  }
+
+  function absolutePathFor(sourcePath: string, relativePath: string): string {
+    return normalizedPath(relativePath ? `${sourcePath}/${relativePath}` : sourcePath);
+  }
+
+  function buildSubject(
+    entry: FileNode | null,
+    source: SourceInfo | null,
+    parent: string,
+    allSources: SourceInfo[],
+  ): Subject | null {
+    if (entry) {
+      const owner = allSources.find((s) => s.source_id === entry.source_id) ?? source;
+      const base = owner?.path ?? source?.path ?? '';
+      return {
+        sourceId: entry.source_id,
+        path: entry.relative_path,
+        name: entry.name,
+        isDir: entry.is_dir,
+        ext: entry.ext,
+        size: entry.size,
+        mtime: entry.mtime,
+        absolutePath: absolutePathFor(base, entry.relative_path),
+      };
+    }
+    if (!source) return null;
+    const folderName = parent === '' ? source.display_name : parent.split('/').pop() ?? source.display_name;
+    return {
+      sourceId: source.source_id,
+      path: parent,
+      name: folderName,
+      isDir: true,
+      ext: null,
+      size: null,
+      mtime: null,
+      absolutePath: absolutePathFor(source.path, parent),
+    };
+  }
+
+  function isSelected(entry: FileNode): boolean {
+    return (
+      selectedEntry !== null &&
+      selectedEntry.source_id === entry.source_id &&
+      selectedEntry.relative_path === entry.relative_path
+    );
+  }
+
+  function selectEntry(entry: FileNode): void {
+    selectedEntry = entry;
+    if (!infoPanelOpen) setInfoPanelOpen(true);
+  }
 
   async function loadSources() {
     error = '';
@@ -58,6 +132,7 @@
   async function selectSource(sourceId: string, parent = '') {
     selectedSourceId = sourceId;
     currentParent = parent;
+    selectedEntry = null;
     clearSearch();
     duplicateGroups = null;
     await loadEntries();
@@ -82,6 +157,7 @@
 
   async function navigate(parent: string) {
     currentParent = parent;
+    selectedEntry = null;
     clearSearch();
     duplicateGroups = null;
     await loadEntries();
@@ -98,6 +174,7 @@
         if (progress.remaining === 0) break;
       }
       duplicateGroups = await filesApi.listDuplicates();
+      selectedEntry = null;
       clearSearch();
     } catch (e) {
       error = (e as Error).message;
@@ -107,7 +184,10 @@
   }
 
   async function openEntry(entry: FileNode) {
-    if (!entry.is_dir) return;
+    if (!entry.is_dir) {
+      selectEntry(entry);
+      return;
+    }
     const owner = sources.find((source) => source.source_id === entry.source_id);
     if (owner && owner.source_id !== selectedSourceId) {
       await selectSource(owner.source_id, entry.relative_path);
@@ -125,7 +205,6 @@
       }
     }
     await navigate(entry.relative_path);
-    // File preview / open-in-app is deferred to V1.1.x (see contract §10.1).
   }
 
   async function foldersSaved(event: CustomEvent<FolderBatchResult>) {
@@ -225,13 +304,7 @@
   }
 
   function iconFor(entry: FileNode): string {
-    if (entry.is_dir) return '📁';
-    const ext = (entry.ext ?? '').toLowerCase();
-    if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'avif'].includes(ext)) return '🖼️';
-    if (['mp4', 'webm', 'mkv', 'mov', 'avi'].includes(ext)) return '🎞️';
-    if (['mp3', 'flac', 'wav', 'ogg', 'mid', 'midi'].includes(ext)) return '🎵';
-    if (['pdf', 'doc', 'docx', 'txt', 'md', 'xlsx', 'csv', 'epub'].includes(ext)) return '📄';
-    return '📦';
+    return fileGlyph(entry);
   }
 
   function formatSize(bytes: number | null): string {
@@ -321,6 +394,18 @@
       disabled={dedupBusy || sources.length === 0}
       title="Find files with identical content across every source"
     >{dedupBusy ? 'Hashing…' : duplicateGroups !== null ? 'Close duplicates' : 'Duplicates'}</button>
+    <button
+      type="button"
+      class="grid h-9 w-9 place-items-center rounded-lg border transition-colors disabled:opacity-40 {infoPanelOpen ? 'border-purple-500/50 bg-purple-500/25 text-purple-100' : 'border-[#2a2a3a] bg-[#1e1e2e] text-gray-300 hover:border-purple-500/50 hover:text-white'}"
+      on:click={() => setInfoPanelOpen(!infoPanelOpen)}
+      disabled={!selectedSource}
+      title="{infoPanelOpen ? 'Hide' : 'Show'} the info panel"
+      aria-label="Toggle info panel"
+    >
+      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8h.01M11 12h1v4h1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </button>
   </div>
 </header>
 
@@ -435,7 +520,7 @@
           {#each displayed as entry (entry.source_id + '/' + entry.relative_path)}
             <button
               type="button"
-              class="flex flex-col items-center gap-1 p-3 rounded-lg bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 text-center transition-colors"
+              class="flex flex-col items-center gap-1 p-3 rounded-lg text-center transition-colors {isSelected(entry) ? 'border border-purple-500/60 bg-purple-500/15' : 'border border-white/5 bg-white/[0.03] hover:bg-white/[0.07]'}"
               on:click={() => openEntry(entry)}
               title={entry.relative_path}
             >
@@ -451,6 +536,10 @@
       {/if}
     </div>
   </section>
+
+  {#if infoPanelOpen && subject}
+    <FileInfoPanel {subject} on:close={() => setInfoPanelOpen(false)} />
+  {/if}
 </div>
 
 {#if showAppMenu}
