@@ -129,8 +129,27 @@ from services.query_helpers import (
     user_file_lookup_sql,
     user_file_match,
 )
-# Extracted leaf services. Imported here so `from core import *` keeps supplying
-# these names to routers that have not been migrated to explicit imports yet.
+# Extracted services and module code. Imported here so `from core import *` keeps
+# supplying these names to routers that have not been migrated to explicit
+# imports yet; each name is the same object it always was.
+from services.tag_names import (
+    TAG_CATEGORIES,
+    normalize_search_tag,
+    normalize_user_tag,
+    normalize_user_tag_category,
+)
+from services.value_helpers import int_or_none, unique_ints
+from modules.danbooru.client import (
+    DANBOORU_POST_URL_PREFIX,
+    USER_AGENT,
+    danbooru_json,
+    normalize_danbooru_post_payload,
+)
+from modules.danbooru.relations import (
+    related_info_for_id,
+    related_info_from_row,
+    related_infos_for_danbooru_ids,
+)
 from services.collections import (
     collection_preview_items_from_rows,
     load_collection_info,
@@ -144,21 +163,11 @@ from services.user_library import (
     _normalize_tag_name,
 )
 
-# The scraper identifies as the module, falling back to the suite when the
-# Danbooru descriptor is absent from the registry.
-USER_AGENT = (
-    DANBOORU_MODULE.user_agent
-    if DANBOORU_MODULE is not None
-    else f"{DISPLAY_NAME}/{VERSION}"
-)
-
-
 logger = logging.getLogger(__name__)
 
 
 COPY_SUFFIX_RE = re.compile(r"\s+\(\d+\)(?=\.[^.]+$)")
 STREAM_CHUNK_SIZE = 1024 * 1024
-DANBOORU_POST_URL_PREFIX = "https://danbooru.donmai.us/posts/"
 TAG_WIKI_CACHE_MAX_AGE = timedelta(days=30)
 DTEXT_HEADING_RE = re.compile(r"^h[1-6]\.\s+(.+?)\s*$")
 DTEXT_TOKEN_RE = re.compile(r"\[\[([^\]|]+)(?:\|([^\]]*))?\]\]|!post\s+#?(\d+):?", re.IGNORECASE)
@@ -599,15 +608,6 @@ def get_post_file_identity(post_id: int) -> dict[str, Any]:
     return row
 
 
-def normalize_user_tag(value: str) -> str:
-    return re.sub(r"\s+", "_", value.strip().strip("\"'").lower())
-
-
-def normalize_user_tag_category(value: str | None) -> str:
-    category = (value or "general").strip().lower()
-    return category if category in TAG_CATEGORIES else "general"
-
-
 def favorite_meta_by_file(file_ids: Iterable[int] | None = None) -> dict[int, dict[str, str | None]]:
     requested_ids = sorted({int(file_id) for file_id in file_ids}) if file_ids is not None else None
     if requested_ids == []:
@@ -658,30 +658,10 @@ def image_summary_from_row(
     )
 
 
-def int_or_none(value: Any) -> int | None:
-    if value is None or value == "":
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def relation_post_id(value: Any) -> int | None:
     if isinstance(value, dict):
         return int_or_none(value.get("id"))
     return int_or_none(value)
-
-
-def unique_ints(values: list[int | None]) -> list[int]:
-    result: list[int] = []
-    seen: set[int] = set()
-    for value in values:
-        if value is None or value in seen:
-            continue
-        result.append(value)
-        seen.add(value)
-    return result
 
 
 def child_ids_from_value(value: Any) -> list[int]:
@@ -712,83 +692,8 @@ def relation_ids_from_raw_json(raw_json: str | None) -> tuple[int | None, list[i
     return parent_id, child_ids, has_metadata
 
 
-def related_info_from_row(row: dict[str, Any]) -> RelatedImageInfo:
-    return RelatedImageInfo(
-        danbooru_post_id=row["danbooru_post_id"],
-        local_post_id=row["local_post_id"],
-        file_id=row["file_id"],
-        thumbnail_token=row["local_md5"] or thumbnail_cache_token(row["path"]),
-        filename=row["filename"],
-        folder=row["folder"],
-        ext=row["ext"],
-        width=row["width"],
-        height=row["height"],
-        score=row["score"],
-        rating=row["rating"],
-        post_url=row["post_url"] or f"{DANBOORU_POST_URL_PREFIX}{row['danbooru_post_id']}",
-        created_at=row["created_at"],
-    )
-
-
-def related_infos_for_danbooru_ids(
-    conn,
-    danbooru_ids: list[int],
-) -> dict[int, RelatedImageInfo]:
-    ids = unique_ints(danbooru_ids)
-    if not ids:
-        return {}
-    placeholders = ",".join("?" for _ in ids)
-    rows = conn.execute(
-        f"""SELECT p.id as local_post_id, p.danbooru_post_id, p.post_url,
-                  p.created_at, p.width, p.height, p.score, p.rating,
-                  f.id as file_id, f.name as filename, f.folder, f.ext, f.path, f.local_md5
-           FROM posts p
-           JOIN files f ON f.id = p.file_id
-           WHERE p.danbooru_post_id IN ({placeholders})""",
-        ids,
-    ).fetchall()
-    return {row["danbooru_post_id"]: related_info_from_row(row) for row in rows}
-
-
-def related_info_for_id(
-    danbooru_post_id: int,
-    local_infos: dict[int, RelatedImageInfo],
-) -> RelatedImageInfo:
-    local_info = local_infos.get(danbooru_post_id)
-    if local_info:
-        return local_info
-    return RelatedImageInfo(
-        danbooru_post_id=danbooru_post_id,
-        post_url=f"{DANBOORU_POST_URL_PREFIX}{danbooru_post_id}",
-    )
-
-
-def danbooru_json(endpoint: str, params: dict[str, str | int], timeout: float = 20.0) -> Any:
-    query = urllib.parse.urlencode(params)
-    url = f"https://danbooru.donmai.us{endpoint}"
-    if query:
-        url = f"{url}?{query}"
-    headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
-    username, api_key, _source = effective_credentials()
-    if username and api_key:
-        token = base64.b64encode(f"{username}:{api_key}".encode("utf-8")).decode("ascii")
-        headers["Authorization"] = f"Basic {token}"
-    request = urllib.request.Request(url, headers=headers)
-    try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            raise HTTPException(404, "Danbooru metadata not found") from exc
-        raise HTTPException(502, f"Failed to fetch Danbooru metadata: {exc}") from exc
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
-        raise HTTPException(502, f"Failed to fetch Danbooru metadata: {exc}") from exc
-
-
-def normalize_danbooru_post_payload(data: Any) -> dict[str, Any]:
-    if isinstance(data, dict) and isinstance(data.get("post"), dict):
-        return data["post"]
-    return data if isinstance(data, dict) else {}
+# Moved to modules/danbooru/relations.py and modules/danbooru/client.py;
+# imported at the top and re-exported here.
 
 
 def danbooru_child_search(parent_id: int) -> list[dict[str, Any]]:
@@ -1133,7 +1038,7 @@ async def add_server_timing_header(request: Request, call_next):
 # Search / filter helpers (adapted from danbooru_gallery_dl.py)
 # ---------------------------------------------------------------------------
 
-TAG_CATEGORIES = {"artist", "character", "copyright", "general", "meta", "unknown"}
+# TAG_CATEGORIES moved to services/tag_names.py; imported at the top.
 USER_TAG_CATEGORY = "user"
 NUMERIC_FILTERS = {"width", "w", "height", "h", "pixels", "mp", "ratio", "score"}
 HEART_SPAM_FILTER_PREFIXES = {"heart", "hearts", "heart_spam", "heartspam"}
@@ -1186,10 +1091,6 @@ DATE_FILTER_PREFIXES = {
     "downloaded_at": "downloaded",
     "downloaded_date": "downloaded",
 }
-
-
-def normalize_search_tag(value: str) -> str:
-    return re.sub(r"\s+", "_", value.strip().strip("\"'").lower())
 
 
 def normalize_dimension_tokens(raw: str) -> str:
