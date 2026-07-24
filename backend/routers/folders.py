@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import os
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from config import (
     ARTIST_PROFILE_ARCHIVE_DIR,
     CODE_ROOT,
+    DATA_ROOT,
     DEFAULT_BACKUP_DIR,
     GALLERY_DL_DIR,
     LOG_DIR,
@@ -14,9 +20,15 @@ from config import (
     SIDECAR_DIR,
     SUITE_HOME,
     THUMB_DIR,
+    USER_DB_PATH,
 )
-from core import *  # shared query, database, and media helpers
+from database import get_data_db, get_user_db
+from modules.danbooru.folder_registry import registered_folder_rows
+from modules.danbooru.paths import registered_folder_path
+from modules.danbooru.tools import _start_folder_import, active_tool_id
 from models import (
+    FolderCreate,
+    FolderInfo,
     FolderRelocate,
     FolderRelocateResult,
     FolderRemovalPreview,
