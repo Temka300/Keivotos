@@ -9,6 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from config import get_automation_config, save_config
+from database import get_data_db
+from modules.danbooru.tools import (
+    _launch_tool,
+    _sync_command,
+    _sync_scan_paths,
+    exclusive_tool_operation,
+)
 from thumbnails import SUPPORTED_IMAGES, SUPPORTED_VIDEOS
 
 MEDIA_EXTENSIONS = SUPPORTED_IMAGES | SUPPORTED_VIDEOS
@@ -92,16 +99,12 @@ def run_automation_tick() -> dict:
     if not config["enabled"] or not config["enabled_at"]:
         return automation_status()
 
-    # Imported lazily to avoid a module cycle: core owns the shared tool lock
-    # and imports automation_loop for its FastAPI lifespan.
-    import core
-
     try:
-        operation = core.exclusive_tool_operation("running an automatic library check")
+        operation = exclusive_tool_operation("running an automatic library check")
         with operation:
-            roots = core._sync_scan_paths()
+            roots = _sync_scan_paths()
             manifest: dict[str, tuple[int | None, int | None]] = {}
-            with core.get_data_db() as connection:
+            with get_data_db() as connection:
                 try:
                     for row in connection.execute("SELECT media_path, media_mtime, media_size FROM sync_manifest"):
                         manifest[os.path.normcase(str(row["media_path"]))] = (row["media_mtime"], row["media_size"])
@@ -115,9 +118,9 @@ def run_automation_tick() -> dict:
                 _candidate_count = len(candidates)
 
             if candidates:
-                core._launch_tool(
+                _launch_tool(
                     "sync",
-                    [core._sync_command(roots)],
+                    [_sync_command(roots)],
                     stage_names=["Sync new and changed files"],
                 )
     except RuntimeError:

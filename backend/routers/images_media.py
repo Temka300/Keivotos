@@ -1,7 +1,99 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from core import *  # shared query, database, and media helpers
+import shutil
+import sys
+
+from config import (
+    DATA_ROOT,
+    USER_DB_PATH,
+)
+from database import (
+    get_data_db,
+    get_user_db,
+)
+from fastapi import (
+    HTTPException,
+    Query,
+    Request,
+)
+from fastapi.responses import (
+    FileResponse,
+    Response,
+    StreamingResponse,
+)
+from models import (
+    CollectionInfo,
+    ImageBatchMove,
+    ImageDetail,
+    ImageMoveFolder,
+    PaginatedImages,
+    TimelapseFrames,
+    UserImageTagCreate,
+)
+from modules.danbooru.duplicate_review import (
+    duplicate_filename_key,
+    duplicate_filter_sql,
+    duplicate_group_expr,
+)
+from modules.danbooru.folder_registry import library_roots
+from modules.danbooru.image_activity import (
+    image_view_for_file,
+    record_heart_spam,
+    record_image_view,
+    user_image_tags_for_file,
+)
+from modules.danbooru.image_queries import (
+    favorite_meta_by_file,
+    get_post_file_identity,
+    image_summary_from_row,
+)
+from modules.danbooru.media_files import (
+    file_range_iter,
+    media_placeholder,
+    parse_range_header,
+)
+from modules.danbooru.paths import (
+    central_sidecar_path,
+    ensure_managed_path,
+    folder_target,
+    move_payload_text,
+    rewrite_json_sidecar,
+    sidecar_candidates,
+)
+from modules.danbooru.relations import (
+    build_image_relations,
+    refresh_relation_cache,
+)
+from modules.danbooru.search import (
+    add_where_clause,
+    build_where,
+    combined_image_search,
+    parse_search_terms,
+    search_requires_user_db,
+)
+from pathlib import Path
+from services.query_helpers import (
+    user_file_lookup_params,
+    user_file_lookup_sql,
+    user_file_match,
+)
+from services.tag_names import (
+    normalize_search_tag,
+    normalize_user_tag,
+    normalize_user_tag_category,
+)
+from services.value_helpers import int_or_none
+from storage_layout import (
+    SIDECAR_SUFFIXES,
+    identity_for_media,
+)
+from thumbnails import (
+    DEFAULT_THUMB_SIZE,
+    ensure_thumbnail,
+    thumbnail_cache_token,
+)
+from typing import Any
 from tag_history import removed_tags_for_file
 
 router = APIRouter()

@@ -1,7 +1,26 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from core import *  # shared query, database, and media helpers
+from config import DATA_DB_PATH
+from database import get_user_db
+from fastapi import HTTPException
+from models import (
+    CollectionCreate,
+    CollectionInfo,
+    CollectionItemsUpdate,
+    CollectionMembershipRequest,
+    CollectionUpdate,
+)
+from modules.danbooru.image_queries import get_file_identity
+from services.collections import (
+    collection_preview_items_from_rows,
+    load_collection_info,
+)
+from services.query_helpers import (
+    user_file_lookup_params,
+    user_file_lookup_sql,
+    user_file_match,
+)
 
 router = APIRouter()
 

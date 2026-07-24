@@ -1,7 +1,63 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from core import *  # shared query, database, and media helpers
+import hashlib
+import random
+import re
+
+from config import USER_DB_PATH
+from database import get_data_db
+from datetime import date
+from fastapi import (
+    HTTPException,
+    Query,
+)
+from models import (
+    DailyChallenge,
+    DailyChallengeOption,
+    HomeImageRail,
+    HomeImageRailItem,
+    HomeImageRails,
+    HomeTagInfo,
+    HomeTags,
+    PopularityPeriod,
+    TagInfo,
+)
+from modules.danbooru.search import (
+    add_where_clause,
+    build_where,
+    combined_image_search,
+    parse_search_terms,
+    search_requires_user_db,
+)
+from services.challenges import (
+    challenge_loose_key,
+    daily_challenge_candidate,
+    daily_challenge_clues,
+    daily_challenge_distractors,
+    daily_challenge_image_from_row,
+    daily_challenge_seed,
+    daily_challenge_tag_count,
+)
+from services.home import (
+    HOME_IMAGE_RAILS_CACHE,
+    HOME_IMAGE_RAIL_CATEGORIES,
+    HOME_TAGS_CACHE,
+    HOME_TAG_CATEGORIES,
+    home_cache_get,
+    home_cache_set,
+    home_cover_rows_for_tags,
+    home_image_rail_item,
+    home_rating_clause,
+    home_tag_infos_with_covers,
+    top_tag_rows,
+)
+from services.query_helpers import (
+    RATING_QUERY_PATTERN,
+    user_file_match,
+)
+from services.tag_names import normalize_search_tag
+from typing import Any
 
 router = APIRouter()
 

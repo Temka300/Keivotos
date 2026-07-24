@@ -58,18 +58,9 @@ class AutomationCandidateTests(unittest.TestCase):
             def execute(self, _query):
                 return []
 
-        fake_core = types.SimpleNamespace(
-            active_tool_id=lambda: None,
-            exclusive_tool_operation=lambda _name: nullcontext(),
-            _sync_scan_paths=lambda: [self.temp],
-            get_data_db=lambda: EmptyDatabase(),
-            _sync_command=lambda roots: ["sync", *map(str, roots)],
-            _launch_tool=lambda tool_id, commands, stage_names=None: launched.update(
-                tool_id=tool_id,
-                commands=commands,
-                stage_names=stage_names,
-            ),
-        )
+        # The tool helpers are imported by `automation` from their owning module,
+        # so they are patched on `automation` itself. This used to inject a fake
+        # `core` into sys.modules, which only worked while the import was lazy.
         with patch.object(
             automation,
             "get_automation_config",
@@ -78,7 +69,21 @@ class AutomationCandidateTests(unittest.TestCase):
             automation,
             "find_changed_media_candidates",
             return_value=[self.temp / "new.png"],
-        ), patch.dict(sys.modules, {"core": fake_core}):
+        ), patch.object(
+            automation, "exclusive_tool_operation", lambda _name: nullcontext()
+        ), patch.object(
+            automation, "_sync_scan_paths", lambda: [self.temp]
+        ), patch.object(
+            automation, "get_data_db", lambda: EmptyDatabase()
+        ), patch.object(
+            automation, "_sync_command", lambda roots: ["sync", *map(str, roots)]
+        ), patch.object(
+            automation,
+            "_launch_tool",
+            lambda tool_id, commands, stage_names=None: launched.update(
+                tool_id=tool_id, commands=commands, stage_names=stage_names
+            ),
+        ):
             automation.run_automation_tick()
 
         self.assertEqual(launched["tool_id"], "sync")

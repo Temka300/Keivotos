@@ -1,7 +1,37 @@
 from __future__ import annotations
 
 from fastapi import APIRouter
-from core import *  # shared query, database, and media helpers
+import json
+
+from config import USER_DB_PATH
+from database import (
+    get_data_db,
+    get_user_db,
+)
+from fastapi import (
+    HTTPException,
+    Query,
+)
+from models import (
+    FavoriteBatchUpdate,
+    FavoriteTagComboCreate,
+    FavoriteTagComboInfo,
+    TagInfo,
+)
+from modules.danbooru.image_queries import get_file_identity
+from services.home import clear_home_caches
+from services.query_helpers import (
+    user_file_lookup_params,
+    user_file_lookup_sql,
+    user_file_match,
+)
+from services.user_library import (
+    _combo_from_row,
+    _combo_key,
+    _combo_name,
+    _normalize_combo_tags,
+    _normalize_tag_name,
+)
 
 router = APIRouter()
 
