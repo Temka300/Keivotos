@@ -2,7 +2,7 @@
 
 from config import CODE_ROOT
 from fastapi.responses import FileResponse
-from core import app
+from app_factory import app
 from routers import artists, collections, discovery, files, folders, images_media, stats, suite, tags, tools, user_library
 
 for domain_router in (

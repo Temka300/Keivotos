@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from pathlib import Path
+
 from database import get_user_db
+from storage_layout import LibraryRoot
 
 
 def registered_folder_rows() -> list[dict[str, Any]]:
@@ -19,3 +22,11 @@ def registered_folder_rows() -> list[dict[str, Any]]:
                       path, root_id
                  FROM registered_folders"""
         ).fetchall()
+
+
+def library_roots() -> list[LibraryRoot]:
+    return [
+        LibraryRoot(str(row["root_id"]), str(row["name"]), Path(row["path"]).resolve(strict=False))
+        for row in registered_folder_rows()
+        if row.get("root_id") and row.get("path")
+    ]
