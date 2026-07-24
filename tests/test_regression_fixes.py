@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 import app as launcher  # noqa: E402
 import core  # noqa: E402
 from models import CollectionCreate, CollectionItemsUpdate  # noqa: E402
+from modules.danbooru import relations  # noqa: E402
 from routers import collections  # noqa: E402
 
 
@@ -52,14 +53,17 @@ class RegressionFixTests(unittest.TestCase):
             "INSERT INTO posts(danbooru_post_id, parent_id) VALUES (?, ?)",
             [(50, None), (100, 50), (200, 100)],
         )
+        # Patch the module that actually resolves these names. `core` only
+        # re-exports them, so patching the facade would leave the real network
+        # call in place. Called through `core` so the re-export stays covered.
         with (
             patch.object(
-                core,
+                relations,
                 "danbooru_json",
                 return_value={"id": 200, "parent_id": 100, "has_children": False, "children": []},
             ),
             patch.object(
-                core,
+                relations,
                 "danbooru_child_search",
                 return_value=[{"id": 200, "parent_id": 100, "has_children": False, "children": []}],
             ),
