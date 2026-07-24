@@ -11,6 +11,11 @@ from pathlib import Path
 from typing import Iterable
 
 
+# The durable per-media sidecar pair. Named here, in the sidecar owner, because
+# callers that move or enumerate a file's metadata need the same list.
+SIDECAR_SUFFIXES: tuple[str, ...] = (".danbooru.json", ".tags.txt")
+
+
 @dataclass(frozen=True)
 class LibraryRoot:
     root_id: str
@@ -150,7 +155,7 @@ def current_sidecar_files_for_root(
     media_paths: Iterable[Path],
     data_root: Path,
     sidecar_dir: Path,
-    suffixes: Iterable[str] = (".danbooru.json", ".tags.txt"),
+    suffixes: Iterable[str] = SIDECAR_SUFFIXES,
 ) -> list[Path]:
     """List current central sidecars for a root without including adjacent media files."""
     suffix_list = tuple(suffixes)
@@ -190,7 +195,7 @@ def migrate_existing_sidecars(
     data_root: Path,
     sidecar_dir: Path,
     roots: Iterable[LibraryRoot],
-    suffixes: Iterable[str] = (".danbooru.json", ".tags.txt"),
+    suffixes: Iterable[str] = SIDECAR_SUFFIXES,
 ) -> dict[str, int]:
     """Copy and verify legacy sidecars into the root-based layout; never delete originals."""
     copied = skipped = failed = 0

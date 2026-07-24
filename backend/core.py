@@ -115,6 +115,7 @@ from product import DISPLAY_NAME, VERSION
 from security import validate_local_browser_request
 from storage_layout import (
     LibraryRoot,
+    SIDECAR_SUFFIXES,
     canonical_sidecar_path as layout_sidecar_path,
     identity_for_media,
     migrate_existing_sidecars,
