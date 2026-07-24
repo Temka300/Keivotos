@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS files_annotation_attachments (
     caption        TEXT NOT NULL DEFAULT '',
     is_cover       INTEGER NOT NULL DEFAULT 0,
     position       INTEGER NOT NULL DEFAULT 0,
+    stored_root    TEXT,
     added_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_files_annotation_attachments_annotation
@@ -106,6 +107,19 @@ class AnnotationAttachment:
 
 
 @dataclass(frozen=True)
+class StoredAttachment:
+    """An attachment row plus where its bytes live, for serving and cleanup."""
+
+    id: int
+    annotation_id: int
+    content_hash: str
+    file_name: str
+    media_type: str
+    size: int
+    stored_root: str | None
+
+
+@dataclass(frozen=True)
 class Annotation:
     id: int
     subject_kind: str
@@ -126,6 +140,16 @@ def _now() -> str:
 def ensure_annotations_schema(user_conn: sqlite3.Connection) -> None:
     """Create the annotation tables if absent (idempotent, additive)."""
     user_conn.executescript(FILES_ANNOTATIONS_SCHEMA)
+    columns: set[str] = set()
+    for row in user_conn.execute("PRAGMA table_info(files_annotation_attachments)").fetchall():
+        try:
+            columns.add(str(row["name"]))
+        except (KeyError, TypeError):
+            columns.add(str(row[1]))
+    if "stored_root" not in columns:
+        user_conn.execute(
+            "ALTER TABLE files_annotation_attachments ADD COLUMN stored_root TEXT"
+        )
     user_conn.commit()
 
 
@@ -354,11 +378,12 @@ def add_attachment(
     file_name: str,
     media_type: str,
     size: int,
+    stored_root: str | None = None,
     width: int | None = None,
     height: int | None = None,
     caption: str = "",
 ) -> AnnotationAttachment:
-    """Record an attachment row. The bytes on disk are handled by a later slice."""
+    """Record an attachment row (the bytes are written by the router's byte store)."""
     row = user_conn.execute(
         "SELECT COALESCE(MAX(position), -1) + 1 AS next "
         "FROM files_annotation_attachments WHERE annotation_id = ?",
@@ -368,8 +393,8 @@ def add_attachment(
     cursor = user_conn.execute(
         "INSERT INTO files_annotation_attachments "
         "(annotation_id, content_hash, file_name, media_type, size, width, height, "
-        " caption, is_cover, position, added_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        " caption, is_cover, position, stored_root, added_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
         (
             annotation_id,
             content_hash,
@@ -380,6 +405,7 @@ def add_attachment(
             height,
             caption.strip(),
             position,
+            stored_root,
             _now(),
         ),
     )
@@ -393,10 +419,32 @@ def add_attachment(
     return _attachment_from_row(stored)
 
 
+def get_attachment(
+    user_conn: sqlite3.Connection, attachment_id: int
+) -> StoredAttachment | None:
+    """Fetch one attachment with its byte-store location (serving and cleanup)."""
+    row = user_conn.execute(
+        "SELECT id, annotation_id, content_hash, file_name, media_type, size, stored_root "
+        "FROM files_annotation_attachments WHERE id = ?",
+        (attachment_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    return StoredAttachment(
+        id=row["id"],
+        annotation_id=row["annotation_id"],
+        content_hash=row["content_hash"],
+        file_name=row["file_name"],
+        media_type=row["media_type"],
+        size=row["size"],
+        stored_root=row["stored_root"],
+    )
+
+
 def remove_attachment(
     user_conn: sqlite3.Connection, annotation_id: int, attachment_id: int
 ) -> bool:
-    """Remove one attachment row (metadata only; byte cleanup is a later slice)."""
+    """Remove one attachment row (metadata only; the router deletes orphaned bytes)."""
     removed = user_conn.execute(
         "DELETE FROM files_annotation_attachments WHERE id = ? AND annotation_id = ?",
         (attachment_id, annotation_id),
@@ -414,6 +462,32 @@ def attachment_hash_refcount(user_conn: sqlite3.Connection, content_hash: str) -
         (content_hash,),
     ).fetchone()
     return int(row["count"] if row is not None else 0)
+
+
+def prune_if_empty(user_conn: sqlite3.Connection, annotation_id: int) -> bool:
+    """Delete an annotation that has no text, no links, and no attachments.
+
+    Keeps the tile badge truthful after the last piece of a note is removed,
+    matching the PUT path's empty-note cleanup.
+    """
+    row = user_conn.execute(
+        "SELECT description FROM files_annotations WHERE id = ?", (annotation_id,)
+    ).fetchone()
+    if row is None:
+        return False
+    if row["description"].strip():
+        return False
+    has_link = user_conn.execute(
+        "SELECT 1 FROM files_annotation_links WHERE annotation_id = ? LIMIT 1",
+        (annotation_id,),
+    ).fetchone()
+    has_attachment = user_conn.execute(
+        "SELECT 1 FROM files_annotation_attachments WHERE annotation_id = ? LIMIT 1",
+        (annotation_id,),
+    ).fetchone()
+    if has_link or has_attachment:
+        return False
+    return delete_annotation(user_conn, annotation_id)
 
 
 def delete_annotation(user_conn: sqlite3.Connection, annotation_id: int) -> bool:

@@ -22,7 +22,10 @@ from pydantic import BaseModel
 
 import config
 from database import get_user_db
-from files_base import annotations, filesystem, hashing, index, serving, sources
+from files_base import annotations, attachment_store, filesystem, hashing, index, serving, sources
+
+
+MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 
 router = APIRouter()
 
@@ -550,6 +553,149 @@ def annotated_paths(source_id: str = Query(...)) -> list[str]:
             ).fetchall()
         paths.update(row["relative_path"] for row in rows)
     return sorted(paths)
+
+
+def _attachment_store_root(user_conn) -> Path:
+    """Where attachment bytes live: the first Files-role source, else AppData base."""
+    for source in sources.list_sources(user_conn):
+        if source.role == "files":
+            return Path(source.path)
+    return config.BASE_HOME
+
+
+def _subject_content_hash(resolved: Path, is_dir: bool) -> str | None:
+    if is_dir:
+        return None
+    with index.open_index(config.FILES_DB_PATH) as index_conn:
+        digest = hashing.ensure_index_hash(index_conn, resolved)
+    if digest is None:
+        raise HTTPException(status_code=400, detail="Could not read the file to identify it")
+    return digest
+
+
+@router.post("/api/files/attachment", response_model=AnnotationModel)
+async def upload_attachment(
+    request: Request,
+    source_id: str = Query(...),
+    path: str = Query(""),
+    file_name: str = Query(...),
+    caption: str = Query(""),
+) -> AnnotationModel:
+    """Attach an uploaded image/video to a subject's origin note.
+
+    The raw bytes are the request body (no multipart dependency); the type comes
+    from ``Content-Type``. Bytes are stored content-addressed inside the first
+    Files folder; identical uploads are de-duplicated.
+    """
+    media_type = (request.headers.get("content-type") or "").split(";", 1)[0].strip().lower()
+    if not (media_type.startswith("image/") or media_type.startswith("video/")):
+        raise HTTPException(status_code=400, detail="Only image or video attachments are allowed")
+    declared = request.headers.get("content-length")
+    if declared is not None and declared.isdigit() and int(declared) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(status_code=413, detail="Attachment exceeds the 50 MB limit")
+
+    _source, resolved = _resolve_subject(source_id, path)
+    is_dir = resolved.is_dir()
+    content_hash = _subject_content_hash(resolved, is_dir)
+
+    data = await request.body()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty upload")
+    if len(data) > MAX_ATTACHMENT_BYTES:
+        raise HTTPException(status_code=413, detail="Attachment exceeds the 50 MB limit")
+
+    digest = attachment_store.md5_bytes(data)
+    ext = attachment_store.extension_for(file_name, media_type)
+    width, height = (
+        attachment_store.image_dimensions(data) if media_type.startswith("image/") else (None, None)
+    )
+
+    with get_user_db() as user_conn:
+        annotations.ensure_annotations_schema(user_conn)
+        sources.ensure_sources_schema(user_conn)
+        store_root = _attachment_store_root(user_conn)
+        attachment_store.write_attachment(store_root, digest, ext, data)
+        note = annotations.upsert_annotation(
+            user_conn,
+            subject_kind="dir" if is_dir else "file",
+            source_id=source_id,
+            relative_path=path,
+            content_hash=content_hash,
+        )
+        annotations.add_attachment(
+            user_conn,
+            note.id,
+            content_hash=digest,
+            file_name=file_name,
+            media_type=media_type,
+            size=len(data),
+            stored_root=str(store_root),
+            width=width,
+            height=height,
+            caption=caption,
+        )
+        final = annotations.get_annotation(
+            user_conn, content_hash=content_hash, source_id=source_id, relative_path=path
+        )
+    assert final is not None
+    return _annotation_to_model(final)
+
+
+@router.get("/api/files/attachment/{attachment_id}")
+def serve_attachment(attachment_id: int, request: Request):
+    with get_user_db() as user_conn:
+        annotations.ensure_annotations_schema(user_conn)
+        stored = annotations.get_attachment(user_conn, attachment_id)
+    if stored is None or not stored.stored_root:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    ext = attachment_store.extension_for(stored.file_name, stored.media_type)
+    resolved = attachment_store.attachment_path(stored.stored_root, stored.content_hash, ext)
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="Attachment bytes are missing")
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": serving.content_disposition(stored.file_name, inline=True),
+        "Cache-Control": "private, max-age=3600",
+    }
+    file_size = resolved.stat().st_size
+    byte_range = serving.parse_range_header(request.headers.get("range"), file_size)
+    if request.headers.get("range") and byte_range is None:
+        return Response(
+            status_code=416,
+            headers={"Accept-Ranges": "bytes", "Content-Range": f"bytes */{file_size}"},
+        )
+    if byte_range is not None:
+        start, end = byte_range
+        return StreamingResponse(
+            serving.file_range_iter(resolved, start, end),
+            status_code=206,
+            media_type=stored.media_type,
+            headers={
+                **headers,
+                "Content-Length": str(end - start + 1),
+                "Content-Range": f"bytes {start}-{end}/{file_size}",
+            },
+        )
+    return FileResponse(resolved, media_type=stored.media_type, headers=headers)
+
+
+@router.delete("/api/files/attachment/{attachment_id}")
+def delete_attachment(attachment_id: int) -> dict[str, bool]:
+    with get_user_db() as user_conn:
+        annotations.ensure_annotations_schema(user_conn)
+        stored = annotations.get_attachment(user_conn, attachment_id)
+        if stored is None:
+            return {"deleted": False}
+        removed = annotations.remove_attachment(user_conn, stored.annotation_id, attachment_id)
+        orphaned = removed and annotations.attachment_hash_refcount(user_conn, stored.content_hash) == 0
+        if removed:
+            annotations.prune_if_empty(user_conn, stored.annotation_id)
+    if orphaned and stored.stored_root:
+        ext = attachment_store.extension_for(stored.file_name, stored.media_type)
+        attachment_store.delete_attachment_file(stored.stored_root, stored.content_hash, ext)
+    return {"deleted": bool(removed)}
 
 
 @router.post("/api/files/open")

@@ -26,6 +26,11 @@ from typing import Generator, Iterable
 from files_base.schema import ensure_files_schema
 
 
+# Keivotos-generated directories that live inside a user's folder but must never
+# be indexed as browsable content (currently the attachment byte store).
+EXCLUDED_DIR_NAMES = {".keivotos"}
+
+
 @dataclass(frozen=True)
 class FileEntry:
     """One indexed filesystem entry (a file or a directory)."""
@@ -153,6 +158,8 @@ def scan_source(
             current = Path(current_dir)
             descend_into: list[str] = []
             for dir_name in sorted(dir_names):
+                if dir_name in EXCLUDED_DIR_NAMES:
+                    continue  # Keivotos-generated storage; never index or descend.
                 directory = current / dir_name
                 upsert(directory, is_dir=True)
                 resolved = os.path.normcase(

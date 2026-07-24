@@ -168,6 +168,23 @@ export const filesApi = {
       'DELETE',
       `/info?source_id=${encodeURIComponent(sourceId)}&path=${encodeURIComponent(path)}`,
     ),
+  attachmentUrl: (attachmentId: number) => `${BASE}/attachment/${attachmentId}`,
+  uploadAttachment: async (sourceId: string, path: string, file: File): Promise<Annotation> => {
+    const params = new URLSearchParams({
+      source_id: sourceId,
+      path,
+      file_name: file.name,
+    });
+    const res = await fetch(`${BASE}/attachment?${params.toString()}`, {
+      method: 'POST',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    if (!res.ok) throw await apiError(res);
+    return res.json();
+  },
+  deleteAttachment: (attachmentId: number) =>
+    send<{ deleted: boolean }>('DELETE', `/attachment/${attachmentId}`),
   openFile: (sourceId: string, path: string) =>
     send<{ status: string }>('POST', '/open', { source_id: sourceId, path }),
   revealFile: (sourceId: string, path: string) =>

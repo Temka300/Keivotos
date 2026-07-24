@@ -21,6 +21,8 @@
   let saving = false;
   let draftDescription = '';
   let draftLinks: AnnotationLink[] = [];
+  let uploading = false;
+  let fileInput: HTMLInputElement;
 
   $: key = `${subject.sourceId}::${subject.path}`;
   $: if (key !== loadedKey) {
@@ -117,6 +119,34 @@
       actionError = (e as Error).message;
     } finally {
       saving = false;
+    }
+  }
+
+  async function onUploadChange(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    uploading = true;
+    actionError = '';
+    try {
+      annotation = await filesApi.uploadAttachment(subject.sourceId, subject.path, file);
+      dispatch('changed');
+    } catch (e) {
+      actionError = (e as Error).message;
+    } finally {
+      uploading = false;
+    }
+  }
+
+  async function removeAttachment(attachmentId: number) {
+    actionError = '';
+    try {
+      await filesApi.deleteAttachment(attachmentId);
+      annotation = await filesApi.getInfo(subject.sourceId, subject.path);
+      dispatch('changed');
+    } catch (e) {
+      actionError = (e as Error).message;
     }
   }
 
@@ -381,15 +411,47 @@
             {/each}
           </ul>
         {/if}
-        {#if annotation.attachments.length}
-          <div class="flex flex-wrap gap-1.5">
-            {#each annotation.attachments as attachment (attachment.id)}
-              <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-gray-400" title={attachment.file_name}>{attachment.file_name}</span>
-            {/each}
-          </div>
-        {/if}
       {:else}
         <p class="text-xs text-gray-600">No origin info yet.</p>
+      {/if}
+
+      {#if !editing && !loading && !error}
+        <div class="mt-3">
+          {#if annotation && annotation.attachments.length}
+            <div class="mb-2 grid grid-cols-3 gap-1.5">
+              {#each annotation.attachments as attachment (attachment.id)}
+                <div class="group relative overflow-hidden rounded border border-white/5 bg-black/30">
+                  {#if attachment.media_type.startsWith('video/')}
+                    <!-- svelte-ignore a11y-media-has-caption -->
+                    <video src={filesApi.attachmentUrl(attachment.id)} class="h-16 w-full object-cover" muted></video>
+                  {:else}
+                    <img src={filesApi.attachmentUrl(attachment.id)} alt={attachment.caption || attachment.file_name} class="h-16 w-full object-cover" />
+                  {/if}
+                  <button
+                    type="button"
+                    class="absolute right-0.5 top-0.5 hidden h-5 w-5 place-items-center rounded bg-black/70 text-[10px] text-gray-200 group-hover:grid hover:text-red-300"
+                    title="Remove attachment"
+                    aria-label="Remove attachment"
+                    on:click={() => removeAttachment(attachment.id)}
+                  >✕</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          <input
+            bind:this={fileInput}
+            type="file"
+            accept="image/*,video/*"
+            class="hidden"
+            on:change={onUploadChange}
+          />
+          <button
+            type="button"
+            class="text-[11px] text-purple-300 hover:text-purple-200 disabled:opacity-40"
+            on:click={() => fileInput.click()}
+            disabled={uploading}
+          >{uploading ? 'Uploading…' : '＋ Image / video'}</button>
+        </div>
       {/if}
     </div>
   </div>
