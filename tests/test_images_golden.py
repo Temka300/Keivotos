@@ -12,7 +12,6 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 import database  # noqa: E402
-import core  # noqa: E402
 from routers import images_media  # noqa: E402
 
 
@@ -46,14 +45,10 @@ class ImageGoldenMasterTests(unittest.TestCase):
         self.originals = (
             database.DATA_DB_PATH,
             database.USER_DB_PATH,
-            core.DATA_DB_PATH,
-            core.USER_DB_PATH,
             images_media.USER_DB_PATH,
         )
         database.DATA_DB_PATH = self.data_db
         database.USER_DB_PATH = self.user_db
-        core.DATA_DB_PATH = self.data_db
-        core.USER_DB_PATH = self.user_db
         images_media.USER_DB_PATH = self.user_db
 
         with closing(sqlite3.connect(self.data_db)) as connection:
@@ -80,7 +75,7 @@ class ImageGoldenMasterTests(unittest.TestCase):
         database.init_user_db()
 
     def tearDown(self) -> None:
-        database.DATA_DB_PATH, database.USER_DB_PATH, core.DATA_DB_PATH, core.USER_DB_PATH, images_media.USER_DB_PATH = self.originals
+        database.DATA_DB_PATH, database.USER_DB_PATH, images_media.USER_DB_PATH = self.originals
         shutil.rmtree(self.root, ignore_errors=True)
 
     def _case(self, **kwargs):

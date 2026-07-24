@@ -10,27 +10,27 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-import core  # noqa: E402
+from modules.danbooru import tools  # noqa: E402
 from routers import tools as tool_routes  # noqa: E402
 
 
 class ToolProgressTests(unittest.TestCase):
     def test_task_snapshots_do_not_share_mutable_worker_state(self) -> None:
-        core._running_tasks["snapshot-test"] = {
+        tools._running_tasks["snapshot-test"] = {
             "status": "running",
             "file_results": [{"filename": "one.jpg"}],
         }
         try:
-            snapshot = core.tool_task_snapshot("snapshot-test")
+            snapshot = tools.tool_task_snapshot("snapshot-test")
             snapshot["file_results"].append({"filename": "mutated.jpg"})
-            current = core.tool_task_snapshot("snapshot-test")
+            current = tools.tool_task_snapshot("snapshot-test")
         finally:
-            core._running_tasks.pop("snapshot-test", None)
+            tools._running_tasks.pop("snapshot-test", None)
 
         self.assertEqual(current["file_results"], [{"filename": "one.jpg"}])
 
     def test_import_task_can_return_only_results_after_last_seen_index(self) -> None:
-        core._running_tasks["import"] = {
+        tools._running_tasks["import"] = {
             "status": "running",
             "output": "",
             "progress": 3,
@@ -43,7 +43,7 @@ class ToolProgressTests(unittest.TestCase):
         try:
             payload = tool_routes.import_pipeline_task(after_index=2)
         finally:
-            core._running_tasks.pop("import", None)
+            tools._running_tasks.pop("import", None)
 
         self.assertEqual([result["index"] for result in payload["file_results"]], [3])
 
@@ -63,17 +63,17 @@ class ToolProgressTests(unittest.TestCase):
             "-c",
             f"print('STAGE:metadata'); print('FILE_STATUS:' + {event!r}); print('PROGRESS:1/1')",
         ]
-        result = core._launch_tool("progress-protocol-test", [command])
+        result = tools._launch_tool("progress-protocol-test", [command])
         self.assertEqual(result["status"], "started")
 
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
-            task = core._running_tasks["progress-protocol-test"]
+            task = tools._running_tasks["progress-protocol-test"]
             if task["status"] != "running":
                 break
             time.sleep(0.02)
 
-        task = core._running_tasks["progress-protocol-test"]
+        task = tools._running_tasks["progress-protocol-test"]
         self.assertEqual(task["status"], "done")
         self.assertEqual(task["current_file"], "sample.png")
         self.assertEqual(task["current_file_status"], "matched")
@@ -93,17 +93,17 @@ class ToolProgressTests(unittest.TestCase):
                 " print(f'console line {index}')\n"
             ),
         ]
-        result = core._launch_tool("bounded-progress-test", [command])
+        result = tools._launch_tool("bounded-progress-test", [command])
         self.assertEqual(result["status"], "started")
 
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
-            task = core._running_tasks["bounded-progress-test"]
+            task = tools._running_tasks["bounded-progress-test"]
             if task["status"] != "running":
                 break
             time.sleep(0.02)
 
-        task = core._running_tasks["bounded-progress-test"]
+        task = tools._running_tasks["bounded-progress-test"]
         self.assertEqual(task["status"], "done")
         self.assertEqual(len(task["file_results"]), 250)
         self.assertEqual(task["file_results"][0]["filename"], "50.jpg")

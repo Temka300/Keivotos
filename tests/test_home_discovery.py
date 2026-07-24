@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-import core  # noqa: E402
+from services import home  # noqa: E402
 
 
 class HomeDiscoveryTests(unittest.TestCase):
@@ -61,7 +61,7 @@ class HomeDiscoveryTests(unittest.TestCase):
         self.add_candidate(3, 1600, 900, 10)
         self.add_candidate(4, 1400, 1000, 200)
 
-        tags = core.home_tag_infos_with_covers(
+        tags = home.home_tag_infos_with_covers(
             self.conn,
             [{"name": "sample_character", "category": "character", "cnt": 4}],
             "g",

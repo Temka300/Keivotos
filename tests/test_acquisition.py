@@ -16,7 +16,6 @@ sys.path.insert(0, str(ROOT / "backend"))
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import credentials  # noqa: E402
-import core  # noqa: E402
 import danbooru_gallery_dl as gallery  # noqa: E402
 from modules.danbooru import artist_profiles  # noqa: E402
 from routers import tools as tool_routes  # noqa: E402
@@ -162,7 +161,7 @@ class AcquisitionTests(unittest.TestCase):
         }]]
 
         self.assertEqual(
-            core.twitter_profile_media_from_messages(messages),
+            artist_profiles.twitter_profile_media_from_messages(messages),
             {
                 "avatar": "https://pbs.twimg.com/profile_images/1/avatar.jpg",
                 "banner": "https://pbs.twimg.com/profile_banners/1/1234567890/1500x500",
@@ -173,22 +172,22 @@ class AcquisitionTests(unittest.TestCase):
         bundled = self.temp / "gallery-dl.exe"
         bundled.write_bytes(b"")
         with (
-            patch.object(core.shutil, "which", return_value=None),
-            patch.object(core.sys, "platform", "win32"),
-            patch.object(core.sys, "executable", str(self.temp / "python.exe")),
+            patch.object(artist_profiles.shutil, "which", return_value=None),
+            patch.object(artist_profiles.sys, "platform", "win32"),
+            patch.object(artist_profiles.sys, "executable", str(self.temp / "python.exe")),
         ):
-            self.assertEqual(core.gallery_dl_command(), [str(bundled)])
+            self.assertEqual(artist_profiles.gallery_dl_command(), [str(bundled)])
 
     def test_frozen_gallery_dl_never_uses_an_older_path_installation(self) -> None:
         bundled = self.temp / "gallery-dl.exe"
         bundled.write_bytes(b"")
         with (
-            patch.object(core.shutil, "which", return_value=str(self.temp / "old-path" / "gallery-dl.exe")),
-            patch.object(core.sys, "platform", "win32"),
-            patch.object(core.sys, "executable", str(self.temp / "Keivotos.exe")),
-            patch.object(core.sys, "frozen", True, create=True),
+            patch.object(artist_profiles.shutil, "which", return_value=str(self.temp / "old-path" / "gallery-dl.exe")),
+            patch.object(artist_profiles.sys, "platform", "win32"),
+            patch.object(artist_profiles.sys, "executable", str(self.temp / "Keivotos.exe")),
+            patch.object(artist_profiles.sys, "frozen", True, create=True),
         ):
-            self.assertEqual(core.gallery_dl_command(), [str(bundled)])
+            self.assertEqual(artist_profiles.gallery_dl_command(), [str(bundled)])
 
     def test_dimension_read_hides_only_the_corrupt_exif_warning(self) -> None:
         class FakeImage:
@@ -226,7 +225,7 @@ class AcquisitionTests(unittest.TestCase):
             patch.object(artist_profiles.sys, "executable", str(self.temp / "global" / "python.exe")),
             patch.object(artist_profiles, "CODE_ROOT", self.temp / "repo"),
         ):
-            self.assertEqual(core.gallery_dl_command(), [str(bundled)])
+            self.assertEqual(artist_profiles.gallery_dl_command(), [str(bundled)])
 
     def test_open_location_uses_all_managed_library_roots(self) -> None:
         media = self.temp / "external-library" / "image.jpg"

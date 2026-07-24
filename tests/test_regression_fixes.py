@@ -25,7 +25,6 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
 import app as launcher  # noqa: E402
-import core  # noqa: E402
 from models import CollectionCreate, CollectionItemsUpdate  # noqa: E402
 from modules.danbooru import relations  # noqa: E402
 from routers import collections  # noqa: E402
@@ -68,7 +67,7 @@ class RegressionFixTests(unittest.TestCase):
                 return_value=[{"id": 200, "parent_id": 100, "has_children": False, "children": []}],
             ),
         ):
-            core.refresh_relation_cache(connection, 200)
+            relations.refresh_relation_cache(connection, 200)
 
         parent = connection.execute(
             "SELECT parent_id, has_children, child_ids_json FROM posts WHERE danbooru_post_id=100"
