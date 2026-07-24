@@ -1,7 +1,21 @@
 from __future__ import annotations
 
-from fastapi import APIRouter
-from core import *  # shared query, database, and media helpers
+import re
+from typing import Any
+
+from fastapi import APIRouter, HTTPException, Query
+
+from database import get_data_db, get_user_db
+from models import PaginatedTags, TagInfo, TagWikiInfo
+from modules.danbooru.tag_wiki import (
+    fetch_tag_wiki_values,
+    save_tag_wiki_cache,
+    tag_wiki_cache_complete_for_category,
+    tag_wiki_cache_fresh,
+    tag_wiki_info_from_cache_row,
+)
+from modules.danbooru.tags import list_user_tags
+from services.tag_names import normalize_search_tag
 
 router = APIRouter()
 
