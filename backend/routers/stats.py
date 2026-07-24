@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from core import *  # shared query, database, and media helpers
-from database import get_user_db
-from models import UserSetting, UserSettingUpdate
+from config import USER_DB_PATH
+from core import profile_asset, profile_asset_token
+from database import get_data_db, get_user_db
+from models import Stats, UserSetting, UserSettingUpdate
 from product import SUITE_NAME
+from services.query_helpers import user_file_match
 
 router = APIRouter()
 PROFILE_NAME_KEY = "profile_name"
