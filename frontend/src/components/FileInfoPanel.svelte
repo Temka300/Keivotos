@@ -2,6 +2,11 @@
   import { createEventDispatcher } from 'svelte';
   import { filesApi, type Annotation, type AnnotationLink } from '../lib/filesApi';
   import { fileGlyph, linkKindLabel, previewMode, type Subject } from '../lib/filePreview';
+  import {
+    FILES_INFO_MAX_WIDTH,
+    FILES_INFO_MIN_WIDTH,
+    filesInfoWidth,
+  } from '../lib/stores';
 
   export let subject: Subject;
 
@@ -76,6 +81,52 @@
 
   function removeLink(index: number) {
     draftLinks = draftLinks.filter((_, i) => i !== index);
+  }
+
+  // --- Resizable width -------------------------------------------------
+  // Dragged live in a local variable and committed to the persisted store on
+  // release, so a drag is one localStorage write instead of one per mousemove.
+  let panelEl: HTMLElement;
+  let dragging = false;
+  let liveWidth = 0;
+
+  $: width = dragging ? liveWidth : $filesInfoWidth;
+
+  function clampWidth(value: number): number {
+    return Math.min(FILES_INFO_MAX_WIDTH, Math.max(FILES_INFO_MIN_WIDTH, Math.round(value)));
+  }
+
+  function startResize(event: PointerEvent) {
+    liveWidth = $filesInfoWidth;
+    dragging = true;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function onResize(event: PointerEvent) {
+    if (!dragging || !panelEl) return;
+    // Measured from the panel's own right edge, not the window's: the panel is
+    // not always flush with the viewport once the browse cluster is capped.
+    liveWidth = clampWidth(panelEl.getBoundingClientRect().right - event.clientX);
+  }
+
+  function endResize(event: PointerEvent) {
+    if (!dragging) return;
+    dragging = false;
+    filesInfoWidth.set(clampWidth(liveWidth));
+    (event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
+  }
+
+  function nudgeWidth(event: KeyboardEvent) {
+    const step = event.shiftKey ? 48 : 16;
+    if (event.key === 'ArrowLeft') {
+      filesInfoWidth.set(clampWidth($filesInfoWidth + step));
+    } else if (event.key === 'ArrowRight') {
+      filesInfoWidth.set(clampWidth($filesInfoWidth - step));
+    } else {
+      return;
+    }
+    event.preventDefault();
   }
 
   async function save() {
@@ -207,7 +258,29 @@
   }
 </script>
 
-<aside class="flex w-[22rem] shrink-0 flex-col border-l border-white/5 bg-[#0b0b10]">
+<aside
+  bind:this={panelEl}
+  class="relative flex shrink-0 flex-col border-l border-white/5 bg-[#0b0b10]"
+  style="width: {width}px;"
+>
+  <!-- A focusable role="separator" with aria-valuenow is the WAI-ARIA window
+       splitter pattern; the linter treats every separator as non-interactive. -->
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
+  <div
+    class="absolute left-0 top-0 z-20 h-full w-1.5 -translate-x-1/2 cursor-col-resize touch-none after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent hover:after:bg-purple-500/60 {dragging ? 'after:bg-purple-500/80' : ''}"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize the info panel"
+    aria-valuenow={width}
+    aria-valuemin={FILES_INFO_MIN_WIDTH}
+    aria-valuemax={FILES_INFO_MAX_WIDTH}
+    tabindex="0"
+    on:pointerdown={startResize}
+    on:pointermove={onResize}
+    on:pointerup={endResize}
+    on:pointercancel={endResize}
+    on:keydown={nudgeWidth}
+  ></div>
   <div class="flex items-center gap-2 border-b border-white/5 px-4 py-3">
     <span class="text-lg leading-none">{fileGlyph({ is_dir: subject.isDir, ext: subject.ext })}</span>
     <div class="min-w-0 flex-1">
