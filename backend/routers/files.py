@@ -25,7 +25,16 @@ from pydantic import BaseModel
 
 import config
 from database import get_user_db
-from files_base import annotations, attachment_store, filesystem, hashing, index, serving, sources
+from files_base import (
+    annotations,
+    archives,
+    attachment_store,
+    filesystem,
+    hashing,
+    index,
+    serving,
+    sources,
+)
 from thumbnails import DEFAULT_THUMB_SIZE, SUPPORTED_IMAGES, SUPPORTED_VIDEOS, ensure_thumbnail
 
 
@@ -140,6 +149,21 @@ class AnnotationRequest(BaseModel):
 class SubjectRef(BaseModel):
     source_id: str
     path: str = ""
+
+
+class ArchiveEntryModel(BaseModel):
+    name: str
+    size: int
+    compressed_size: int
+    is_dir: bool
+
+
+class ArchiveListingModel(BaseModel):
+    entries: list[ArchiveEntryModel]
+    total_entries: int
+    truncated: bool
+    total_size: int
+    compressed_size: int
 
 
 class CopyInfoRequest(BaseModel):
@@ -706,6 +730,44 @@ def put_info(payload: AnnotationRequest) -> AnnotationModel | None:
         )
     assert final is not None
     return _annotation_to_model(final)
+
+
+@router.get("/api/files/archive", response_model=ArchiveListingModel)
+def list_archive(
+    source_id: str = Query(...),
+    path: str = Query("", description="Path relative to the source root"),
+) -> ArchiveListingModel:
+    """List what is inside an archive without extracting it.
+
+    Same containment chain as every other Files read. Strictly read-only: only
+    the central directory is parsed, no member is ever decompressed, and entry
+    names come back as display text that is never joined to a path. A file that
+    is not really a zip is a 415, judged by content rather than by extension.
+    """
+    _source, resolved = _resolve_subject(source_id, path)
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="Not a file")
+
+    try:
+        listing = archives.list_archive(resolved)
+    except archives.ArchiveUnreadable as denied:
+        raise HTTPException(status_code=denied.status_code, detail=denied.detail) from denied
+
+    return ArchiveListingModel(
+        entries=[
+            ArchiveEntryModel(
+                name=entry.name,
+                size=entry.size,
+                compressed_size=entry.compressed_size,
+                is_dir=entry.is_dir,
+            )
+            for entry in listing.entries
+        ],
+        total_entries=listing.total_entries,
+        truncated=listing.truncated,
+        total_size=listing.total_size,
+        compressed_size=listing.compressed_size,
+    )
 
 
 @router.post("/api/files/info/copy", response_model=AnnotationModel)

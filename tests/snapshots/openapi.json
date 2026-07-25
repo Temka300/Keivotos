@@ -208,6 +208,70 @@
         "title": "AnnotationRequest",
         "type": "object"
       },
+      "ArchiveEntryModel": {
+        "properties": {
+          "compressed_size": {
+            "title": "Compressed Size",
+            "type": "integer"
+          },
+          "is_dir": {
+            "title": "Is Dir",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "size",
+          "compressed_size",
+          "is_dir"
+        ],
+        "title": "ArchiveEntryModel",
+        "type": "object"
+      },
+      "ArchiveListingModel": {
+        "properties": {
+          "compressed_size": {
+            "title": "Compressed Size",
+            "type": "integer"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/ArchiveEntryModel"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "total_entries": {
+            "title": "Total Entries",
+            "type": "integer"
+          },
+          "total_size": {
+            "title": "Total Size",
+            "type": "integer"
+          },
+          "truncated": {
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "entries",
+          "total_entries",
+          "truncated",
+          "total_size",
+          "compressed_size"
+        ],
+        "title": "ArchiveListingModel",
+        "type": "object"
+      },
       "ArtistFollowCheckResult": {
         "properties": {
           "discovered_count": {
@@ -5946,6 +6010,58 @@
           }
         },
         "summary": "Annotated Paths"
+      }
+    },
+    "/api/files/archive": {
+      "get": {
+        "description": "List what is inside an archive without extracting it.\n\nSame containment chain as every other Files read. Strictly read-only: only\nthe central directory is parsed, no member is ever decompressed, and entry\nnames come back as display text that is never joined to a path. A file that\nis not really a zip is a 415, judged by content rather than by extension.",
+        "operationId": "list_archive_api_files_archive_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Path relative to the source root",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Path relative to the source root",
+              "title": "Path",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchiveListingModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "List Archive"
       }
     },
     "/api/files/attachment": {
