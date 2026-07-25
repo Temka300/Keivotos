@@ -383,7 +383,7 @@ def serve_file(
     return FileResponse(resolved, media_type=media_type, headers=base_headers)
 
 
-def _thumbnail_cache_key(resolved: Path) -> str | None:
+def _thumbnail_cache_key(resolved: Path, indexed: str | None = None) -> str | None:
     """A 32-hex thumbnail cache key for one file, or ``None`` if it vanished.
 
     The indexed content hash is preferred: it gives content-addressed dedup, so
@@ -396,7 +396,8 @@ def _thumbnail_cache_key(resolved: Path) -> str | None:
     key instead. It still changes whenever the file changes, and once the user
     runs a hash pass the key converges on the content hash.
     """
-    indexed = _indexed_hash(resolved)
+    if indexed is None:
+        indexed = _indexed_hash(resolved)
     if indexed:
         return indexed
     try:
@@ -467,6 +468,42 @@ def _folder_cover(source_id: str, relative_path: str) -> Path | None:
     return None
 
 
+def _attachment_cover(
+    source_id: str, path: str, indexed: str | None, is_dir: bool
+) -> Path | None:
+    """The origin attachment a tile should wear, if the user gave it one.
+
+    An explicit attachment **always** wins over an auto-generated thumbnail: if
+    the user attached a screenshot they chose that picture, and being able to
+    override a bad auto-thumbnail is the point. It is also the only way a 3D
+    model, archive or document gets a face at all, which is why the info panel
+    offers attachments in the first place.
+
+    Resolution mirrors ``get_info`` — hash-first, then the unmoved-file location
+    fallback — and reuses the caller's already-fetched index hash so a grid of
+    unhashed files never turns into a hashing pass.
+    """
+    with get_user_db() as user_conn:
+        annotations.ensure_annotations_schema(user_conn)
+        note = annotations.get_annotation(
+            user_conn, content_hash=indexed, source_id=source_id, relative_path=path
+        )
+        if note is None and not is_dir and indexed is None:
+            note = annotations.get_file_annotation_by_location(user_conn, source_id, path)
+        if note is None or not note.attachments:
+            return None
+        # An explicitly flagged cover wins, then authoring order.
+        chosen = min(
+            note.attachments, key=lambda item: (not item.is_cover, item.position, item.id)
+        )
+        stored = annotations.get_attachment(user_conn, chosen.id)
+    if stored is None or not stored.stored_root:
+        return None
+    ext = attachment_store.extension_for(stored.file_name, stored.media_type)
+    candidate = attachment_store.attachment_path(stored.stored_root, stored.content_hash, ext)
+    return candidate if candidate.is_file() else None
+
+
 @router.get("/api/files/thumbnail")
 def serve_file_thumbnail(
     source_id: str = Query(...),
@@ -483,9 +520,15 @@ def serve_file_thumbnail(
     target is still inside the source *after* resolving symlinks and junctions,
     and denies Keivotos's own tree.
 
-    A **directory** answers with a cover drawn from the first thumbnailable file
-    in its subtree, so a folder of manga or screenshots is recognisable at a
-    glance. The cover is keyed by that file, so changing it changes the tile.
+    Precedence is: an **origin attachment** the user chose, then a **folder
+    cover** from the subtree, then the file itself. The attachment wins outright
+    because it is a deliberate choice and the only way an unrenderable subject —
+    a 3D model, an archive, a document — gets a picture at all.
+
+    A **directory** without an attachment answers with a cover drawn from the
+    first thumbnailable file in its subtree, so a folder of manga or screenshots
+    is recognisable at a glance. Whatever is chosen carries its own cache
+    identity, so replacing it changes the tile.
 
     Unrenderable types are a deliberate 404 rather than a placeholder image:
     the placeholder is module-owned presentation, and the base falls back to its
@@ -496,15 +539,26 @@ def serve_file_thumbnail(
     the new thumbnail instead of a cached stale one.
     """
     source, resolved = _resolve_subject(source_id, path)
-    if resolved.is_dir():
-        cover = _folder_cover(source.source_id, path.strip("/").replace("\\", "/"))
-        if cover is None:
-            raise HTTPException(status_code=404, detail="Folder has no cover image")
-        resolved = cover
-    elif not resolved.is_file():
-        raise HTTPException(status_code=404, detail="Not a file")
+    is_dir = resolved.is_dir()
+    indexed = None if is_dir else _indexed_hash(resolved)
 
-    thumb = ensure_thumbnail(str(resolved), size, _thumbnail_cache_key(resolved))
+    chosen = _attachment_cover(source.source_id, path, indexed, is_dir)
+    key: str | None
+    if chosen is not None:
+        # The attachment is its own file; it carries its own cache identity.
+        key = _thumbnail_cache_key(chosen)
+    elif is_dir:
+        chosen = _folder_cover(source.source_id, path.strip("/").replace("\\", "/"))
+        if chosen is None:
+            raise HTTPException(status_code=404, detail="Folder has no cover image")
+        key = _thumbnail_cache_key(chosen)
+    else:
+        if not resolved.is_file():
+            raise HTTPException(status_code=404, detail="Not a file")
+        chosen = resolved
+        key = _thumbnail_cache_key(chosen, indexed)
+
+    thumb = ensure_thumbnail(str(chosen), size, key)
     if thumb is None or not thumb.exists():
         raise HTTPException(status_code=404, detail="No thumbnail for this file type")
 

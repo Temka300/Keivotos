@@ -118,6 +118,10 @@
     }
     try {
       annotatedPaths = new Set(await filesApi.listAnnotated(selectedSourceId));
+      annotationRevision += 1;
+      // A tile that 404'd before could have just been given an attachment, so
+      // let every failure retry once the origin data has changed.
+      thumbFailed = new Set();
     } catch {
       // Badges are non-essential; a failure just leaves them off.
     }
@@ -334,10 +338,30 @@
     thumbFailed = thumbFailed;
   }
 
-  // The thumbnail response is immutable; this is what invalidates it when the
-  // file is replaced in place.
-  function thumbVersion(entry: FileNode): string {
-    return `${entry.mtime ?? 0}-${entry.size ?? 0}`;
+  // Bumped whenever the annotation set is re-read, i.e. after any origin edit.
+  let annotationRevision = 0;
+
+  // The thumbnail response is immutable, so this token is the only thing that
+  // makes a tile refresh. mtime/size covers the file being replaced on disk.
+  //
+  // Annotated entries also fold in the revision: attaching a screenshot changes
+  // which image the tile should show but touches neither the file's mtime nor
+  // its size, so without this the browser would keep serving the pre-attachment
+  // thumbnail and the attach would look like it did nothing. Unannotated
+  // entries stay on the stable token and keep caching across edits.
+  // ``revision`` is taken as an argument, not read from scope, so that Svelte
+  // sees it in the template expression and actually recomputes ``src``.
+  function thumbVersion(entry: FileNode, revision: number): string {
+    const base = `${entry.mtime ?? 0}-${entry.size ?? 0}`;
+    return annotatedPaths.has(entry.relative_path) ? `${base}-r${revision}` : base;
+  }
+
+  // Renderable types and folders always ask. An annotated entry also asks even
+  // when its own type has no thumbnail, because the user may have attached a
+  // screenshot to it - that is the only face a 3D model or archive can have.
+  // Everything else stays silent, so a folder of subtitles issues no requests.
+  function wantsThumbnail(entry: FileNode): boolean {
+    return hasThumbnail(entry) || annotatedPaths.has(entry.relative_path);
   }
 
   function formatSize(bytes: number | null): string {
@@ -558,9 +582,9 @@
               title={entry.relative_path}
             >
               <span class="relative flex h-20 w-full items-center justify-center text-3xl leading-none">
-                {#if hasThumbnail(entry) && !thumbFailed.has(entryKey(entry))}
+                {#if wantsThumbnail(entry) && !thumbFailed.has(entryKey(entry))}
                   <img
-                    src={filesApi.thumbnailUrl(entry.source_id, entry.relative_path, 300, thumbVersion(entry))}
+                    src={filesApi.thumbnailUrl(entry.source_id, entry.relative_path, 300, thumbVersion(entry, annotationRevision))}
                     alt=""
                     loading="lazy"
                     decoding="async"

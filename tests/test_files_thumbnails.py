@@ -223,6 +223,99 @@ class FolderCoverTests(unittest.TestCase):
         self.assertIsNone(self._cover("Manga"))
 
 
+class AttachmentCoverTests(unittest.TestCase):
+    """An origin attachment is the tile's face, beating every automatic source."""
+
+    def setUp(self) -> None:
+        self.temp = ROOT / "tests" / ".tmp-files-attachcover"
+        shutil.rmtree(self.temp, ignore_errors=True)
+        self.suite_home = self.temp / "suite"
+        self.suite_home.mkdir(parents=True)
+        self.thumb_dir = self.temp / "thumbs"
+        self.library = self.temp / "library"
+        (self.library / "Models").mkdir(parents=True)
+        (self.library / "Models" / "iroha.zip").write_bytes(b"a 3d model, unrenderable")
+        Image.new("RGB", (40, 40), "red").save(self.library / "photo.png")
+
+        import database
+        from routers import files
+
+        self.files = files
+        self._patchers = [
+            patch.object(config, "SUITE_HOME", self.suite_home),
+            patch.object(config, "FILES_DB_PATH", self.suite_home / "base" / "files.sqlite"),
+            patch.object(database, "USER_DB_PATH", self.temp / "user.sqlite"),
+            patch.object(thumbnails, "THUMB_DIR", self.thumb_dir),
+        ]
+        for patcher in self._patchers:
+            patcher.start()
+        self.source = files.register_source(
+            files.SourceRegister(path=str(self.library), display_name="Lib")
+        )
+        files.scan_source(self.source.source_id)
+
+    def tearDown(self) -> None:
+        for patcher in self._patchers:
+            patcher.stop()
+        shutil.rmtree(self.temp, ignore_errors=True)
+
+    def _attach(self, path: str, colour: str) -> None:
+        """Attach a screenshot to a subject through the real upload path."""
+        import asyncio
+        import io
+
+        buffer = io.BytesIO()
+        Image.new("RGB", (24, 18), colour).save(buffer, format="PNG")
+        payload = buffer.getvalue()
+
+        class _Request:
+            headers = {"content-type": "image/png", "content-length": str(len(payload))}
+
+            async def body(self):
+                return payload
+
+        asyncio.run(
+            self.files.upload_attachment(
+                _Request(),
+                source_id=self.source.source_id,
+                path=path,
+                file_name="shot.png",
+                caption="",
+            )
+        )
+
+    def _thumb(self, path: str):
+        return self.files.serve_file_thumbnail(
+            source_id=self.source.source_id, path=path, size=300
+        )
+
+    def test_an_unrenderable_file_gains_a_face(self) -> None:
+        with self.assertRaises(HTTPException):
+            self._thumb("Models/iroha.zip")
+        self._attach("Models/iroha.zip", "blue")
+        self.assertEqual(self._thumb("Models/iroha.zip").media_type, "image/webp")
+
+    def test_the_attachment_beats_the_files_own_image(self) -> None:
+        # Compared by rendered size, not by cache path: attaching also hashes the
+        # file, which changes the cache key on its own, so a path comparison here
+        # would pass even if precedence were reversed.
+        with Image.open(self._thumb("photo.png").path) as auto:
+            self.assertEqual(auto.size, (40, 40))  # photo.png itself
+        self._attach("photo.png", "green")
+        with Image.open(self._thumb("photo.png").path) as chosen:
+            self.assertEqual(chosen.size, (24, 18))  # the attached screenshot
+
+    def test_the_attachment_beats_a_folder_cover(self) -> None:
+        # Models/ has no image inside, so only the attachment can cover it.
+        with self.assertRaises(HTTPException):
+            self._thumb("Models")
+        self._attach("Models", "white")
+        self.assertEqual(self._thumb("Models").media_type, "image/webp")
+
+    def test_an_unannotated_file_is_unaffected(self) -> None:
+        self.assertEqual(self._thumb("photo.png").media_type, "image/webp")
+
+
 class ThumbnailCacheKeyTests(unittest.TestCase):
     """The key decides both dedup and staleness, so it gets its own coverage."""
 
