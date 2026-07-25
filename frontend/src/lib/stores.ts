@@ -42,6 +42,18 @@ export const imageSizeOptions: ImageSizeOption[] = [
   { value: 'absurd', label: 'Absurd', cardWidth: 640, maxHeight: 960, gridMin: 600, previewSize: 1120 },
 ];
 
+/** The thumbnail tier to request for a grid column of ``gridMin`` pixels.
+ *
+ * The endpoint only serves 300/600/1200 and rejects anything under 300, so a
+ * raw ``gridMin`` (128 at Small) would be a 422. Larger columns step up a tier
+ * so an Absurd tile is not an upscaled 300px image.
+ */
+export function thumbnailTierFor(gridMin: number): 300 | 600 | 1200 {
+  if (gridMin <= 300) return 300;
+  if (gridMin <= 600) return 600;
+  return 1200;
+}
+
 export const imageSizeByValue = Object.fromEntries(
   imageSizeOptions.map(option => [option.value, option])
 ) as Record<ImageSize, ImageSizeOption>;
@@ -294,6 +306,26 @@ export const sidebarOpen = persistedWritable<boolean>(persistentStorageKey('side
 export const sidebarHandlePosition = persistedWritable<number>(persistentStorageKey('sidebar-handle-position'), 50, normalizeSidebarHandlePosition);
 export const fitMode = persistedWritable<FitMode>(persistentStorageKey('fit-mode'), 'fit', normalizeFitMode);
 export const imageSize = persistedWritable<ImageSize>(persistentStorageKey('image-size'), 'medium', normalizeImageSize);
+// Files keeps its own chosen size while sharing Danbooru's scale. The two are
+// different browsing jobs - a uniform image wall versus a mixed folder of
+// models, archives and documents - so one value would be wrong for one of them.
+// Danbooru's existing `image-size` key is deliberately left alone: renaming it
+// would silently reset the user's saved preference.
+export const filesGridSize = persistedWritable<ImageSize>(persistentStorageKey('files-grid-size'), 'medium', normalizeImageSize);
+
+export const FILES_INFO_MIN_WIDTH = 300;
+export const FILES_INFO_MAX_WIDTH = 760;
+
+function normalizeInfoWidth(value: unknown): number {
+  const width = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(width)) return 416;
+  return Math.min(FILES_INFO_MAX_WIDTH, Math.max(FILES_INFO_MIN_WIDTH, Math.round(width)));
+}
+
+// The info panel's width, dragged by its left grip. Defaults wider than the
+// original 22rem: the panel holds a description and a screenshot, and 352px
+// was too narrow to read either comfortably.
+export const filesInfoWidth = persistedWritable<number>(persistentStorageKey('files-info-width'), 416, normalizeInfoWidth);
 export const imagePageSize = persistedWritable<ImagePageSize>(persistentStorageKey('image-page-size'), 10, normalizeImagePageSize);
 export const mediaPlayback = persistedWritable<MediaPlayback>(persistentStorageKey('media-autoplay'), 'always', normalizeMediaPlayback);
 export const heartSpamEnabled = persistedWritable<boolean>(persistentStorageKey('heart-spam-enabled'), false, normalizeBooleanFalse);

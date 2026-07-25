@@ -2,6 +2,8 @@
   import { onMount } from 'svelte';
   import { filesApi, type DuplicateGroup, type FileNode, type SourceInfo } from '../lib/filesApi';
   import { fileGlyph, hasThumbnail, type Subject } from '../lib/filePreview';
+  import GridSizeMenu from './GridSizeMenu.svelte';
+  import { filesGridSize, imageSizeByValue, thumbnailTierFor } from '../lib/stores';
   import { persistentStorageKey, SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/stores';
   import {
@@ -341,6 +343,18 @@
   // Bumped whenever the annotation set is re-read, i.e. after any origin edit.
   let annotationRevision = 0;
 
+  // Widest the browse grid + info panel may span together. Chosen so the panel
+  // lands near the tiles on an ultrawide instead of at the screen edge, while
+  // still leaving the grid several columns.
+  const BROWSE_CLUSTER_MAX = 1250;
+
+  // Files keeps its own size choice; the scale itself is shared with Danbooru.
+  $: gridSize = imageSizeByValue[$filesGridSize];
+  $: thumbTier = thumbnailTierFor(gridSize.gridMin);
+  // Keeps the picture box proportional to the column so tiles stay square-ish
+  // at every step instead of a fixed box floating in a huge tile.
+  $: thumbBoxPx = Math.round(gridSize.gridMin * 0.62);
+
   // The thumbnail response is immutable, so this token is the only thing that
   // makes a tile refresh. mtime/size covers the file being replaced on disk.
   //
@@ -438,6 +452,7 @@
       {/if}
   </div>
   <div class="flex shrink-0 items-center gap-2">
+    <GridSizeMenu value={filesGridSize} />
     <button
       type="button"
       class="h-9 rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 text-xs text-gray-300 transition-colors hover:border-purple-500/50 hover:text-white disabled:opacity-40"
@@ -519,7 +534,15 @@
     </div>
   </aside>
 
-  <!-- Browse area -->
+  <!-- Browse area + info panel.
+       Capped only while the panel is open: on a wide display an uncapped row
+       parks the panel against the far screen edge, a long eye-travel from the
+       tile you just clicked. Closing the panel restores the full width, so
+       browsing wide is unaffected. Below the cap nothing changes. -->
+  <div
+    class="flex min-w-0 flex-1"
+    style={infoPanelOpen ? `max-width: ${BROWSE_CLUSTER_MAX}px` : ''}
+  >
   <section class="flex flex-col flex-1 min-w-0">
     {#if error}
       <div class="mx-4 mt-3 px-3 py-2 text-xs rounded bg-red-500/10 border border-red-500/30 text-red-300">{error}</div>
@@ -573,7 +596,7 @@
       {:else if displayed.length === 0}
         <p class="text-sm text-gray-500">This folder is empty.</p>
       {:else}
-        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));">
+        <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax({gridSize.gridMin}px, 1fr));">
           {#each displayed as entry (entry.source_id + '/' + entry.relative_path)}
             <button
               type="button"
@@ -581,14 +604,18 @@
               on:click={() => openEntry(entry)}
               title={entry.relative_path}
             >
-              <span class="relative flex h-20 w-full items-center justify-center text-3xl leading-none">
+              <span
+                class="relative flex w-full items-center justify-center text-3xl leading-none"
+                style="height: {thumbBoxPx}px;"
+              >
                 {#if wantsThumbnail(entry) && !thumbFailed.has(entryKey(entry))}
                   <img
-                    src={filesApi.thumbnailUrl(entry.source_id, entry.relative_path, 300, thumbVersion(entry, annotationRevision))}
+                    src={filesApi.thumbnailUrl(entry.source_id, entry.relative_path, thumbTier, thumbVersion(entry, annotationRevision))}
                     alt=""
                     loading="lazy"
                     decoding="async"
-                    class="max-h-20 max-w-full rounded object-contain"
+                    class="max-w-full rounded object-contain"
+                    style="max-height: {thumbBoxPx}px;"
                     on:error={() => markThumbFailed(entry)}
                   />
                 {:else}
@@ -617,6 +644,7 @@
       on:changed={loadAnnotatedPaths}
     />
   {/if}
+  </div>
 </div>
 
 {#if showAppMenu}
