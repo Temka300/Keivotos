@@ -1,7 +1,13 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { filesApi, type Annotation, type AnnotationLink, type ApiError } from '../lib/filesApi';
-  import { fileGlyph, linkKindLabel, previewMode, type Subject } from '../lib/filePreview';
+  import {
+    fileGlyph,
+    isListableArchive,
+    linkKindLabel,
+    previewMode,
+    type Subject,
+  } from '../lib/filePreview';
   import {
     FILES_INFO_MAX_WIDTH,
     FILES_INFO_MIN_WIDTH,
@@ -50,6 +56,9 @@
     editing = false;
     textPreview = null;
     textTruncated = false;
+    archive = null;
+    archiveError = '';
+    picking = false;
     try {
       annotation = await filesApi.getInfo(current.sourceId, current.path);
     } catch (e) {
@@ -81,6 +90,27 @@
 
   function removeLink(index: number) {
     draftLinks = draftLinks.filter((_, i) => i !== index);
+  }
+
+  // --- Archive contents --------------------------------------------------
+  // Fetched on demand rather than whenever an archive is selected: clicking
+  // through a folder of zips should not fire a listing per click.
+  let archive: import('../lib/filesApi').ArchiveListing | null = null;
+  let archiveError = '';
+  let archiveLoading = false;
+
+  $: canListArchive = !subject.isDir && isListableArchive(subject.ext);
+
+  async function loadArchive() {
+    archiveLoading = true;
+    archiveError = '';
+    try {
+      archive = await filesApi.listArchive(subject.sourceId, subject.path);
+    } catch (e) {
+      archiveError = (e as Error).message;
+    } finally {
+      archiveLoading = false;
+    }
   }
 
   // --- Copy origin from another subject ---------------------------------
@@ -585,6 +615,50 @@
         </div>
       {/if}
     </div>
+    <!-- Archive contents — read-only; the server never extracts anything. -->
+    {#if canListArchive}
+      <div class="border-b border-white/5 px-4 py-3">
+        <div class="mb-2 flex items-center justify-between">
+          <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Contents</h3>
+          {#if archive === null && !archiveLoading}
+            <button
+              type="button"
+              class="text-xs text-purple-300 hover:text-purple-200"
+              on:click={loadArchive}
+            >Show contents</button>
+          {/if}
+        </div>
+
+        {#if archiveLoading}
+          <p class="text-sm text-gray-500">Reading…</p>
+        {:else if archiveError}
+          <p class="text-sm text-red-300">{archiveError}</p>
+        {:else if archive}
+          <p class="mb-2 text-xs text-gray-500">
+            {archive.total_entries} item{archive.total_entries === 1 ? '' : 's'} ·
+            {formatSize(archive.total_size)} unpacked · {formatSize(archive.compressed_size)} stored
+          </p>
+          <ul class="max-h-64 overflow-y-auto rounded bg-black/20 p-1">
+            {#each archive.entries as entry (entry.name)}
+              <li class="flex items-baseline gap-2 px-1 py-0.5 text-xs">
+                <span class="min-w-0 flex-1 truncate font-mono text-gray-300" title={entry.name}>
+                  {entry.is_dir ? '📁' : ''}{entry.name}
+                </span>
+                {#if !entry.is_dir}
+                  <span class="shrink-0 text-[10px] text-gray-500">{formatSize(entry.size)}</span>
+                {/if}
+              </li>
+            {/each}
+          </ul>
+          {#if archive.truncated}
+            <p class="mt-1 text-[10px] text-gray-500">
+              Showing the first {archive.entries.length} of {archive.total_entries}.
+            </p>
+          {/if}
+        {/if}
+      </div>
+    {/if}
+
     <!-- Facts -->
     <dl class="space-y-1.5 px-4 py-3 text-sm">
       <div class="flex justify-between gap-3">

@@ -103,6 +103,21 @@ export interface AnnotationRequest {
   links: AnnotationLink[];
 }
 
+export interface ArchiveEntry {
+  name: string;
+  size: number;
+  compressed_size: number;
+  is_dir: boolean;
+}
+
+export interface ArchiveListing {
+  entries: ArchiveEntry[];
+  total_entries: number;
+  truncated: boolean;
+  total_size: number;
+  compressed_size: number;
+}
+
 /** An API failure that still knows its HTTP status, so callers can branch. */
 export interface ApiError extends Error {
   status: number;
@@ -175,6 +190,10 @@ export const filesApi = {
     url.searchParams.set('v', version);
     return url.toString();
   },
+  // Read-only table of contents for an archive. The server parses the central
+  // directory only — nothing is extracted or decompressed.
+  listArchive: (sourceId: string, path: string) =>
+    getJson<ArchiveListing>('/archive', { source_id: sourceId, path }),
   listAnnotated: (sourceId: string) =>
     getJson<string[]>('/annotated', { source_id: sourceId }),
   getInfo: (sourceId: string, path: string) =>

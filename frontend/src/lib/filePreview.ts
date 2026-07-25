@@ -55,6 +55,17 @@ export function hasThumbnail(entry: { is_dir: boolean; ext?: string | null }): b
   return THUMBNAILABLE.has((entry.ext ?? '').toLowerCase());
 }
 
+/** Container types whose table of contents the base can list without extracting.
+ *
+ * The server judges by content (`zipfile.is_zipfile`), so this set only decides
+ * where the UI offers the control; a mislabelled file still gets a clean 415.
+ */
+const LISTABLE_ARCHIVES = new Set(['zip', 'cbz', 'epub']);
+
+export function isListableArchive(ext: string | null | undefined): boolean {
+  return LISTABLE_ARCHIVES.has((ext ?? '').toLowerCase());
+}
+
 /** Emoji glyph for a tile or an unpreviewable subject. */
 export function fileGlyph(entry: { is_dir: boolean; ext?: string | null }): string {
   if (entry.is_dir) return '📁';
