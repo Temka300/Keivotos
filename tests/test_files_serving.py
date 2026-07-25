@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -47,14 +48,34 @@ class ResolveServedFileTests(unittest.TestCase):
                 serving.resolve_served_file(self.source, hostile, [])
             self.assertEqual(caught.exception.status_code, 400)
 
-    def test_rejects_symlink_escape(self) -> None:
+    def _escape_link(self) -> str:
+        """Plant a reparse point escaping the source; return the path to request.
+
+        A file symlink is the stronger case but needs SeCreateSymbolicLinkPrivilege
+        on Windows (admin or Developer Mode), which is why this used to skip on an
+        ordinary host. A directory junction needs no privilege and ``Path.resolve``
+        follows it just the same, so it reaches the identical containment branch.
+        """
         link = self.source / "escape"
         try:
             link.symlink_to(self.outside / "secret.txt")
+            return "escape"
         except (OSError, NotImplementedError):
+            pass
+        if os.name != "nt":
             self.skipTest("symlink creation not permitted on this host")
+        completed = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(link), str(self.outside)],
+            capture_output=True,
+        )
+        if completed.returncode != 0 or not link.exists():
+            self.skipTest("neither a symlink nor a junction can be created on this host")
+        return "escape/secret.txt"
+
+    def test_rejects_symlink_escape(self) -> None:
+        requested = self._escape_link()
         with self.assertRaises(serving.ServeDenied) as caught:
-            serving.resolve_served_file(self.source, "escape", [])
+            serving.resolve_served_file(self.source, requested, [])
         self.assertEqual(caught.exception.status_code, 403)
 
     def test_denies_the_suite_data_tree(self) -> None:
