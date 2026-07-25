@@ -343,11 +343,6 @@
   // Bumped whenever the annotation set is re-read, i.e. after any origin edit.
   let annotationRevision = 0;
 
-  // Widest the browse grid + info panel may span together. Chosen so the panel
-  // lands near the tiles on an ultrawide instead of at the screen edge, while
-  // still leaving the grid several columns.
-  const BROWSE_CLUSTER_MAX = 1250;
-
   // Files keeps its own size choice; the scale itself is shared with Danbooru.
   $: gridSize = imageSizeByValue[$filesGridSize];
   $: thumbTier = thumbnailTierFor(gridSize.gridMin);
@@ -534,15 +529,12 @@
     </div>
   </aside>
 
-  <!-- Browse area + info panel.
-       Capped only while the panel is open: on a wide display an uncapped row
-       parks the panel against the far screen edge, a long eye-travel from the
-       tile you just clicked. Closing the panel restores the full width, so
-       browsing wide is unaffected. Below the cap nothing changes. -->
-  <div
-    class="flex min-w-0 flex-1"
-    style={infoPanelOpen ? `max-width: ${BROWSE_CLUSTER_MAX}px` : ''}
-  >
+  <!-- Browse area.
+       This row is deliberately uncapped. A cap was tried in V1.1.2 to pull the
+       info panel away from the screen edge, but on a wide display it just left
+       a dead band to the right of the panel. The resizable panel solves the
+       same problem better: dragging it wider moves its left edge toward the
+       grid without stranding any space. -->
   <section class="flex flex-col flex-1 min-w-0">
     {#if error}
       <div class="mx-4 mt-3 px-3 py-2 text-xs rounded bg-red-500/10 border border-red-500/30 text-red-300">{error}</div>
@@ -644,7 +636,6 @@
       on:changed={loadAnnotatedPaths}
     />
   {/if}
-  </div>
 </div>
 
 {#if showAppMenu}
