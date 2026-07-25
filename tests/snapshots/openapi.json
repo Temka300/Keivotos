@@ -6725,6 +6725,86 @@
         "summary": "Scan Source"
       }
     },
+    "/api/files/thumbnail": {
+      "get": {
+        "description": "Return a cached WebP thumbnail for one browsed file.\n\nContainment is the same chain ``serve_file`` uses \u2014 ``resolve_served_file``\nrejects absolute and ``..`` paths before touching disk, re-checks that the\ntarget is still inside the source *after* resolving symlinks and junctions,\ndenies Keivotos's own tree, and requires a regular file. A directory is a\n404 here; folder covers are a separate feature.\n\nUnrenderable types are a deliberate 404 rather than a placeholder image:\nthe placeholder is module-owned presentation, and the base falls back to its\nown type glyph in the grid instead.\n\n``v`` exists because the response is ``immutable``. The server ignores it;\nthe client varies it (from mtime/size) so replacing a file in place shows\nthe new thumbnail instead of a cached stale one.",
+        "operationId": "serve_file_thumbnail_api_files_thumbnail_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Path relative to the source root",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Path relative to the source root",
+              "title": "Path",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "size",
+            "required": false,
+            "schema": {
+              "default": 300,
+              "maximum": 1200,
+              "minimum": 300,
+              "title": "Size",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Client cache-busting token; ignored by the server",
+            "in": "query",
+            "name": "v",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Client cache-busting token; ignored by the server",
+              "title": "V"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Serve File Thumbnail"
+      }
+    },
     "/api/folders": {
       "get": {
         "operationId": "list_folders_api_folders_get",

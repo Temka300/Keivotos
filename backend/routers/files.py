@@ -6,11 +6,14 @@ scans, and answers browse/search queries. It authors no metadata and never
 moves or deletes files on disk (removing a source only un-indexes).
 
 Isolation: this router does NOT ``from core import *``. It imports only the
-config values it needs, the shared user-DB accessor, and the standalone
-``files_base`` engine. See docs/important/SUITE_MODULE_CONTRACT.md.
+config values it needs, the shared user-DB accessor, the standalone
+``files_base`` engine, and ``thumbnails`` — which is suite-level infrastructure,
+not a Danbooru import: it takes a plain path and owns only the derived WebP
+cache. See docs/important/SUITE_MODULE_CONTRACT.md.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
@@ -23,6 +26,7 @@ from pydantic import BaseModel
 import config
 from database import get_user_db
 from files_base import annotations, attachment_store, filesystem, hashing, index, serving, sources
+from thumbnails import DEFAULT_THUMB_SIZE, ensure_thumbnail
 
 
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
@@ -377,6 +381,70 @@ def serve_file(
         )
 
     return FileResponse(resolved, media_type=media_type, headers=base_headers)
+
+
+def _thumbnail_cache_key(resolved: Path) -> str | None:
+    """A 32-hex thumbnail cache key for one file, or ``None`` if it vanished.
+
+    The indexed content hash is preferred: it gives content-addressed dedup, so
+    the same image filed in two folders — or browsed through both Files and
+    Danbooru — shares one cached thumbnail. It only exists after a hash pass.
+
+    Letting ``thumbnails`` fall back to its own MD5 would read the entire file
+    just to draw a 300px tile, so a folder of multi-gigabyte videos would stall
+    on first browse. Unhashed files therefore get a cheap identity/mtime/size
+    key instead. It still changes whenever the file changes, and once the user
+    runs a hash pass the key converges on the content hash.
+    """
+    indexed = _indexed_hash(resolved)
+    if indexed:
+        return indexed
+    try:
+        stat = resolved.stat()
+    except OSError:
+        return None
+    seed = f"{os.path.normcase(str(resolved))}:{stat.st_mtime_ns}:{stat.st_size}"
+    return hashlib.md5(seed.encode("utf-8")).hexdigest()
+
+
+@router.get("/api/files/thumbnail")
+def serve_file_thumbnail(
+    source_id: str = Query(...),
+    path: str = Query("", description="Path relative to the source root"),
+    size: int = Query(DEFAULT_THUMB_SIZE, ge=DEFAULT_THUMB_SIZE, le=1200),
+    v: str | None = Query(
+        None, description="Client cache-busting token; ignored by the server"
+    ),
+):
+    """Return a cached WebP thumbnail for one browsed file.
+
+    Containment is the same chain ``serve_file`` uses — ``resolve_served_file``
+    rejects absolute and ``..`` paths before touching disk, re-checks that the
+    target is still inside the source *after* resolving symlinks and junctions,
+    denies Keivotos's own tree, and requires a regular file. A directory is a
+    404 here; folder covers are a separate feature.
+
+    Unrenderable types are a deliberate 404 rather than a placeholder image:
+    the placeholder is module-owned presentation, and the base falls back to its
+    own type glyph in the grid instead.
+
+    ``v`` exists because the response is ``immutable``. The server ignores it;
+    the client varies it (from mtime/size) so replacing a file in place shows
+    the new thumbnail instead of a cached stale one.
+    """
+    source, resolved = _resolve_subject(source_id, path)
+    if not resolved.is_file():
+        raise HTTPException(status_code=404, detail="Not a file")
+
+    thumb = ensure_thumbnail(str(resolved), size, _thumbnail_cache_key(resolved))
+    if thumb is None or not thumb.exists():
+        raise HTTPException(status_code=404, detail="No thumbnail for this file type")
+
+    return FileResponse(
+        thumb,
+        media_type="image/webp",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
+    )
 
 
 @router.post("/api/files/hash", response_model=HashProgress)
