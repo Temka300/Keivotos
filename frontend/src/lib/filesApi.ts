@@ -103,7 +103,12 @@ export interface AnnotationRequest {
   links: AnnotationLink[];
 }
 
-async function apiError(res: Response): Promise<Error> {
+/** An API failure that still knows its HTTP status, so callers can branch. */
+export interface ApiError extends Error {
+  status: number;
+}
+
+async function apiError(res: Response): Promise<ApiError> {
   let detail = '';
   try {
     const data = await res.json();
@@ -112,7 +117,9 @@ async function apiError(res: Response): Promise<Error> {
   } catch {
     // Non-JSON error body; fall back to the status line.
   }
-  return new Error(detail || `API ${res.status}: ${res.statusText}`);
+  const error = new Error(detail || `API ${res.status}: ${res.statusText}`) as ApiError;
+  error.status = res.status;
+  return error;
 }
 
 async function getJson<T>(path: string, params?: Record<string, string | number | undefined>): Promise<T> {
@@ -174,6 +181,21 @@ export const filesApi = {
     getJson<Annotation | null>('/info', { source_id: sourceId, path }),
   saveInfo: (request: AnnotationRequest) =>
     send<Annotation | null>('PUT', '/info', request),
+  // Carry another subject's origin note onto this one. Additive: links and
+  // attachments merge, and the server refuses with 409 rather than replacing an
+  // existing description unless `overwrite` is set.
+  copyInfo: (
+    fromSourceId: string,
+    fromPath: string,
+    toSourceId: string,
+    toPath: string,
+    overwrite = false,
+  ) =>
+    send<Annotation>('POST', '/info/copy', {
+      source: { source_id: fromSourceId, path: fromPath },
+      target: { source_id: toSourceId, path: toPath },
+      overwrite_description: overwrite,
+    }),
   deleteInfo: (sourceId: string, path: string) =>
     send<{ deleted: boolean }>(
       'DELETE',

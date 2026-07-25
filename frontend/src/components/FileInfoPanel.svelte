@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { filesApi, type Annotation, type AnnotationLink } from '../lib/filesApi';
+  import { filesApi, type Annotation, type AnnotationLink, type ApiError } from '../lib/filesApi';
   import { fileGlyph, linkKindLabel, previewMode, type Subject } from '../lib/filePreview';
   import {
     FILES_INFO_MAX_WIDTH,
@@ -81,6 +81,60 @@
 
   function removeLink(index: number) {
     draftLinks = draftLinks.filter((_, i) => i !== index);
+  }
+
+  // --- Copy origin from another subject ---------------------------------
+  // The unzip workflow: extract an archive, then carry the archive's Booth link
+  // and description onto the folder that came out of it.
+  let picking = false;
+  let pickerPaths: string[] = [];
+  let pickerFilter = '';
+  let copying = false;
+
+  $: pickerMatches = pickerPaths
+    .filter((candidate) => candidate !== subject.path)
+    .filter((candidate) => candidate.toLowerCase().includes(pickerFilter.toLowerCase()))
+    .slice(0, 50);
+
+  async function openPicker() {
+    actionError = '';
+    picking = true;
+    pickerFilter = '';
+    try {
+      pickerPaths = await filesApi.listAnnotated(subject.sourceId);
+    } catch (e) {
+      actionError = (e as Error).message;
+      pickerPaths = [];
+    }
+  }
+
+  async function copyFrom(fromPath: string, overwrite = false) {
+    copying = true;
+    actionError = '';
+    try {
+      annotation = await filesApi.copyInfo(
+        subject.sourceId,
+        fromPath,
+        subject.sourceId,
+        subject.path,
+        overwrite,
+      );
+      picking = false;
+      dispatch('changed');
+    } catch (e) {
+      const error = e as ApiError;
+      // 409 is the server refusing to replace text the user wrote by hand.
+      if (error.status === 409 && !overwrite) {
+        copying = false;
+        if (confirm(`${error.message}.\n\nReplace this description?`)) {
+          await copyFrom(fromPath, true);
+        }
+        return;
+      }
+      actionError = error.message;
+    } finally {
+      copying = false;
+    }
   }
 
   // --- Resizable width -------------------------------------------------
@@ -332,16 +386,64 @@
       <div class="mb-2 flex items-center justify-between">
         <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Origin</h3>
         {#if !editing && !loading}
-          <button
-            type="button"
-            class="text-[11px] text-purple-300 hover:text-purple-200"
-            on:click={startEditing}
-          >{hasOrigin ? 'Edit' : 'Add info'}</button>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="text-xs text-gray-400 hover:text-purple-200"
+              title="Carry another file's origin note onto this one"
+              on:click={openPicker}
+            >Copy from…</button>
+            <button
+              type="button"
+              class="text-xs text-purple-300 hover:text-purple-200"
+              on:click={startEditing}
+            >{hasOrigin ? 'Edit' : 'Add info'}</button>
+          </div>
         {/if}
       </div>
 
+      {#if picking}
+        <div class="mb-3 rounded-lg border border-[#2a2a3a] bg-[#12121a] p-2">
+          <div class="mb-2 flex items-center gap-2">
+            <input
+              class="min-w-0 flex-1 rounded border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1 text-xs text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+              placeholder="Filter files with origin info…"
+              bind:value={pickerFilter}
+            />
+            <button
+              type="button"
+              class="shrink-0 text-xs text-gray-500 hover:text-gray-300"
+              on:click={() => (picking = false)}
+            >Cancel</button>
+          </div>
+          {#if pickerMatches.length === 0}
+            <p class="px-1 py-2 text-xs text-gray-600">
+              {pickerPaths.length === 0
+                ? 'Nothing in this folder has origin info yet.'
+                : 'No match.'}
+            </p>
+          {:else}
+            <ul class="max-h-52 overflow-y-auto">
+              {#each pickerMatches as candidate (candidate)}
+                <li>
+                  <button
+                    type="button"
+                    class="w-full truncate rounded px-2 py-1 text-left text-xs text-gray-300 hover:bg-white/5 hover:text-white disabled:opacity-40"
+                    title={candidate}
+                    disabled={copying}
+                    on:click={() => copyFrom(candidate)}
+                  >{candidate || '(this folder)'}</button>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          <p class="mt-1 px-1 text-[10px] text-gray-600">
+            Adds to this note — links and screenshots merge, nothing is removed.
+          </p>
+        </div>
+      {/if}
       {#if loading}
-        <p class="text-xs text-gray-600">Loading…</p>
+        <p class="text-sm text-gray-500">Loading…</p>
       {:else if error}
         <p class="text-xs text-red-300">{error}</p>
       {:else if editing}

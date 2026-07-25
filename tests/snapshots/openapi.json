@@ -828,6 +828,27 @@
         "title": "CollectionUpdate",
         "type": "object"
       },
+      "CopyInfoRequest": {
+        "properties": {
+          "overwrite_description": {
+            "default": false,
+            "title": "Overwrite Description",
+            "type": "boolean"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SubjectRef"
+          },
+          "target": {
+            "$ref": "#/components/schemas/SubjectRef"
+          }
+        },
+        "required": [
+          "source",
+          "target"
+        ],
+        "title": "CopyInfoRequest",
+        "type": "object"
+      },
       "DailyChallenge": {
         "properties": {
           "answer_tag": {
@@ -6449,6 +6470,45 @@
           }
         },
         "summary": "Put Info"
+      }
+    },
+    "/api/files/info/copy": {
+      "post": {
+        "description": "Copy one subject's origin note onto another \u2014 the unzip workflow.\n\nExtracting an archive loses the provenance you recorded against it, so this\ncarries the description, links and screenshots over to the extracted folder\nwithout retyping them.\n\n**Additive, never destructive.** Links merge as a union keyed by url+kind\nand attachments by content hash, so re-running it is a no-op rather than a\npile of duplicates. A description is only replaced when the caller passes\n``overwrite_description``; otherwise a target that already has text is a 409\nand the UI asks first. Nothing is ever removed from the target.\n\nAttachment **bytes are not copied** \u2014 the store is content-addressed, so the\nnew row points at the blob that already exists.",
+        "operationId": "copy_info_api_files_info_copy_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CopyInfoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationModel"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Copy Info"
       }
     },
     "/api/files/open": {

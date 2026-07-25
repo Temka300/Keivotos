@@ -142,6 +142,12 @@ class SubjectRef(BaseModel):
     path: str = ""
 
 
+class CopyInfoRequest(BaseModel):
+    source: SubjectRef
+    target: SubjectRef
+    overwrite_description: bool = False
+
+
 @router.post("/api/files/pick", response_model=PickResult)
 def pick_folder() -> PickResult:
     """Open the native Windows folder dialog (same one Danbooru uses).
@@ -697,6 +703,123 @@ def put_info(payload: AnnotationRequest) -> AnnotationModel | None:
             content_hash=content_hash,
             source_id=payload.source_id,
             relative_path=payload.path,
+        )
+    assert final is not None
+    return _annotation_to_model(final)
+
+
+@router.post("/api/files/info/copy", response_model=AnnotationModel)
+def copy_info(payload: CopyInfoRequest) -> AnnotationModel:
+    """Copy one subject's origin note onto another — the unzip workflow.
+
+    Extracting an archive loses the provenance you recorded against it, so this
+    carries the description, links and screenshots over to the extracted folder
+    without retyping them.
+
+    **Additive, never destructive.** Links merge as a union keyed by url+kind
+    and attachments by content hash, so re-running it is a no-op rather than a
+    pile of duplicates. A description is only replaced when the caller passes
+    ``overwrite_description``; otherwise a target that already has text is a 409
+    and the UI asks first. Nothing is ever removed from the target.
+
+    Attachment **bytes are not copied** — the store is content-addressed, so the
+    new row points at the blob that already exists.
+    """
+    src = payload.source
+    dst = payload.target
+    if src.source_id == dst.source_id and src.path == dst.path:
+        raise HTTPException(status_code=400, detail="Source and target are the same subject")
+
+    _src_source, src_resolved = _resolve_subject(src.source_id, src.path)
+    _dst_source, dst_resolved = _resolve_subject(dst.source_id, dst.path)
+    dst_is_dir = dst_resolved.is_dir()
+
+    with get_user_db() as user_conn:
+        annotations.ensure_annotations_schema(user_conn)
+        origin = annotations.get_annotation(
+            user_conn,
+            content_hash=None if src_resolved.is_dir() else _indexed_hash(src_resolved),
+            source_id=src.source_id,
+            relative_path=src.path,
+        )
+        if origin is None and not src_resolved.is_dir():
+            origin = annotations.get_file_annotation_by_location(
+                user_conn, src.source_id, src.path
+            )
+        if origin is None:
+            raise HTTPException(status_code=404, detail="That file has no origin info to copy")
+
+        existing = annotations.get_annotation(
+            user_conn,
+            content_hash=None if dst_is_dir else _indexed_hash(dst_resolved),
+            source_id=dst.source_id,
+            relative_path=dst.path,
+        )
+        current_text = (existing.description if existing else "").strip()
+        if current_text and not payload.overwrite_description:
+            raise HTTPException(
+                status_code=409,
+                detail="The target already has a description; copying would replace it",
+            )
+
+    # Hash the target outside the write transaction: this can read the file.
+    dst_hash = None
+    if not dst_is_dir:
+        with index.open_index(config.FILES_DB_PATH) as index_conn:
+            dst_hash = hashing.ensure_index_hash(index_conn, dst_resolved)
+        if dst_hash is None:
+            raise HTTPException(status_code=400, detail="Could not read the file to identify it")
+
+    with get_user_db() as user_conn:
+        annotations.ensure_annotations_schema(user_conn)
+        note = annotations.upsert_annotation(
+            user_conn,
+            subject_kind="dir" if dst_is_dir else "file",
+            source_id=dst.source_id,
+            relative_path=dst.path,
+            content_hash=dst_hash,
+            description=origin.description.strip() or None,
+        )
+        merged = [
+            {"url": link.url, "label": link.label, "kind": link.kind}
+            for link in annotations.list_links(user_conn, note.id)
+        ]
+        seen = {(link["url"], link["kind"]) for link in merged}
+        for link in origin.links:
+            if (link.url, link.kind) not in seen:
+                merged.append({"url": link.url, "label": link.label, "kind": link.kind})
+                seen.add((link.url, link.kind))
+        annotations.set_links(user_conn, note.id, merged)
+
+        held = {
+            item.content_hash
+            for item in annotations.list_attachments(user_conn, note.id)
+        }
+        for item in origin.attachments:
+            if item.content_hash in held:
+                continue
+            stored = annotations.get_attachment(user_conn, item.id)
+            if stored is None:
+                continue
+            annotations.add_attachment(
+                user_conn,
+                note.id,
+                content_hash=item.content_hash,
+                file_name=item.file_name,
+                media_type=item.media_type,
+                size=item.size,
+                stored_root=stored.stored_root,
+                width=item.width,
+                height=item.height,
+                caption=item.caption,
+            )
+            held.add(item.content_hash)
+
+        final = annotations.get_annotation(
+            user_conn,
+            content_hash=dst_hash,
+            source_id=dst.source_id,
+            relative_path=dst.path,
         )
     assert final is not None
     return _annotation_to_model(final)
