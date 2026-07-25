@@ -3,19 +3,21 @@
 Moved verbatim from ``core.py``. Range parsing lets video and audio seek without
 downloading the whole file.
 
-Note: ``files_base/serving.py`` carries its own equivalent because the Files base
-may not import module code. That duplication is deliberate for now — the shared
-extraction waits until both consumers have settled
-(SUITE_MODULE_CONTRACT.md section 13). No ``core`` import.
+The range helpers were duplicated in ``files_base/serving.py`` because the Files
+base may not import module code. With both consumers settled they moved to
+``services/range_serving.py`` (2026-07-25, SUITE_MODULE_CONTRACT.md section 13)
+and are re-exported here, so existing importers are unaffected. No ``core``
+import.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from fastapi import Response
 
+from services import range_serving
 
-STREAM_CHUNK_SIZE = 1024 * 1024
+
+# Re-exported for any caller that read the constant from this module.
+STREAM_CHUNK_SIZE = range_serving.STREAM_CHUNK_SIZE
 
 
 def media_placeholder(ext: str | None) -> Response:
@@ -33,38 +35,7 @@ def media_placeholder(ext: str | None) -> Response:
     )
 
 
-def parse_range_header(range_header: str | None, file_size: int) -> tuple[int, int] | None:
-    if not range_header or not range_header.startswith("bytes="):
-        return None
-    range_value = range_header.removeprefix("bytes=").split(",", 1)[0].strip()
-    if "-" not in range_value:
-        return None
-
-    start_text, end_text = range_value.split("-", 1)
-    try:
-        if start_text == "":
-            suffix_length = int(end_text)
-            if suffix_length <= 0:
-                return None
-            return max(file_size - suffix_length, 0), file_size - 1
-
-        start = int(start_text)
-        end = int(end_text) if end_text else file_size - 1
-    except ValueError:
-        return None
-
-    if start < 0 or start >= file_size or end < start:
-        return None
-    return start, min(end, file_size - 1)
-
-
-def file_range_iter(path: Path, start: int, end: int):
-    with path.open("rb") as file:
-        file.seek(start)
-        remaining = end - start + 1
-        while remaining > 0:
-            chunk = file.read(min(STREAM_CHUNK_SIZE, remaining))
-            if not chunk:
-                break
-            remaining -= len(chunk)
-            yield chunk
+# Re-exported so ``images_media`` keeps importing these from here. They are the
+# service's objects — this module no longer carries its own copy (2026-07-25).
+parse_range_header = range_serving.parse_range_header
+file_range_iter = range_serving.file_range_iter

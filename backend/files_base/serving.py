@@ -13,9 +13,12 @@ is the one genuinely security-sensitive surface in the base
    move and delete files). Only an explicit allowlist of inert media renders
    inline; everything else is forced to a download with ``nosniff``.
 
-Isolated: no import of Danbooru or ``core``. The range helpers duplicate the
-Danbooru media path deliberately — SUITE_MODULE_CONTRACT.md section 13 defers
-extracting the genuinely shared base until both consumers exist to reveal it.
+Isolated: no import of Danbooru or ``core``. The range helpers used to be
+duplicated here from the Danbooru media path; with both consumers now in
+existence they were extracted to ``services/range_serving.py`` (2026-07-25) and
+are re-exported below, so ``serving.parse_range_header`` still resolves. A
+service import is not a module import — ``range_serving`` knows nothing about
+either surface.
 """
 from __future__ import annotations
 
@@ -24,8 +27,7 @@ import re
 from pathlib import Path
 from urllib.parse import quote
 
-
-_STREAM_CHUNK_SIZE = 1024 * 1024
+from services import range_serving
 
 # Closed allowlist: extension -> media type rendered inline. Anything absent
 # (notably html, htm, svg, xml, js, and every archive/model/office format) is
@@ -151,38 +153,7 @@ def content_disposition(name: str, *, inline: bool) -> str:
     return f"{disposition}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded}"
 
 
-def parse_range_header(range_header: str | None, file_size: int) -> tuple[int, int] | None:
-    """Parse a single ``bytes=`` range, matching the Danbooru media behavior."""
-    if not range_header or not range_header.startswith("bytes="):
-        return None
-    range_value = range_header.removeprefix("bytes=").split(",", 1)[0].strip()
-    if "-" not in range_value:
-        return None
-
-    start_text, end_text = range_value.split("-", 1)
-    try:
-        if start_text == "":
-            suffix_length = int(end_text)
-            if suffix_length <= 0:
-                return None
-            return max(file_size - suffix_length, 0), file_size - 1
-        start = int(start_text)
-        end = int(end_text) if end_text else file_size - 1
-    except ValueError:
-        return None
-
-    if start < 0 or start >= file_size or end < start:
-        return None
-    return start, min(end, file_size - 1)
-
-
-def file_range_iter(path: Path, start: int, end: int):
-    with path.open("rb") as handle:
-        handle.seek(start)
-        remaining = end - start + 1
-        while remaining > 0:
-            chunk = handle.read(min(_STREAM_CHUNK_SIZE, remaining))
-            if not chunk:
-                break
-            remaining -= len(chunk)
-            yield chunk
+# Re-exported so ``serving.parse_range_header`` keeps working for the router and
+# its tests. These are the service's objects, not copies.
+parse_range_header = range_serving.parse_range_header
+file_range_iter = range_serving.file_range_iter
