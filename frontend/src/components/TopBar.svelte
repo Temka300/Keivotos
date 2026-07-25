@@ -2,7 +2,8 @@
   import { api } from '../lib/api';
   import { SUITE_NAME } from '../lib/product';
   import { MODULE_DISPLAY_NAME } from '../modules/danbooru/identity';
-  import { viewMode, sortBy, sortOrder, activeFolder, activeRating, activeTags, activeCollectionId, selectedImageId, fitMode, imageSize, imageSizeOptions, imagePageSize, imagePageSizeOptions, duplicatesOnly, duplicateScope, blacklistedTagNames, searchString, browseTagSelection, artistNotificationsEnabled } from '../lib/stores';
+  import { viewMode, sortBy, sortOrder, activeFolder, activeRating, activeTags, activeCollectionId, selectedImageId, fitMode, imageSize, imagePageSize, imagePageSizeOptions, duplicatesOnly, duplicateScope, blacklistedTagNames, searchString, browseTagSelection, artistNotificationsEnabled } from '../lib/stores';
+  import GridSizeMenu from './GridSizeMenu.svelte';
   import type { DuplicateScope, ViewMode } from '../lib/stores';
   import SearchBar from './SearchBar.svelte';
   import ArtistNotifications from './ArtistNotifications.svelte';
@@ -80,15 +81,18 @@
     showPageSizeMenu = false;
   }
 
-  function toggleFilterMenu() {
-    showFilterMenu = !showFilterMenu;
-    showSizeMenu = false;
+  // GridSizeMenu toggles itself and reports through `bind:open`, so the
+  // "only one menu at a time" rule has to be re-asserted here rather than
+  // inside a toggle function. Clearing the siblings cannot re-open this one,
+  // so there is no reactive loop.
+  $: if (showSizeMenu) {
+    showFilterMenu = false;
     showPageSizeMenu = false;
   }
 
-  function toggleSizeMenu() {
-    showSizeMenu = !showSizeMenu;
-    showFilterMenu = false;
+  function toggleFilterMenu() {
+    showFilterMenu = !showFilterMenu;
+    showSizeMenu = false;
     showPageSizeMenu = false;
   }
 
@@ -165,7 +169,6 @@
     }
   }
 
-  $: selectedImageSize = imageSizeOptions.find(option => option.value === $imageSize) ?? imageSizeOptions[1];
   $: selectedPageSize = imagePageSizeOptions.find(option => option.value === $imagePageSize) ?? imagePageSizeOptions[0];
   $: showImagePaging = $viewMode === 'gallery' || $viewMode === 'favorites' || $viewMode === 'collection-detail' || $viewMode === 'popularity';
   $: randomLabel = $viewMode === 'tags' ? 'Random Tag' : 'Random';
@@ -216,40 +219,7 @@
 
   <div class="flex items-center gap-2 text-sm">
     <!-- Image size dropdown -->
-    <div class="relative">
-      <button
-        class="grid h-9 w-9 place-items-center rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] text-gray-300 transition-colors hover:border-purple-500/50 hover:text-white"
-        on:click|stopPropagation={toggleSizeMenu}
-        aria-label="Size"
-        title="Size: {selectedImageSize.label}"
-      >
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h6v6H4V6zm10 0h6v6h-6V6zM4 16h6v2H4v-2zm10 0h6v2h-6v-2z"/>
-        </svg>
-      </button>
-
-      {#if showSizeMenu}
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <div
-          class="absolute right-0 top-full mt-1 w-40 overflow-hidden rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] shadow-xl z-50"
-          on:click|stopPropagation
-        >
-          {#each imageSizeOptions as opt}
-            <button
-              class="w-full flex items-center justify-between px-3 py-1.5 text-sm transition-colors {$imageSize === opt.value ? 'text-purple-300 bg-purple-600/10' : 'text-gray-400 hover:bg-[#2a2a3a]'}"
-              on:click={() => { imageSize.set(opt.value); closeMenu(); }}
-            >
-              <span>{opt.label}</span>
-              {#if $imageSize === opt.value}
-                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
-                </svg>
-              {/if}
-            </button>
-          {/each}
-        </div>
-      {/if}
-    </div>
+    <GridSizeMenu value={imageSize} bind:open={showSizeMenu} />
 
     <!-- Filter dropdown -->
     <div class="relative">
