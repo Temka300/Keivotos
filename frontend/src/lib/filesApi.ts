@@ -157,6 +157,17 @@ export const filesApi = {
     url.searchParams.set('path', relativePath);
     return url.toString();
   },
+  // URL for a cached WebP thumbnail of one file. The response is immutable, so
+  // ``version`` (mtime/size) is what makes a replaced file show its new image
+  // instead of the browser's cached one; the server ignores the value.
+  thumbnailUrl: (sourceId: string, relativePath: string, size: number, version: string) => {
+    const url = new URL(BASE + '/thumbnail', window.location.origin);
+    url.searchParams.set('source_id', sourceId);
+    url.searchParams.set('path', relativePath);
+    url.searchParams.set('size', String(size));
+    url.searchParams.set('v', version);
+    return url.toString();
+  },
   listAnnotated: (sourceId: string) =>
     getJson<string[]>('/annotated', { source_id: sourceId }),
   getInfo: (sourceId: string, path: string) =>

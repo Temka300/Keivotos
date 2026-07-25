@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { filesApi, type DuplicateGroup, type FileNode, type SourceInfo } from '../lib/filesApi';
-  import { fileGlyph, type Subject } from '../lib/filePreview';
+  import { fileGlyph, hasThumbnail, type Subject } from '../lib/filePreview';
   import { persistentStorageKey, SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/stores';
   import {
@@ -321,6 +321,25 @@
     return fileGlyph(entry);
   }
 
+  // Tiles whose thumbnail request failed fall back to the glyph for the rest of
+  // the session, so a broken-image box never appears and the 404 is not retried.
+  let thumbFailed = new Set<string>();
+
+  function entryKey(entry: FileNode): string {
+    return entry.source_id + '/' + entry.relative_path;
+  }
+
+  function markThumbFailed(entry: FileNode): void {
+    thumbFailed.add(entryKey(entry));
+    thumbFailed = thumbFailed;
+  }
+
+  // The thumbnail response is immutable; this is what invalidates it when the
+  // file is replaced in place.
+  function thumbVersion(entry: FileNode): string {
+    return `${entry.mtime ?? 0}-${entry.size ?? 0}`;
+  }
+
   function formatSize(bytes: number | null): string {
     if (bytes == null) return '';
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -538,8 +557,19 @@
               on:click={() => openEntry(entry)}
               title={entry.relative_path}
             >
-              <span class="relative text-3xl leading-none">
-                {iconFor(entry)}
+              <span class="relative flex h-20 w-full items-center justify-center text-3xl leading-none">
+                {#if hasThumbnail(entry) && !thumbFailed.has(entryKey(entry))}
+                  <img
+                    src={filesApi.thumbnailUrl(entry.source_id, entry.relative_path, 300, thumbVersion(entry))}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    class="max-h-20 max-w-full rounded object-contain"
+                    on:error={() => markThumbFailed(entry)}
+                  />
+                {:else}
+                  {iconFor(entry)}
+                {/if}
                 {#if annotatedPaths.has(entry.relative_path)}
                   <span class="absolute -right-1 -top-0.5 h-2 w-2 rounded-full bg-purple-400 ring-2 ring-[#0b0b10]" title="Has origin info"></span>
                 {/if}
