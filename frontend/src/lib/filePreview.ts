@@ -34,6 +34,27 @@ export function previewMode(ext: string | null | undefined): PreviewMode {
   return 'none';
 }
 
+/** Extensions the backend can actually produce a thumbnail for.
+ *
+ * Mirrors ``SUPPORTED_IMAGES | SUPPORTED_VIDEOS`` in backend/thumbnails.py, which
+ * is deliberately narrower than the inline-preview sets above: avif, bmp and m4v
+ * render inline but have no thumbnail path. Asking outside this set only earns a
+ * 404, so the grid checks first rather than firing one doomed request per tile.
+ */
+const THUMBNAILABLE = new Set(['png', 'jpg', 'jpeg', 'jfif', 'gif', 'webp', 'mp4', 'webm']);
+
+/** Whether a browsed entry should try for a real thumbnail instead of a glyph.
+ *
+ * Folders always try. Only the backend index knows whether a folder holds a
+ * cover image anywhere in its subtree, so the tile asks and falls back to the
+ * folder glyph on a 404 — bounded by how many folder tiles are on screen, since
+ * the images are lazy.
+ */
+export function hasThumbnail(entry: { is_dir: boolean; ext?: string | null }): boolean {
+  if (entry.is_dir) return true;
+  return THUMBNAILABLE.has((entry.ext ?? '').toLowerCase());
+}
+
 /** Emoji glyph for a tile or an unpreviewable subject. */
 export function fileGlyph(entry: { is_dir: boolean; ext?: string | null }): string {
   if (entry.is_dir) return '📁';

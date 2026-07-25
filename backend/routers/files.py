@@ -26,7 +26,7 @@ from pydantic import BaseModel
 import config
 from database import get_user_db
 from files_base import annotations, attachment_store, filesystem, hashing, index, serving, sources
-from thumbnails import DEFAULT_THUMB_SIZE, ensure_thumbnail
+from thumbnails import DEFAULT_THUMB_SIZE, SUPPORTED_IMAGES, SUPPORTED_VIDEOS, ensure_thumbnail
 
 
 MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
@@ -407,6 +407,66 @@ def _thumbnail_cache_key(resolved: Path) -> str | None:
     return hashlib.md5(seed.encode("utf-8")).hexdigest()
 
 
+# The index stores ``ext`` without a leading dot; ``thumbnails`` uses suffixes.
+_THUMBNAILABLE_EXTS = sorted(
+    ext.lstrip(".") for ext in (SUPPORTED_IMAGES | SUPPORTED_VIDEOS)
+)
+
+
+def _folder_cover(source_id: str, relative_path: str) -> Path | None:
+    """The image a folder tile should wear, or ``None`` if it has none.
+
+    Searches the folder's whole subtree, not just its direct children: a manga
+    series' immediate children are chapter folders, so a direct-children-only
+    cover would leave exactly the folders that most need one bare. Direct
+    children still win, because ``parent`` sorts before ``parent/child``.
+
+    Scoped to ``source_id``, which is what keeps the V1.1.0 boundary intact: a
+    nested registered source owns its own files, so a parent folder never
+    borrows a cover from a child source's contents.
+
+    Runs as two index-friendly steps rather than one query with an ``OR``, which
+    the planner cannot turn into a range (measured: it fell back to a full scan
+    of the source plus a temp B-tree). Step one is an exact
+    ``idx_files_index_source_parent`` hit and answers the common case.
+
+    The descendant bound is ``rel + '/'`` .. ``rel + '0'``, never ``rel`` ..
+    ``rel + '0'``: every character below ``'0'`` — ``-``, ``.``, space — would
+    otherwise drag in siblings like ``rel-vol2``.
+    """
+    placeholders = ",".join("?" for _ in _THUMBNAILABLE_EXTS)
+    common = (
+        f"SELECT path FROM files_index WHERE source_id = ? AND is_dir = 0"
+        f" AND available = 1 AND LOWER(ext) IN ({placeholders})"
+    )
+    exts: list[object] = list(_THUMBNAILABLE_EXTS)
+
+    if relative_path:
+        attempts = [
+            # Direct children first: an exact index hit, and the more meaningful
+            # cover — an image sitting in the folder beats one buried in it.
+            (f"{common} AND parent = ? ORDER BY name COLLATE NOCASE ASC LIMIT 1",
+             [source_id, *exts, relative_path]),
+            (f"{common} AND parent >= ? AND parent < ?"
+             " ORDER BY parent ASC, name COLLATE NOCASE ASC LIMIT 1",
+             [source_id, *exts, relative_path + "/", relative_path + "0"]),
+        ]
+    else:
+        attempts = [
+            (f"{common} ORDER BY parent ASC, name COLLATE NOCASE ASC LIMIT 1",
+             [source_id, *exts]),
+        ]
+
+    with index.open_index(config.FILES_DB_PATH) as index_conn:
+        for query, params in attempts:
+            row = index_conn.execute(query, params).fetchone()
+            if row is not None:
+                candidate = Path(row["path"])
+                if candidate.is_file():
+                    return candidate
+    return None
+
+
 @router.get("/api/files/thumbnail")
 def serve_file_thumbnail(
     source_id: str = Query(...),
@@ -418,11 +478,14 @@ def serve_file_thumbnail(
 ):
     """Return a cached WebP thumbnail for one browsed file.
 
-    Containment is the same chain ``serve_file`` uses — ``resolve_served_file``
+    Containment is the same chain ``serve_file`` uses — ``resolve_subject``
     rejects absolute and ``..`` paths before touching disk, re-checks that the
     target is still inside the source *after* resolving symlinks and junctions,
-    denies Keivotos's own tree, and requires a regular file. A directory is a
-    404 here; folder covers are a separate feature.
+    and denies Keivotos's own tree.
+
+    A **directory** answers with a cover drawn from the first thumbnailable file
+    in its subtree, so a folder of manga or screenshots is recognisable at a
+    glance. The cover is keyed by that file, so changing it changes the tile.
 
     Unrenderable types are a deliberate 404 rather than a placeholder image:
     the placeholder is module-owned presentation, and the base falls back to its
@@ -433,7 +496,12 @@ def serve_file_thumbnail(
     the new thumbnail instead of a cached stale one.
     """
     source, resolved = _resolve_subject(source_id, path)
-    if not resolved.is_file():
+    if resolved.is_dir():
+        cover = _folder_cover(source.source_id, path.strip("/").replace("\\", "/"))
+        if cover is None:
+            raise HTTPException(status_code=404, detail="Folder has no cover image")
+        resolved = cover
+    elif not resolved.is_file():
         raise HTTPException(status_code=404, detail="Not a file")
 
     thumb = ensure_thumbnail(str(resolved), size, _thumbnail_cache_key(resolved))
