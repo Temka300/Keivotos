@@ -33,11 +33,6 @@ def _md5_of_file(path: Path) -> str | None:
     return digest.hexdigest()
 
 
-def md5_of_file(path: Path) -> str | None:
-    """Public content-MD5 of a file, or ``None`` if it cannot be read."""
-    return _md5_of_file(path)
-
-
 def ensure_index_hash(connection: sqlite3.Connection, path: Path) -> str | None:
     """Return a file's content hash, computing it on demand (the annotate moment).
 
