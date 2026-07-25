@@ -325,56 +325,12 @@
       {/if}
     </div>
 
-    <!-- Facts -->
-    <dl class="space-y-1.5 px-4 py-3 text-xs">
-      <div class="flex justify-between gap-3">
-        <dt class="text-gray-500">Size</dt>
-        <dd class="text-gray-300">{subject.isDir ? '—' : formatSize(subject.size)}</dd>
-      </div>
-      <div class="flex justify-between gap-3">
-        <dt class="text-gray-500">Modified</dt>
-        <dd class="text-gray-300">{formatDate(subject.mtime)}</dd>
-      </div>
-      <div class="flex justify-between gap-3">
-        <dt class="shrink-0 text-gray-500">MD5</dt>
-        <dd class="truncate font-mono text-[10px] text-gray-400" title={annotation?.content_hash ?? ''}>
-          {annotation?.content_hash ?? 'not computed'}
-        </dd>
-      </div>
-      <div>
-        <dt class="mb-0.5 text-gray-500">Path</dt>
-        <dd>
-          <button
-            type="button"
-            class="w-full break-all text-left font-mono text-[10px] text-gray-400 hover:text-gray-200"
-            title="Click to copy"
-            on:click={copyPath}
-          >{subject.absolutePath}</button>
-        </dd>
-      </div>
-    </dl>
-
-    <!-- Actions -->
-    <div class="flex gap-2 px-4 pb-3">
-      <button
-        type="button"
-        class="flex-1 rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-purple-500/50 hover:text-white"
-        on:click={openExternally}
-      >Open</button>
-      <button
-        type="button"
-        class="flex-1 rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-purple-500/50 hover:text-white"
-        on:click={reveal}
-      >Show in folder</button>
-    </div>
-    {#if actionError}
-      <p class="px-4 pb-2 text-[11px] text-red-300">{actionError}</p>
-    {/if}
-
-    <!-- Origin -->
-    <div class="border-t border-white/5 px-4 py-3">
+    <!-- Origin — directly under the preview, because it is the reason this
+         panel exists. It used to sit below the size/modified/MD5 facts, where a
+         tall preview pushed it off-screen entirely. -->
+    <div class="border-b border-white/5 px-4 py-3">
       <div class="mb-2 flex items-center justify-between">
-        <h3 class="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Origin</h3>
+        <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Origin</h3>
         {#if !editing && !loading}
           <button
             type="button"
@@ -470,14 +426,14 @@
         </div>
       {:else if hasOrigin && annotation}
         {#if annotation.description}
-          <p class="mb-3 whitespace-pre-wrap break-words text-xs leading-relaxed text-gray-300">{annotation.description}</p>
+          <p class="mb-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-200">{annotation.description}</p>
         {/if}
         {#if annotation.links.length}
           <ul class="mb-3 space-y-1.5">
             {#each annotation.links as link (link.url + link.kind)}
-              <li class="flex items-start gap-2 text-xs">
-                <span class="mt-0.5 shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-gray-400">{linkKindLabel(link.kind)}</span>
-                <a href={link.url} target="_blank" rel="noopener noreferrer" class="min-w-0 break-all text-purple-300 hover:text-purple-200">
+              <li class="flex items-start gap-2 text-sm">
+                <span class="mt-0.5 shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-400">{linkKindLabel(link.kind)}</span>
+                <a href={link.url} target="_blank" rel="noopener noreferrer" class="min-w-0 break-words text-purple-300 hover:text-purple-200">
                   {link.label || link.url}
                 </a>
               </li>
@@ -485,7 +441,7 @@
           </ul>
         {/if}
       {:else}
-        <p class="text-xs text-gray-600">No origin info yet.</p>
+        <p class="text-sm text-gray-500">No origin info yet.</p>
       {/if}
 
       {#if !editing && !loading && !error}
@@ -527,5 +483,51 @@
         </div>
       {/if}
     </div>
+    <!-- Facts -->
+    <dl class="space-y-1.5 px-4 py-3 text-sm">
+      <div class="flex justify-between gap-3">
+        <dt class="text-gray-500">Size</dt>
+        <dd class="text-gray-300">{subject.isDir ? '—' : formatSize(subject.size)}</dd>
+      </div>
+      <div class="flex justify-between gap-3">
+        <dt class="text-gray-500">Modified</dt>
+        <dd class="text-gray-300">{formatDate(subject.mtime)}</dd>
+      </div>
+      <div class="flex justify-between gap-3">
+        <dt class="shrink-0 text-gray-500">MD5</dt>
+        <dd class="truncate font-mono text-xs text-gray-400" title={annotation?.content_hash ?? ''}>
+          {annotation?.content_hash ?? 'not computed'}
+        </dd>
+      </div>
+      <div>
+        <dt class="mb-0.5 text-gray-500">Path</dt>
+        <dd>
+          <button
+            type="button"
+            class="w-full break-words text-left font-mono text-xs leading-relaxed text-gray-400 hover:text-gray-200"
+            title="Click to copy"
+            on:click={copyPath}
+          >{subject.absolutePath}</button>
+        </dd>
+      </div>
+    </dl>
+
+    <!-- Actions -->
+    <div class="flex gap-2 px-4 pb-3">
+      <button
+        type="button"
+        class="flex-1 rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-sm text-gray-300 transition-colors hover:border-purple-500/50 hover:text-white"
+        on:click={openExternally}
+      >Open</button>
+      <button
+        type="button"
+        class="flex-1 rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-sm text-gray-300 transition-colors hover:border-purple-500/50 hover:text-white"
+        on:click={reveal}
+      >Show in folder</button>
+    </div>
+    {#if actionError}
+      <p class="px-4 pb-2 text-[11px] text-red-300">{actionError}</p>
+    {/if}
+
   </div>
 </aside>
