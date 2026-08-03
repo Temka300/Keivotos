@@ -714,3 +714,28 @@ def public_storage_config() -> dict[str, Any]:
 
 def get_config_path() -> Path:
     return RUNTIME_CONFIG_FILE
+
+
+def first_run_library_dir() -> Path:
+    """The default Files library created beside the program on first run.
+
+    It sits next to the executable — a packaged build's folder, or the repo
+    root from source — so a portable copy carries its library alongside it. This
+    is deliberately distinct from the Danbooru module's own ``library`` under the
+    app-data tree (``DEFAULT_LIBRARY_DIR``).
+    """
+    return _executable_directory() / "library"
+
+
+def default_library_pending() -> bool:
+    """Whether the one-time first-run default library has not yet been offered.
+
+    The marker lives in the app-data ``config.json`` (not beside the program),
+    so once it is set, removing the folder in Manage folders never recreates it.
+    """
+    return not bool(_cfg.get("default_library_created", False))
+
+
+def mark_default_library_created() -> None:
+    """Record that the first-run default library was offered, so it never repeats."""
+    save_config({"default_library_created": True})

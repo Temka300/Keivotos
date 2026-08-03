@@ -19,6 +19,7 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI
 
+import config
 import suite_modules
 from automation import automation_loop
 from config import (
@@ -26,6 +27,7 @@ from config import (
     DATA_ROOT,
     MODULE_REGISTRY,
     SIDECAR_DIR,
+    SUITE_HOME,
     migrate_legacy_default_metadata,
     promote_legacy_module_backups,
     promote_user_database,
@@ -33,6 +35,7 @@ from config import (
 from database import get_data_db, get_user_db, init_data_db, init_user_db
 from local_recovery import create_local_recovery_checkpoint
 from modules.danbooru.folder_registry import library_roots
+from services.default_library import install_default_library
 from storage_layout import migrate_existing_sidecars
 
 logger = logging.getLogger(__name__)
@@ -87,6 +90,31 @@ def run_startup_maintenance() -> None:
     """Compatibility wrapper: suite recovery checkpoint + Danbooru sidecar migration."""
     run_user_recovery_checkpoint()
     run_sidecar_layout_migration()
+
+
+def install_first_run_default_library() -> None:
+    """Give a brand-new install a ready-to-use ``Library`` folder beside the program.
+
+    Suite-level and always-on (no module dependency). Runs once, gated by a
+    config flag, so removing the folder in Manage folders never recreates it and
+    an existing library is never touched. Fail-safe: any error is logged and the
+    flag is left unset so the next start can retry.
+    """
+    if not config.default_library_pending():
+        return
+    try:
+        with get_user_db() as user_conn:
+            source = install_default_library(
+                user_conn,
+                config.first_run_library_dir(),
+                forbidden_paths=[SUITE_HOME],
+            )
+        if source is not None:
+            logger.info("Created first-run default library: %s", source.path)
+    except Exception as exc:  # noqa: BLE001 - startup must not be blocked.
+        logger.warning("Could not create the first-run default library: %s", exc)
+        return
+    config.mark_default_library_created()
 
 
 def reconcile_module_folders() -> None:
@@ -150,6 +178,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
     init_data_db()
     init_user_db()
+
+    # A brand-new install gets a ready-to-use Library folder beside the program.
+    # Suite-level and once-only; never touches an existing library.
+    install_first_run_default_library()
 
     # Protect the irreplaceable user DB regardless of which modules are enabled.
     checkpoint_task = asyncio.create_task(

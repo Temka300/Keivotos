@@ -3,6 +3,7 @@ __pycache__/
 *.py[codz]
 *$py.class
 data/
+/library/
 _gallery-dl/
 _gallery_dl/
 
