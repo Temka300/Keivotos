@@ -14,6 +14,7 @@
   } from '../lib/suiteApi';
   import { moduleUi } from '../modules/registry';
   import AppDrawer from './AppDrawer.svelte';
+  import FileContextMenu from './FileContextMenu.svelte';
   import FileInfoPanel from './FileInfoPanel.svelte';
   import ManageFoldersDialog from './ManageFoldersDialog.svelte';
 
@@ -132,6 +133,50 @@
   function selectEntry(entry: FileNode): void {
     selectedEntry = entry;
     if (!infoPanelOpen) setInfoPanelOpen(true);
+  }
+
+  // Right-click menu over one tile. It only exposes read-only actions that
+  // already exist (info panel, Open, Reveal); nothing here writes to disk.
+  let menuEntry: FileNode | null = null;
+  let menuX = 0;
+  let menuY = 0;
+
+  function openMenu(event: MouseEvent, entry: FileNode): void {
+    event.preventDefault();
+    // Keep the browser's native menu suppressed and stop the window handler in
+    // FileContextMenu from closing this the instant it opens.
+    event.stopPropagation();
+    menuEntry = entry;
+    menuX = event.clientX;
+    menuY = event.clientY;
+  }
+
+  function closeMenu(): void {
+    menuEntry = null;
+  }
+
+  function menuShowInfo(): void {
+    if (menuEntry) selectEntry(menuEntry);
+  }
+
+  async function menuOpen(): Promise<void> {
+    if (!menuEntry) return;
+    error = '';
+    try {
+      await filesApi.openFile(menuEntry.source_id, menuEntry.relative_path);
+    } catch (e) {
+      error = (e as Error).message;
+    }
+  }
+
+  async function menuReveal(): Promise<void> {
+    if (!menuEntry) return;
+    error = '';
+    try {
+      await filesApi.revealFile(menuEntry.source_id, menuEntry.relative_path);
+    } catch (e) {
+      error = (e as Error).message;
+    }
   }
 
   async function loadSources() {
@@ -594,6 +639,7 @@
               type="button"
               class="flex flex-col items-center gap-1 p-3 rounded-lg text-center transition-colors {isSelected(entry) ? 'border border-purple-500/60 bg-purple-500/15' : 'border border-white/5 bg-white/[0.03] hover:bg-white/[0.07]'}"
               on:click={() => openEntry(entry)}
+              on:contextmenu={(event) => openMenu(event, entry)}
               title={entry.relative_path}
             >
               <span
@@ -637,6 +683,18 @@
     />
   {/if}
 </div>
+
+{#if menuEntry}
+  <FileContextMenu
+    x={menuX}
+    y={menuY}
+    entry={menuEntry}
+    on:showinfo={menuShowInfo}
+    on:open={menuOpen}
+    on:reveal={menuReveal}
+    on:close={closeMenu}
+  />
+{/if}
 
 {#if showAppMenu}
   <AppDrawer on:close={() => (showAppMenu = false)} />
