@@ -4,7 +4,7 @@
   import { fileGlyph, hasThumbnail, type Subject } from '../lib/filePreview';
   import GridSizeMenu from './GridSizeMenu.svelte';
   import { filesGridSize, imageSizeByValue, thumbnailTierFor } from '../lib/stores';
-  import { persistentStorageKey, SUITE_NAME } from '../lib/product';
+  import { SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/stores';
   import {
     displayNameForPath,
@@ -34,8 +34,7 @@
   let dedupBusy = false;
   let selectedEntry: FileNode | null = null;
   let annotatedPaths = new Set<string>();
-  const INFO_OPEN_KEY = persistentStorageKey('files-info-open');
-  let infoPanelOpen = readInfoPanelOpen();
+  let showInfoModal = false;
 
   $: selectedSource = sources.find((s) => s.source_id === selectedSourceId) ?? null;
   $: sidebarSources = sources.filter((source) => source.visible);
@@ -48,25 +47,10 @@
   $: crumbs = currentParent === '' ? [] : currentParent.split('/');
   $: displayed = searchResults ?? entries;
   $: subject = buildSubject(selectedEntry, selectedSource, currentParent, sources);
+  $: subjectSourceName =
+    sources.find((source) => source.source_id === subject?.sourceId)?.display_name ?? '';
 
   onMount(loadSources);
-
-  function readInfoPanelOpen(): boolean {
-    try {
-      return localStorage.getItem(INFO_OPEN_KEY) !== 'false';
-    } catch {
-      return true;
-    }
-  }
-
-  function setInfoPanelOpen(value: boolean): void {
-    infoPanelOpen = value;
-    try {
-      localStorage.setItem(INFO_OPEN_KEY, String(value));
-    } catch {
-      // Storage can be unavailable; the panel still toggles for this session.
-    }
-  }
 
   function absolutePathFor(sourcePath: string, relativePath: string): string {
     return normalizedPath(relativePath ? `${sourcePath}/${relativePath}` : sourcePath);
@@ -130,9 +114,10 @@
     }
   }
 
+  // Left-click selects (highlights) a file only; the info modal is opened
+  // deliberately from the right-click menu's Show info, not on every click.
   function selectEntry(entry: FileNode): void {
     selectedEntry = entry;
-    if (!infoPanelOpen) setInfoPanelOpen(true);
   }
 
   // Right-click menu over one tile. It only exposes read-only actions that
@@ -156,7 +141,9 @@
   }
 
   function menuShowInfo(): void {
-    if (menuEntry) selectEntry(menuEntry);
+    if (!menuEntry) return;
+    selectedEntry = menuEntry;
+    showInfoModal = true;
   }
 
   async function menuOpen(): Promise<void> {
@@ -506,18 +493,6 @@
       disabled={dedupBusy || sources.length === 0}
       title="Find files with identical content across every source"
     >{dedupBusy ? 'Hashing…' : duplicateGroups !== null ? 'Close duplicates' : 'Duplicates'}</button>
-    <button
-      type="button"
-      class="grid h-9 w-9 place-items-center rounded-lg border transition-colors disabled:opacity-40 {infoPanelOpen ? 'border-purple-500/50 bg-purple-500/25 text-purple-100' : 'border-[#2a2a3a] bg-[#1e1e2e] text-gray-300 hover:border-purple-500/50 hover:text-white'}"
-      on:click={() => setInfoPanelOpen(!infoPanelOpen)}
-      disabled={!selectedSource}
-      title="{infoPanelOpen ? 'Hide' : 'Show'} the info panel"
-      aria-label="Toggle info panel"
-    >
-      <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8h.01M11 12h1v4h1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    </button>
   </div>
 </header>
 
@@ -674,15 +649,16 @@
       {/if}
     </div>
   </section>
-
-  {#if infoPanelOpen && subject}
-    <FileInfoPanel
-      {subject}
-      on:close={() => setInfoPanelOpen(false)}
-      on:changed={loadAnnotatedPaths}
-    />
-  {/if}
 </div>
+
+{#if showInfoModal && subject}
+  <FileInfoPanel
+    {subject}
+    sourceName={subjectSourceName}
+    on:close={() => (showInfoModal = false)}
+    on:changed={loadAnnotatedPaths}
+  />
+{/if}
 
 {#if menuEntry}
   <FileContextMenu

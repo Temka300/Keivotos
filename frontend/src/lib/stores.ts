@@ -313,19 +313,6 @@ export const imageSize = persistedWritable<ImageSize>(persistentStorageKey('imag
 // would silently reset the user's saved preference.
 export const filesGridSize = persistedWritable<ImageSize>(persistentStorageKey('files-grid-size'), 'medium', normalizeImageSize);
 
-export const FILES_INFO_MIN_WIDTH = 300;
-export const FILES_INFO_MAX_WIDTH = 760;
-
-function normalizeInfoWidth(value: unknown): number {
-  const width = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(width)) return 416;
-  return Math.min(FILES_INFO_MAX_WIDTH, Math.max(FILES_INFO_MIN_WIDTH, Math.round(width)));
-}
-
-// The info panel's width, dragged by its left grip. Defaults wider than the
-// original 22rem: the panel holds a description and a screenshot, and 352px
-// was too narrow to read either comfortably.
-export const filesInfoWidth = persistedWritable<number>(persistentStorageKey('files-info-width'), 416, normalizeInfoWidth);
 export const imagePageSize = persistedWritable<ImagePageSize>(persistentStorageKey('image-page-size'), 10, normalizeImagePageSize);
 export const mediaPlayback = persistedWritable<MediaPlayback>(persistentStorageKey('media-autoplay'), 'always', normalizeMediaPlayback);
 export const heartSpamEnabled = persistedWritable<boolean>(persistentStorageKey('heart-spam-enabled'), false, normalizeBooleanFalse);
