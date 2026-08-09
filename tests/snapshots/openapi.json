@@ -104,6 +104,11 @@
             "title": "Attachments",
             "type": "array"
           },
+          "author": {
+            "default": "",
+            "title": "Author",
+            "type": "string"
+          },
           "content_hash": {
             "anyOf": [
               {
@@ -128,6 +133,11 @@
           },
           "description": {
             "title": "Description",
+            "type": "string"
+          },
+          "extra_info": {
+            "default": "",
+            "title": "Extra Info",
             "type": "string"
           },
           "id": {
@@ -179,9 +189,19 @@
       },
       "AnnotationRequest": {
         "properties": {
+          "author": {
+            "default": "",
+            "title": "Author",
+            "type": "string"
+          },
           "description": {
             "default": "",
             "title": "Description",
+            "type": "string"
+          },
+          "extra_info": {
+            "default": "",
+            "title": "Extra Info",
             "type": "string"
           },
           "links": {

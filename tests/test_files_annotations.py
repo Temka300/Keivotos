@@ -38,6 +38,79 @@ class AnnotationStoreTests(unittest.TestCase):
             )
         )
 
+    def test_author_and_extra_info_persist_and_update_independently(self) -> None:
+        created = annotations.upsert_annotation(
+            self.conn,
+            subject_kind="dir",
+            source_id="src",
+            relative_path="3D/iroha",
+            description="A Booth model",
+            author="しろま",
+            extra_info="Commercial use OK",
+        )
+        self.assertEqual(created.author, "しろま")
+        self.assertEqual(created.extra_info, "Commercial use OK")
+        # Passing only one field leaves the others untouched (None = leave as-is).
+        updated = annotations.upsert_annotation(
+            self.conn,
+            subject_kind="dir",
+            source_id="src",
+            relative_path="3D/iroha",
+            author="shiroma",
+        )
+        self.assertEqual(updated.author, "shiroma")
+        self.assertEqual(updated.description, "A Booth model")
+        self.assertEqual(updated.extra_info, "Commercial use OK")
+
+    def test_note_with_only_author_is_kept_then_pruned_when_cleared(self) -> None:
+        note = annotations.upsert_annotation(
+            self.conn,
+            subject_kind="dir",
+            source_id="src",
+            relative_path="folder",
+            author="Artist",
+        )
+        # Author alone is real content: it must not be pruned as an empty note.
+        self.assertFalse(annotations.prune_if_empty(self.conn, note.id))
+        self.assertIsNotNone(
+            annotations.get_annotation(self.conn, source_id="src", relative_path="folder")
+        )
+        annotations.upsert_annotation(
+            self.conn,
+            subject_kind="dir",
+            source_id="src",
+            relative_path="folder",
+            author="",
+        )
+        self.assertTrue(annotations.prune_if_empty(self.conn, note.id))
+        self.assertIsNone(
+            annotations.get_annotation(self.conn, source_id="src", relative_path="folder")
+        )
+
+    def test_ensure_adds_author_and_extra_info_to_a_legacy_table(self) -> None:
+        legacy = sqlite3.connect(self.temp / "legacy.sqlite")
+        legacy.row_factory = sqlite3.Row
+        legacy.executescript(
+            "CREATE TABLE files_annotations ("
+            " id INTEGER PRIMARY KEY AUTOINCREMENT, subject_kind TEXT NOT NULL,"
+            " content_hash TEXT, source_id TEXT NOT NULL, relative_path TEXT NOT NULL,"
+            " description TEXT NOT NULL DEFAULT '',"
+            " created_at TEXT NOT NULL DEFAULT (datetime('now')),"
+            " updated_at TEXT NOT NULL DEFAULT (datetime('now')));"
+        )
+        legacy.execute(
+            "INSERT INTO files_annotations (subject_kind, source_id, relative_path, description)"
+            " VALUES ('dir', 'src', 'old', 'legacy note')"
+        )
+        legacy.commit()
+        annotations.ensure_annotations_schema(legacy)
+        note = annotations.get_annotation(legacy, source_id="src", relative_path="old")
+        self.assertIsNotNone(note)
+        self.assertEqual(note.description, "legacy note")
+        self.assertEqual(note.author, "")
+        self.assertEqual(note.extra_info, "")
+        legacy.close()
+
     def test_file_annotation_follows_the_content_hash_not_the_path(self) -> None:
         created = annotations.upsert_annotation(
             self.conn,

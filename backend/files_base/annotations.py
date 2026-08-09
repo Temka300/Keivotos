@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS files_annotations (
     source_id      TEXT NOT NULL,
     relative_path  TEXT NOT NULL,
     description    TEXT NOT NULL DEFAULT '',
+    author         TEXT NOT NULL DEFAULT '',
+    extra_info     TEXT NOT NULL DEFAULT '',
     created_at     TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -127,6 +129,8 @@ class Annotation:
     source_id: str
     relative_path: str
     description: str
+    author: str
+    extra_info: str
     created_at: str | None
     updated_at: str | None
     links: list[AnnotationLink] = field(default_factory=list)
@@ -137,19 +141,29 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def ensure_annotations_schema(user_conn: sqlite3.Connection) -> None:
-    """Create the annotation tables if absent (idempotent, additive)."""
-    user_conn.executescript(FILES_ANNOTATIONS_SCHEMA)
+def _table_columns(user_conn: sqlite3.Connection, table: str) -> set[str]:
     columns: set[str] = set()
-    for row in user_conn.execute("PRAGMA table_info(files_annotation_attachments)").fetchall():
+    for row in user_conn.execute(f"PRAGMA table_info({table})").fetchall():
         try:
             columns.add(str(row["name"]))
         except (KeyError, TypeError):
             columns.add(str(row[1]))
-    if "stored_root" not in columns:
+    return columns
+
+
+def ensure_annotations_schema(user_conn: sqlite3.Connection) -> None:
+    """Create the annotation tables if absent (idempotent, additive)."""
+    user_conn.executescript(FILES_ANNOTATIONS_SCHEMA)
+    if "stored_root" not in _table_columns(user_conn, "files_annotation_attachments"):
         user_conn.execute(
             "ALTER TABLE files_annotation_attachments ADD COLUMN stored_root TEXT"
         )
+    annotation_columns = _table_columns(user_conn, "files_annotations")
+    for column in ("author", "extra_info"):
+        if column not in annotation_columns:
+            user_conn.execute(
+                f"ALTER TABLE files_annotations ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+            )
     user_conn.commit()
 
 
@@ -210,6 +224,8 @@ def _load(user_conn: sqlite3.Connection, row: sqlite3.Row) -> Annotation:
         source_id=row["source_id"],
         relative_path=row["relative_path"],
         description=row["description"],
+        author=row["author"],
+        extra_info=row["extra_info"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
         links=list_links(user_conn, annotation_id),
@@ -278,12 +294,15 @@ def upsert_annotation(
     relative_path: str,
     content_hash: str | None = None,
     description: str | None = None,
+    author: str | None = None,
+    extra_info: str | None = None,
 ) -> Annotation:
-    """Find-or-create the annotation for a subject and optionally set its text.
+    """Find-or-create the annotation for a subject and optionally set its fields.
 
-    ``description=None`` leaves existing text untouched (and creates an empty
-    note), so a caller can guarantee a row exists before attaching a link.
-    Creating a row also refreshes the stored last-known-location hint.
+    Any field passed as ``None`` is left untouched (and created empty), so a
+    caller can guarantee a row exists before attaching a link, or update one
+    field without disturbing the rest. Creating a row also refreshes the stored
+    last-known-location hint.
     """
     if subject_kind not in ("file", "dir"):
         raise ValueError("subject_kind must be 'file' or 'dir'")
@@ -303,13 +322,16 @@ def upsert_annotation(
         user_conn.execute(
             "INSERT INTO files_annotations "
             "(subject_kind, content_hash, source_id, relative_path, description, "
-            " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " author, extra_info, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 subject_kind,
                 content_hash,
                 source_id,
                 relative_path,
                 (description or "").strip(),
+                (author or "").strip(),
+                (extra_info or "").strip(),
                 now,
                 now,
             ),
@@ -320,6 +342,12 @@ def upsert_annotation(
         if description is not None:
             assignments.append("description = ?")
             params.append(description.strip())
+        if author is not None:
+            assignments.append("author = ?")
+            params.append(author.strip())
+        if extra_info is not None:
+            assignments.append("extra_info = ?")
+            params.append(extra_info.strip())
         params.append(existing.id)
         user_conn.execute(
             f"UPDATE files_annotations SET {', '.join(assignments)} WHERE id = ?",
@@ -471,11 +499,12 @@ def prune_if_empty(user_conn: sqlite3.Connection, annotation_id: int) -> bool:
     matching the PUT path's empty-note cleanup.
     """
     row = user_conn.execute(
-        "SELECT description FROM files_annotations WHERE id = ?", (annotation_id,)
+        "SELECT description, author, extra_info FROM files_annotations WHERE id = ?",
+        (annotation_id,),
     ).fetchone()
     if row is None:
         return False
-    if row["description"].strip():
+    if row["description"].strip() or row["author"].strip() or row["extra_info"].strip():
         return False
     has_link = user_conn.execute(
         "SELECT 1 FROM files_annotation_links WHERE annotation_id = ? LIMIT 1",

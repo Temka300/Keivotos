@@ -133,6 +133,8 @@ class AnnotationModel(BaseModel):
     source_id: str
     relative_path: str
     description: str
+    author: str = ""
+    extra_info: str = ""
     created_at: str | None = None
     updated_at: str | None = None
     links: list[AnnotationLinkModel] = []
@@ -143,6 +145,8 @@ class AnnotationRequest(BaseModel):
     source_id: str
     path: str = ""
     description: str = ""
+    author: str = ""
+    extra_info: str = ""
     links: list[AnnotationLinkModel] = []
 
 
@@ -226,6 +230,8 @@ def _annotation_to_model(note: annotations.Annotation) -> AnnotationModel:
         source_id=note.source_id,
         relative_path=note.relative_path,
         description=note.description,
+        author=note.author,
+        extra_info=note.extra_info,
         created_at=note.created_at,
         updated_at=note.updated_at,
         links=[
@@ -691,6 +697,8 @@ def put_info(payload: AnnotationRequest) -> AnnotationModel | None:
             )
         valid_links.append({"url": url, "label": link.label, "kind": link.kind})
     description = payload.description.strip()
+    author = payload.author.strip()
+    extra_info = payload.extra_info.strip()
 
     content_hash = None
     if not is_dir:
@@ -708,8 +716,14 @@ def put_info(payload: AnnotationRequest) -> AnnotationModel | None:
             source_id=payload.source_id,
             relative_path=payload.path,
         )
-        # A note with no text, no links, and no attachments is not worth keeping.
-        if not description and not valid_links and not (existing and existing.attachments):
+        # A note with no fields, no links, and no attachments is not worth keeping.
+        if (
+            not description
+            and not author
+            and not extra_info
+            and not valid_links
+            and not (existing and existing.attachments)
+        ):
             if existing is not None:
                 annotations.delete_annotation(user_conn, existing.id)
             return None
@@ -720,6 +734,8 @@ def put_info(payload: AnnotationRequest) -> AnnotationModel | None:
             relative_path=payload.path,
             content_hash=content_hash,
             description=description,
+            author=author,
+            extra_info=extra_info,
         )
         annotations.set_links(user_conn, note.id, valid_links)
         final = annotations.get_annotation(
@@ -832,6 +848,16 @@ def copy_info(payload: CopyInfoRequest) -> AnnotationModel:
         if dst_hash is None:
             raise HTTPException(status_code=400, detail="Could not read the file to identify it")
 
+    # Additive for the extra fields too: fill only what the target is missing,
+    # never overwrite a value the user already put there (description keeps its
+    # own 409-gated overwrite path above).
+    copy_author = origin.author.strip() or None
+    if copy_author and existing and existing.author.strip():
+        copy_author = None
+    copy_extra = origin.extra_info.strip() or None
+    if copy_extra and existing and existing.extra_info.strip():
+        copy_extra = None
+
     with get_user_db() as user_conn:
         annotations.ensure_annotations_schema(user_conn)
         note = annotations.upsert_annotation(
@@ -841,6 +867,8 @@ def copy_info(payload: CopyInfoRequest) -> AnnotationModel:
             relative_path=dst.path,
             content_hash=dst_hash,
             description=origin.description.strip() or None,
+            author=copy_author,
+            extra_info=copy_extra,
         )
         merged = [
             {"url": link.url, "label": link.label, "kind": link.kind}
