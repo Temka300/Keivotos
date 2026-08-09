@@ -1,26 +1,21 @@
 <script lang="ts">
-  // The "File information" modal, opened from the browse tile's right-click
-  // Show info. It replaced the docked, resizable side panel in Phase 1: a
-  // centered dialog with two tabs — Properties (system facts) and Origin (the
-  // user-authored note, links, attachments, and in-app preview). The Origin
-  // logic is carried over unchanged; only the container and layout changed.
+  // The "File information" modal, opened from a browse tile's right-click Show
+  // info. Two tabs: Properties (system facts) and Origin (the user-authored
+  // note). The Origin tab is a progressive editor — an empty note is a single
+  // "Add info" button; picking a field type from its menu reveals that field
+  // inline, and each field saves on blur. There is no in-app file preview.
   import { createEventDispatcher } from 'svelte';
-  import { filesApi, type Annotation, type AnnotationLink, type ApiError } from '../lib/filesApi';
-  import {
-    fileGlyph,
-    isListableArchive,
-    linkKindLabel,
-    previewMode,
-    type Subject,
-  } from '../lib/filePreview';
+  import { filesApi, type Annotation, type AnnotationLink } from '../lib/filesApi';
+  import { fileGlyph, linkKindLabel, type Subject } from '../lib/filePreview';
 
   export let subject: Subject;
   // The owning source's display name, resolved by the parent from the registry.
   export let sourceName = '';
 
-  const dispatch = createEventDispatcher<{ close: void; changed: void }>();
-  const TEXT_CAP = 1024 * 1024;
+  const dispatch = createEventDispatcher<{ close: void; changed: void; browse: void }>();
   const LINK_KINDS = ['source', 'discussion', 'mirror', 'author', 'other'];
+
+  type FieldKey = 'description' | 'links' | 'author' | 'extra';
 
   let activeTab: 'properties' | 'origin' = 'properties';
 
@@ -28,50 +23,43 @@
   let loading = false;
   let error = '';
   let actionError = '';
-  let textPreview: string | null = null;
-  let textTruncated = false;
   let loadedKey = '';
-
-  let editing = false;
-  let saving = false;
-  let draftDescription = '';
-  let draftLinks: AnnotationLink[] = [];
   let uploading = false;
   let fileInput: HTMLInputElement;
+
+  // One working copy of the editable fields; every field commits the whole draft.
+  let draft = { description: '', author: '', extra_info: '', links: [] as AnnotationLink[] };
+  let lastSaved = '';
+  // Empty fields the user has chosen to add but not yet filled — kept visible.
+  let added = new Set<FieldKey>();
+  let addMenuOpen = false;
 
   $: key = `${subject.sourceId}::${subject.path}`;
   $: if (key !== loadedKey) {
     loadedKey = key;
     void load(subject);
   }
-  $: mode = subject.isDir ? 'none' : previewMode(subject.ext);
-  $: fileHref = filesApi.fileUrl(subject.sourceId, subject.path);
   $: typeLabel = subject.isDir ? 'Folder' : subject.ext ? `${subject.ext.toUpperCase()} file` : 'File';
-  $: hasOrigin =
-    annotation !== null &&
-    (annotation.description.trim() !== '' ||
-      annotation.links.length > 0 ||
-      annotation.attachments.length > 0);
 
-  function onKey(event: KeyboardEvent) {
-    if (event.key !== 'Escape') return;
-    // While editing origin, Escape stays out of the way so a draft is never lost
-    // to a stray keypress; the Cancel button is the deliberate exit there.
-    if (editing) return;
-    dispatch('close');
-  }
+  $: showDescription = draft.description.trim() !== '' || added.has('description');
+  $: showAuthor = draft.author.trim() !== '' || added.has('author');
+  $: showExtra = draft.extra_info.trim() !== '' || added.has('extra');
+  $: showLinks = draft.links.length > 0 || added.has('links');
+  $: attachments = annotation?.attachments ?? [];
+  $: addOptions = [
+    !showDescription ? { key: 'description', label: 'Description' } : null,
+    !showLinks ? { key: 'links', label: 'Link' } : null,
+    !showAuthor ? { key: 'author', label: 'Author' } : null,
+    { key: 'image', label: 'Image / video' },
+    !showExtra ? { key: 'extra', label: 'Extra info' } : null,
+  ].filter((option): option is { key: string; label: string } => option !== null);
 
   async function load(current: Subject) {
     loading = true;
     error = '';
     actionError = '';
     annotation = null;
-    editing = false;
-    textPreview = null;
-    textTruncated = false;
-    archive = null;
-    archiveError = '';
-    picking = false;
+    closeMenus();
     try {
       annotation = await filesApi.getInfo(current.sourceId, current.path);
     } catch (e) {
@@ -79,109 +67,76 @@
     } finally {
       loading = false;
     }
-    if (!current.isDir && previewMode(current.ext) === 'text') {
-      await loadText(current);
+    syncDraft();
+  }
+
+  function syncDraft() {
+    draft = {
+      description: annotation?.description ?? '',
+      author: annotation?.author ?? '',
+      extra_info: annotation?.extra_info ?? '',
+      links: (annotation?.links ?? []).map((link) => ({ ...link })),
+    };
+    added = new Set();
+    lastSaved = serialize();
+  }
+
+  function serialize(): string {
+    return JSON.stringify({
+      d: draft.description.trim(),
+      a: draft.author.trim(),
+      e: draft.extra_info.trim(),
+      l: draft.links
+        .map((link) => ({ u: link.url.trim(), b: link.label.trim(), k: link.kind }))
+        .filter((link) => link.u),
+    });
+  }
+
+  function onKey(event: KeyboardEvent) {
+    if (event.key !== 'Escape') return;
+    if (addMenuOpen) {
+      closeMenus();
+      return;
     }
+    dispatch('close');
   }
 
-  function startEditing() {
-    draftDescription = annotation?.description ?? '';
-    draftLinks = (annotation?.links ?? []).map((link) => ({ ...link }));
-    if (draftLinks.length === 0) addLink();
-    actionError = '';
-    editing = true;
+  function closeMenus() {
+    addMenuOpen = false;
   }
 
-  function cancelEditing() {
-    editing = false;
-    actionError = '';
+  function addField(fieldKey: string) {
+    closeMenus();
+    if (fieldKey === 'image') {
+      fileInput.click();
+      return;
+    }
+    added.add(fieldKey as FieldKey);
+    added = added;
+    if (fieldKey === 'links' && draft.links.length === 0) addLink();
   }
 
   function addLink() {
-    draftLinks = [...draftLinks, { url: '', label: '', kind: 'source' }];
+    draft.links = [...draft.links, { url: '', label: '', kind: 'source' }];
   }
 
   function removeLink(index: number) {
-    draftLinks = draftLinks.filter((_, i) => i !== index);
+    draft.links = draft.links.filter((_, i) => i !== index);
+    void persist();
   }
 
-  // --- Archive contents --------------------------------------------------
-  // Fetched on demand rather than whenever an archive is selected: clicking
-  // through a folder of zips should not fire a listing per click.
-  let archive: import('../lib/filesApi').ArchiveListing | null = null;
-  let archiveError = '';
-  let archiveLoading = false;
-
-  $: canListArchive = !subject.isDir && isListableArchive(subject.ext);
-
-  async function loadArchive() {
-    archiveLoading = true;
-    archiveError = '';
-    try {
-      archive = await filesApi.listArchive(subject.sourceId, subject.path);
-    } catch (e) {
-      archiveError = (e as Error).message;
-    } finally {
-      archiveLoading = false;
-    }
+  function removeField(fieldKey: FieldKey) {
+    if (fieldKey === 'description') draft.description = '';
+    else if (fieldKey === 'author') draft.author = '';
+    else if (fieldKey === 'extra') draft.extra_info = '';
+    else if (fieldKey === 'links') draft.links = [];
+    added.delete(fieldKey);
+    added = added;
+    void persist();
   }
 
-  // --- Copy origin from another subject ---------------------------------
-  // The unzip workflow: extract an archive, then carry the archive's Booth link
-  // and description onto the folder that came out of it.
-  let picking = false;
-  let pickerPaths: string[] = [];
-  let pickerFilter = '';
-  let copying = false;
-
-  $: pickerMatches = pickerPaths
-    .filter((candidate) => candidate !== subject.path)
-    .filter((candidate) => candidate.toLowerCase().includes(pickerFilter.toLowerCase()))
-    .slice(0, 50);
-
-  async function openPicker() {
-    actionError = '';
-    picking = true;
-    pickerFilter = '';
-    try {
-      pickerPaths = await filesApi.listAnnotated(subject.sourceId);
-    } catch (e) {
-      actionError = (e as Error).message;
-      pickerPaths = [];
-    }
-  }
-
-  async function copyFrom(fromPath: string, overwrite = false) {
-    copying = true;
-    actionError = '';
-    try {
-      annotation = await filesApi.copyInfo(
-        subject.sourceId,
-        fromPath,
-        subject.sourceId,
-        subject.path,
-        overwrite,
-      );
-      picking = false;
-      dispatch('changed');
-    } catch (e) {
-      const error = e as ApiError;
-      // 409 is the server refusing to replace text the user wrote by hand.
-      if (error.status === 409 && !overwrite) {
-        copying = false;
-        if (confirm(`${error.message}.\n\nReplace this description?`)) {
-          await copyFrom(fromPath, true);
-        }
-        return;
-      }
-      actionError = error.message;
-    } finally {
-      copying = false;
-    }
-  }
-
-  async function save() {
-    const links = draftLinks
+  async function persist() {
+    const links = draft.links
       .map((link) => ({ url: link.url.trim(), label: link.label.trim(), kind: link.kind }))
       .filter((link) => link.url !== '');
     for (const link of links) {
@@ -190,37 +145,25 @@
         return;
       }
     }
-    saving = true;
+    const snapshot = serialize();
+    if (snapshot === lastSaved) {
+      actionError = '';
+      return;
+    }
     actionError = '';
     try {
-      // Local-state-first: adopt the server's normalized note, then fan out.
       annotation = await filesApi.saveInfo({
         source_id: subject.sourceId,
         path: subject.path,
-        description: draftDescription.trim(),
+        description: draft.description.trim(),
+        author: draft.author.trim(),
+        extra_info: draft.extra_info.trim(),
         links,
       });
-      editing = false;
+      lastSaved = snapshot;
       dispatch('changed');
     } catch (e) {
       actionError = (e as Error).message;
-    } finally {
-      saving = false;
-    }
-  }
-
-  async function deleteInfo() {
-    saving = true;
-    actionError = '';
-    try {
-      await filesApi.deleteInfo(subject.sourceId, subject.path);
-      annotation = null;
-      editing = false;
-      dispatch('changed');
-    } catch (e) {
-      actionError = (e as Error).message;
-    } finally {
-      saving = false;
     }
   }
 
@@ -252,16 +195,13 @@
     }
   }
 
-  async function loadText(current: Subject) {
-    try {
-      const res = await fetch(filesApi.fileUrl(current.sourceId, current.path), {
-        headers: { Range: `bytes=0-${TEXT_CAP - 1}` },
-      });
-      if (!res.ok && res.status !== 206) return;
-      textPreview = await res.text();
-      textTruncated = (current.size ?? 0) > TEXT_CAP;
-    } catch {
-      // Preview is best-effort; the facts and Open action still work.
+  // "Open" browses a folder inside Keivotos; a file has no in-app viewer, so it
+  // falls back to the OS default app. "Show in folder" is the OS-explorer reveal.
+  function openSubject() {
+    if (subject.isDir) {
+      dispatch('browse');
+    } else {
+      void openExternally();
     }
   }
 
@@ -319,14 +259,13 @@
 >
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
-    class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[#2a2a3a] bg-[#12121a] shadow-2xl"
+    class="flex h-[560px] max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-[#2a2a3a] bg-[#12121a] shadow-2xl"
     role="dialog"
     aria-modal="true"
     aria-label="File information"
     tabindex="-1"
     on:click|stopPropagation
   >
-    <!-- Header -->
     <div class="flex items-center gap-2 border-b border-white/5 px-4 py-3">
       <span class="text-lg leading-none">{fileGlyph({ is_dir: subject.isDir, ext: subject.ext })}</span>
       <div class="min-w-0 flex-1">
@@ -342,7 +281,6 @@
       >✕</button>
     </div>
 
-    <!-- Tabs -->
     <div class="flex shrink-0 gap-4 border-b border-white/5 px-4">
       <button
         type="button"
@@ -356,7 +294,6 @@
       >Origin</button>
     </div>
 
-    <!-- Body -->
     <div class="flex-1 overflow-y-auto">
       {#if activeTab === 'properties'}
         <dl class="space-y-3 px-5 py-4 text-sm">
@@ -398,293 +335,155 @@
             </dd>
           </div>
         </dl>
+      {:else if loading}
+        <p class="px-4 py-3 text-sm text-gray-500">Loading…</p>
+      {:else if error}
+        <p class="px-4 py-3 text-xs text-red-300">{error}</p>
       {:else}
-        <!-- Preview -->
-        <div class="border-b border-white/5 bg-black/20 p-3">
-          {#if mode === 'image'}
-            <img src={fileHref} alt={subject.name} class="mx-auto max-h-72 max-w-full rounded object-contain" />
-          {:else if mode === 'video'}
-            <!-- svelte-ignore a11y-media-has-caption -->
-            <video src={fileHref} controls class="mx-auto max-h-72 max-w-full rounded"></video>
-          {:else if mode === 'audio'}
-            <audio src={fileHref} controls class="w-full"></audio>
-          {:else if mode === 'pdf'}
-            <embed src={fileHref} type="application/pdf" class="h-80 w-full rounded" />
-          {:else if mode === 'text'}
-            {#if textPreview !== null}
-              <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded bg-black/30 p-2 text-[11px] leading-snug text-gray-300">{textPreview}</pre>
-              {#if textTruncated}
-                <p class="mt-1 text-[10px] text-gray-500">Preview truncated — open externally for the full file.</p>
-              {/if}
-            {:else}
-              <p class="py-6 text-center text-xs text-gray-600">Loading preview…</p>
-            {/if}
-          {:else}
-            <div class="grid place-items-center py-8 text-center">
-              <div class="text-5xl">{fileGlyph({ is_dir: subject.isDir, ext: subject.ext })}</div>
-              <p class="mt-2 text-xs text-gray-500">No in-app preview for this type.</p>
+        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+        <div class="px-4 py-3" on:click={closeMenus}>
+          {#if showDescription}
+            <div class="mb-3">
+              <div class="mb-1 flex items-center justify-between">
+                <span class="text-[10px] uppercase tracking-wide text-gray-500">Description</span>
+                <button type="button" class="text-gray-600 hover:text-red-300" title="Remove description" aria-label="Remove description" on:click={() => removeField('description')}>✕</button>
+              </div>
+              <textarea
+                rows="3"
+                bind:value={draft.description}
+                on:blur={persist}
+                placeholder="Where is this from? What is it?"
+                class="w-full resize-y rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1.5 text-xs text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+              ></textarea>
             </div>
           {/if}
-        </div>
 
-        <!-- Origin -->
-        <div class="border-b border-white/5 px-4 py-3">
-          <div class="mb-2 flex items-center justify-between">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Origin</h3>
-            {#if !editing && !loading}
-              <div class="flex items-center gap-3">
-                <button
-                  type="button"
-                  class="text-xs text-gray-400 hover:text-purple-200"
-                  title="Carry another file's origin note onto this one"
-                  on:click={openPicker}
-                >Copy from…</button>
-                <button
-                  type="button"
-                  class="text-xs text-purple-300 hover:text-purple-200"
-                  on:click={startEditing}
-                >{hasOrigin ? 'Edit' : 'Add info'}</button>
+          {#if showAuthor}
+            <div class="mb-3">
+              <div class="mb-1 flex items-center justify-between">
+                <span class="text-[10px] uppercase tracking-wide text-gray-500">Author</span>
+                <button type="button" class="text-gray-600 hover:text-red-300" title="Remove author" aria-label="Remove author" on:click={() => removeField('author')}>✕</button>
               </div>
-            {/if}
-          </div>
-
-          {#if picking}
-            <div class="mb-3 rounded-lg border border-[#2a2a3a] bg-[#12121a] p-2">
-              <div class="mb-2 flex items-center gap-2">
-                <input
-                  class="min-w-0 flex-1 rounded border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1 text-xs text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
-                  placeholder="Filter files with origin info…"
-                  bind:value={pickerFilter}
-                />
-                <button
-                  type="button"
-                  class="shrink-0 text-xs text-gray-500 hover:text-gray-300"
-                  on:click={() => (picking = false)}
-                >Cancel</button>
-              </div>
-              {#if pickerMatches.length === 0}
-                <p class="px-1 py-2 text-xs text-gray-600">
-                  {pickerPaths.length === 0
-                    ? 'Nothing in this folder has origin info yet.'
-                    : 'No match.'}
-                </p>
-              {:else}
-                <ul class="max-h-52 overflow-y-auto">
-                  {#each pickerMatches as candidate (candidate)}
-                    <li>
-                      <button
-                        type="button"
-                        class="w-full truncate rounded px-2 py-1 text-left text-xs text-gray-300 hover:bg-white/5 hover:text-white disabled:opacity-40"
-                        title={candidate}
-                        disabled={copying}
-                        on:click={() => copyFrom(candidate)}
-                      >{candidate || '(this folder)'}</button>
-                    </li>
-                  {/each}
-                </ul>
-              {/if}
-              <p class="mt-1 px-1 text-[10px] text-gray-600">
-                Adds to this note — links and screenshots merge, nothing is removed.
-              </p>
+              <input
+                bind:value={draft.author}
+                on:blur={persist}
+                placeholder="Creator name"
+                class="w-full rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1.5 text-xs text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+              />
             </div>
           {/if}
-          {#if loading}
-            <p class="text-sm text-gray-500">Loading…</p>
-          {:else if error}
-            <p class="text-xs text-red-300">{error}</p>
-          {:else if editing}
-            <div class="space-y-3">
-              <div>
-                <label class="mb-1 block text-[10px] uppercase tracking-wide text-gray-500" for="origin-desc">Description</label>
-                <textarea
-                  id="origin-desc"
-                  rows="4"
-                  bind:value={draftDescription}
-                  placeholder="Where is this from? What is it?"
-                  class="w-full resize-y rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1.5 text-xs text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
-                ></textarea>
-              </div>
 
-              <div class="space-y-2">
-                <span class="block text-[10px] uppercase tracking-wide text-gray-500">Links</span>
-                {#each draftLinks as link, index (index)}
-                  <div class="space-y-1 rounded-lg border border-white/5 bg-black/20 p-2">
-                    <div class="flex gap-1.5">
-                      <select
-                        bind:value={link.kind}
-                        class="shrink-0 rounded border border-[#2a2a3a] bg-[#1e1e2e] px-1 py-1 text-[11px] text-gray-300 outline-none focus:border-purple-500"
-                      >
-                        {#each LINK_KINDS as kind}
-                          <option value={kind}>{linkKindLabel(kind)}</option>
-                        {/each}
-                      </select>
-                      <input
-                        bind:value={link.label}
-                        placeholder="Label (optional)"
-                        class="min-w-0 flex-1 rounded border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1 text-[11px] text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
-                      />
-                      <button
-                        type="button"
-                        class="shrink-0 rounded px-1.5 text-gray-500 hover:text-red-300"
-                        title="Remove link"
-                        aria-label="Remove link"
-                        on:click={() => removeLink(index)}
-                      >✕</button>
-                    </div>
+          {#if showLinks}
+            <div class="mb-3">
+              <div class="mb-1 flex items-center justify-between">
+                <span class="text-[10px] uppercase tracking-wide text-gray-500">Links</span>
+                <button type="button" class="text-gray-600 hover:text-red-300" title="Remove all links" aria-label="Remove all links" on:click={() => removeField('links')}>✕</button>
+              </div>
+              {#each draft.links as link, index (index)}
+                <div class="mb-2 space-y-1 rounded-lg border border-white/5 bg-black/20 p-2">
+                  <div class="flex gap-1.5">
+                    <select
+                      bind:value={link.kind}
+                      on:change={persist}
+                      class="shrink-0 rounded border border-[#2a2a3a] bg-[#1e1e2e] px-1 py-1 text-[11px] text-gray-300 outline-none focus:border-purple-500"
+                    >
+                      {#each LINK_KINDS as kind}
+                        <option value={kind}>{linkKindLabel(kind)}</option>
+                      {/each}
+                    </select>
                     <input
-                      bind:value={link.url}
-                      placeholder="https://…"
-                      class="w-full rounded border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1 text-[11px] text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+                      bind:value={link.label}
+                      on:blur={persist}
+                      placeholder="Label (optional)"
+                      class="min-w-0 flex-1 rounded border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1 text-[11px] text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
                     />
+                    <button type="button" class="shrink-0 rounded px-1.5 text-gray-500 hover:text-red-300" title="Remove link" aria-label="Remove link" on:click={() => removeLink(index)}>✕</button>
+                  </div>
+                  <input
+                    bind:value={link.url}
+                    on:blur={persist}
+                    placeholder="https://…"
+                    class="w-full rounded border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1 text-[11px] text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+                  />
+                </div>
+              {/each}
+              <button type="button" class="text-[11px] text-purple-300 hover:text-purple-200" on:click={addLink}>＋ Add link</button>
+            </div>
+          {/if}
+
+          {#if attachments.length}
+            <div class="mb-3">
+              <div class="mb-1 text-[10px] uppercase tracking-wide text-gray-500">Images / videos</div>
+              <div class="grid grid-cols-3 gap-1.5">
+                {#each attachments as attachment (attachment.id)}
+                  <div class="group relative overflow-hidden rounded border border-white/5 bg-black/30">
+                    {#if attachment.media_type.startsWith('video/')}
+                      <!-- svelte-ignore a11y-media-has-caption -->
+                      <video src={filesApi.attachmentUrl(attachment.id)} class="h-16 w-full object-cover" muted></video>
+                    {:else}
+                      <img src={filesApi.attachmentUrl(attachment.id)} alt={attachment.caption || attachment.file_name} class="h-16 w-full object-cover" />
+                    {/if}
+                    <button type="button" class="absolute right-0.5 top-0.5 hidden h-5 w-5 place-items-center rounded bg-black/70 text-[10px] text-gray-200 group-hover:grid hover:text-red-300" title="Remove attachment" aria-label="Remove attachment" on:click={() => removeAttachment(attachment.id)}>✕</button>
                   </div>
                 {/each}
-                <button
-                  type="button"
-                  class="text-[11px] text-purple-300 hover:text-purple-200"
-                  on:click={addLink}
-                >＋ Add link</button>
-              </div>
-
-              {#if actionError}
-                <p class="text-[11px] text-red-300">{actionError}</p>
-              {/if}
-
-              <div class="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  class="rounded-lg bg-purple-500/30 px-3 py-1.5 text-xs font-medium text-purple-100 transition-colors hover:bg-purple-500/40 disabled:opacity-40"
-                  on:click={save}
-                  disabled={saving}
-                >{saving ? 'Saving…' : 'Save'}</button>
-                <button
-                  type="button"
-                  class="rounded-lg border border-[#2a2a3a] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:text-white disabled:opacity-40"
-                  on:click={cancelEditing}
-                  disabled={saving}
-                >Cancel</button>
-                {#if hasOrigin}
-                  <button
-                    type="button"
-                    class="ml-auto text-[11px] text-red-300/80 hover:text-red-300 disabled:opacity-40"
-                    on:click={deleteInfo}
-                    disabled={saving}
-                  >Remove all</button>
-                {/if}
               </div>
             </div>
-          {:else if hasOrigin && annotation}
-            {#if annotation.description}
-              <p class="mb-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-200">{annotation.description}</p>
-            {/if}
-            {#if annotation.links.length}
-              <ul class="mb-3 space-y-1.5">
-                {#each annotation.links as link (link.url + link.kind)}
-                  <li class="flex items-start gap-2 text-sm">
-                    <span class="mt-0.5 shrink-0 rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-gray-400">{linkKindLabel(link.kind)}</span>
-                    <a href={link.url} target="_blank" rel="noopener noreferrer" class="min-w-0 break-words text-purple-300 hover:text-purple-200">
-                      {link.label || link.url}
-                    </a>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          {:else}
-            <p class="text-sm text-gray-500">No origin info yet.</p>
           {/if}
 
-          {#if !editing && !loading && !error}
-            <div class="mt-3">
-              {#if annotation && annotation.attachments.length}
-                <div class="mb-2 grid grid-cols-3 gap-1.5">
-                  {#each annotation.attachments as attachment (attachment.id)}
-                    <div class="group relative overflow-hidden rounded border border-white/5 bg-black/30">
-                      {#if attachment.media_type.startsWith('video/')}
-                        <!-- svelte-ignore a11y-media-has-caption -->
-                        <video src={filesApi.attachmentUrl(attachment.id)} class="h-16 w-full object-cover" muted></video>
-                      {:else}
-                        <img src={filesApi.attachmentUrl(attachment.id)} alt={attachment.caption || attachment.file_name} class="h-16 w-full object-cover" />
-                      {/if}
-                      <button
-                        type="button"
-                        class="absolute right-0.5 top-0.5 hidden h-5 w-5 place-items-center rounded bg-black/70 text-[10px] text-gray-200 group-hover:grid hover:text-red-300"
-                        title="Remove attachment"
-                        aria-label="Remove attachment"
-                        on:click={() => removeAttachment(attachment.id)}
-                      >✕</button>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
-              <input
-                bind:this={fileInput}
-                type="file"
-                accept="image/*,video/*"
-                class="hidden"
-                on:change={onUploadChange}
-              />
-              <button
-                type="button"
-                class="text-[11px] text-purple-300 hover:text-purple-200 disabled:opacity-40"
-                on:click={() => fileInput.click()}
-                disabled={uploading}
-              >{uploading ? 'Uploading…' : '＋ Image / video'}</button>
+          {#if showExtra}
+            <div class="mb-3">
+              <div class="mb-1 flex items-center justify-between">
+                <span class="text-[10px] uppercase tracking-wide text-gray-500">Extra info</span>
+                <button type="button" class="text-gray-600 hover:text-red-300" title="Remove extra info" aria-label="Remove extra info" on:click={() => removeField('extra')}>✕</button>
+              </div>
+              <textarea
+                rows="2"
+                bind:value={draft.extra_info}
+                on:blur={persist}
+                placeholder="Anything else worth noting…"
+                class="w-full resize-y rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-2 py-1.5 text-xs text-gray-200 outline-none placeholder:text-gray-600 focus:border-purple-500"
+              ></textarea>
             </div>
           {/if}
-        </div>
 
-        <!-- Archive contents — read-only; the server never extracts anything. -->
-        {#if canListArchive}
-          <div class="px-4 py-3">
-            <div class="mb-2 flex items-center justify-between">
-              <h3 class="text-xs font-semibold uppercase tracking-wide text-gray-400">Contents</h3>
-              {#if archive === null && !archiveLoading}
-                <button
-                  type="button"
-                  class="text-xs text-purple-300 hover:text-purple-200"
-                  on:click={loadArchive}
-                >Show contents</button>
-              {/if}
-            </div>
-
-            {#if archiveLoading}
-              <p class="text-sm text-gray-500">Reading…</p>
-            {:else if archiveError}
-              <p class="text-sm text-red-300">{archiveError}</p>
-            {:else if archive}
-              <p class="mb-2 text-xs text-gray-500">
-                {archive.total_entries} item{archive.total_entries === 1 ? '' : 's'} ·
-                {formatSize(archive.total_size)} unpacked · {formatSize(archive.compressed_size)} stored
-              </p>
-              <ul class="max-h-64 overflow-y-auto rounded bg-black/20 p-1">
-                {#each archive.entries as entry (entry.name)}
-                  <li class="flex items-baseline gap-2 px-1 py-0.5 text-xs">
-                    <span class="min-w-0 flex-1 truncate font-mono text-gray-300" title={entry.name}>
-                      {entry.is_dir ? '📁' : ''}{entry.name}
-                    </span>
-                    {#if !entry.is_dir}
-                      <span class="shrink-0 text-[10px] text-gray-500">{formatSize(entry.size)}</span>
-                    {/if}
-                  </li>
-                {/each}
-              </ul>
-              {#if archive.truncated}
-                <p class="mt-1 text-[10px] text-gray-500">
-                  Showing the first {archive.entries.length} of {archive.total_entries}.
-                </p>
-              {/if}
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-[#3a3a4a] px-3 py-1.5 text-xs text-purple-300 transition-colors hover:border-purple-500/60 hover:text-purple-200"
+              on:click|stopPropagation={() => (addMenuOpen = !addMenuOpen)}
+            >＋ Add info</button>
+            {#if uploading}
+              <span class="text-[11px] text-gray-500">Uploading…</span>
             {/if}
           </div>
-        {/if}
+
+          <!-- Reveals in normal flow (not an absolute dropdown): a floating menu
+               is clipped by the body's overflow-y-auto and only shows its first
+               couple of items. -->
+          {#if addMenuOpen}
+            <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+            <div class="mt-1.5 w-48 overflow-hidden rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] py-1" on:click|stopPropagation>
+              {#each addOptions as option (option.key)}
+                <button type="button" class="flex w-full items-center px-3 py-1.5 text-left text-sm text-gray-300 transition-colors hover:bg-[#2a2a3a] hover:text-white" on:click={() => addField(option.key)}>{option.label}</button>
+              {/each}
+            </div>
+          {/if}
+
+          {#if actionError}
+            <p class="mt-2 text-[11px] text-red-300">{actionError}</p>
+          {/if}
+        </div>
       {/if}
     </div>
 
-    <!-- Actions — always available regardless of tab. -->
+    <input bind:this={fileInput} type="file" accept="image/*,video/*" class="hidden" on:change={onUploadChange} />
+
     <div class="shrink-0 border-t border-white/5 px-4 py-3">
       <div class="flex gap-2">
         <button
           type="button"
           class="flex-1 rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-sm text-gray-300 transition-colors hover:border-purple-500/50 hover:text-white"
-          on:click={openExternally}
+          on:click={openSubject}
         >Open</button>
         <button
           type="button"
@@ -692,9 +491,6 @@
           on:click={reveal}
         >Show in folder</button>
       </div>
-      {#if actionError}
-        <p class="mt-2 text-[11px] text-red-300">{actionError}</p>
-      {/if}
     </div>
   </div>
 </div>

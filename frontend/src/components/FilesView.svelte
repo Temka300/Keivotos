@@ -166,6 +166,13 @@
     }
   }
 
+  // The modal's "Open" on a folder: browse into it inside Keivotos, then close.
+  async function openInApp() {
+    const entry = selectedEntry;
+    showInfoModal = false;
+    if (entry) await openEntry(entry);
+  }
+
   async function loadSources() {
     error = '';
     try {
@@ -657,6 +664,7 @@
     sourceName={subjectSourceName}
     on:close={() => (showInfoModal = false)}
     on:changed={loadAnnotatedPaths}
+    on:browse={openInApp}
   />
 {/if}
 

@@ -90,6 +90,8 @@ export interface Annotation {
   source_id: string;
   relative_path: string;
   description: string;
+  author: string;
+  extra_info: string;
   created_at: string | null;
   updated_at: string | null;
   links: AnnotationLink[];
@@ -100,6 +102,8 @@ export interface AnnotationRequest {
   source_id: string;
   path: string;
   description: string;
+  author: string;
+  extra_info: string;
   links: AnnotationLink[];
 }
 
