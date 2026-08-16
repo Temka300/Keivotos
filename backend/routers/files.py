@@ -536,7 +536,7 @@ def _attachment_cover(
     if stored is None or not stored.stored_root:
         return None
     ext = attachment_store.extension_for(stored.file_name, stored.media_type)
-    candidate = attachment_store.attachment_path(stored.stored_root, stored.content_hash, ext)
+    candidate = attachment_store.resolve_attachment(stored.stored_root, stored.content_hash, ext)
     return candidate if candidate.is_file() else None
 
 
@@ -958,12 +958,10 @@ def annotated_paths(source_id: str = Query(...)) -> list[str]:
     return sorted(paths)
 
 
-def _attachment_store_root(user_conn) -> Path:
-    """Where attachment bytes live: the first Files-role source, else AppData base."""
-    for source in sources.list_sources(user_conn):
-        if source.role == "files":
-            return Path(source.path)
-    return config.BASE_HOME
+def _attachment_store_root() -> Path:
+    """Where new attachment bytes are written: the configured folder, else the
+    Files base home. Existing attachments resolve from their own stored root."""
+    return config.attachment_store_root()
 
 
 def _subject_content_hash(resolved: Path, is_dir: bool) -> str | None:
@@ -1016,8 +1014,9 @@ async def upload_attachment(
     with get_user_db() as user_conn:
         annotations.ensure_annotations_schema(user_conn)
         sources.ensure_sources_schema(user_conn)
-        store_root = _attachment_store_root(user_conn)
-        attachment_store.write_attachment(store_root, digest, ext, data)
+        store_root = _attachment_store_root()
+        visible = config.attachment_store_mode() == "folder"
+        attachment_store.write_attachment(store_root, digest, ext, data, visible=visible)
         note = annotations.upsert_annotation(
             user_conn,
             subject_kind="dir" if is_dir else "file",
@@ -1052,7 +1051,7 @@ def serve_attachment(attachment_id: int, request: Request):
     if stored is None or not stored.stored_root:
         raise HTTPException(status_code=404, detail="Attachment not found")
     ext = attachment_store.extension_for(stored.file_name, stored.media_type)
-    resolved = attachment_store.attachment_path(stored.stored_root, stored.content_hash, ext)
+    resolved = attachment_store.resolve_attachment(stored.stored_root, stored.content_hash, ext)
     if not resolved.is_file():
         raise HTTPException(status_code=404, detail="Attachment bytes are missing")
 
@@ -1099,6 +1098,63 @@ def delete_attachment(attachment_id: int) -> dict[str, bool]:
         ext = attachment_store.extension_for(stored.file_name, stored.media_type)
         attachment_store.delete_attachment_file(stored.stored_root, stored.content_hash, ext)
     return {"deleted": bool(removed)}
+
+
+class AttachmentStoreInfo(BaseModel):
+    path: str
+    mode: str
+    is_default: bool
+    default: str
+
+
+class AttachmentStoreRequest(BaseModel):
+    path: str | None = None
+
+
+def _attachment_store_info() -> AttachmentStoreInfo:
+    effective = config.attachment_store_root()
+    default = config.BASE_HOME
+    return AttachmentStoreInfo(
+        path=str(effective),
+        mode=config.attachment_store_mode(),
+        is_default=effective.resolve(strict=False) == default.resolve(strict=False),
+        default=str(default),
+    )
+
+
+@router.get("/api/files/attachment-store", response_model=AttachmentStoreInfo)
+def get_attachment_store() -> AttachmentStoreInfo:
+    """Where origin-note attachment images/videos are stored."""
+    return _attachment_store_info()
+
+
+@router.put("/api/files/attachment-store", response_model=AttachmentStoreInfo)
+def set_attachment_store(payload: AttachmentStoreRequest) -> AttachmentStoreInfo:
+    """Point the attachment store at a folder, or reset to the default (empty path).
+
+    Non-destructive: only new attachments follow this; existing ones resolve from
+    their own recorded location.
+    """
+    raw = (payload.path or "").strip()
+    if not raw:
+        config.set_attachment_store_root(None)
+        return _attachment_store_info()
+
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        raise HTTPException(status_code=400, detail="Choose a full folder path")
+    anchor = Path(candidate.anchor).resolve(strict=False) if candidate.anchor else None
+    if anchor is not None and candidate.resolve(strict=False) == anchor:
+        raise HTTPException(status_code=400, detail="Choose a specific folder, not a drive root")
+    try:
+        candidate.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Cannot use that folder: {exc}") from exc
+    if not os.access(candidate, os.W_OK):
+        raise HTTPException(status_code=400, detail="That folder is not writable")
+
+    config.set_attachment_store_root(str(candidate))
+    return _attachment_store_info()
 
 
 @router.post("/api/files/open")

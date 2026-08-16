@@ -5,11 +5,17 @@ folder** (their own storage), not under the suite's AppData home — so a
 screenshot of a since-deleted store page rides along with the archive it
 documents and is captured by the user's ordinary disk backups.
 
-Layout: ``<store_root>/.keivotos/attachments/<first-2-of-hash>/<hash><ext>``.
-The ``.keivotos`` directory is excluded from the Files scan (see
-``files_base.index``), so attachments never appear as browsable files. Each row
-records its ``store_root`` so the bytes stay findable even if which folder is
-"first" later changes.
+Two layouts, chosen per write by the configured mode (see
+``config.attachment_store_mode``):
+
+* **managed** — ``<store_root>/.keivotos/attachments/<first-2-of-hash>/<hash><ext>``.
+  ``.keivotos`` is excluded from the Files scan (see ``files_base.index``), so
+  these never appear as browsable files.
+* **folder** — ``<store_root>/Attachments/<hash><ext>``. A browsable subfolder, so
+  the attachment shows up in Files alongside the media it documents.
+
+Each row records only its ``store_root``; ``resolve_attachment`` finds the bytes
+under whichever layout they were written in, so rows survive a later mode change.
 
 Isolated: no Danbooru or ``core`` imports. Pillow is used only to read image
 dimensions and never blocks a save if it fails.
@@ -23,24 +29,57 @@ from pathlib import Path
 
 ATTACHMENT_DIR_NAME = ".keivotos"
 ATTACHMENT_SUBPATH = Path(ATTACHMENT_DIR_NAME) / "attachments"
+# Folder-mode attachments live here instead — a browsable subfolder (not the
+# scan-excluded ``.keivotos``) so they appear in Files. Content-hash names keep
+# the store deduplicated; the flat layout keeps the folder easy to browse.
+VISIBLE_DIR_NAME = "Attachments"
 
 
 def attachment_root(store_root: str | Path) -> Path:
     return Path(store_root) / ATTACHMENT_SUBPATH
 
 
-def attachment_path(store_root: str | Path, content_hash: str, ext: str) -> Path:
+def _hashed_name(content_hash: str, ext: str) -> str:
     suffix = ("." + ext.lstrip(".").lower()) if ext else ""
-    return attachment_root(store_root) / content_hash[:2] / f"{content_hash}{suffix}"
+    return f"{content_hash}{suffix}"
+
+
+def attachment_path(
+    store_root: str | Path, content_hash: str, ext: str, *, visible: bool = False
+) -> Path:
+    """Where an attachment's bytes sit for the given storage mode.
+
+    ``visible`` selects folder mode (``<root>/Attachments/<hash>.<ext>``, flat and
+    browsable); the default is managed mode (hidden, sharded under ``.keivotos``).
+    """
+    name = _hashed_name(content_hash, ext)
+    if visible:
+        return Path(store_root) / VISIBLE_DIR_NAME / name
+    return attachment_root(store_root) / content_hash[:2] / name
+
+
+def resolve_attachment(store_root: str | Path, content_hash: str, ext: str) -> Path:
+    """The bytes' real location, tolerant of either layout.
+
+    A row records only its ``store_root``; the same root+hash maps to exactly one
+    physical file, so preferring the visible path when it exists and otherwise the
+    managed path resolves rows written in either mode (and legacy rows).
+    """
+    visible = attachment_path(store_root, content_hash, ext, visible=True)
+    if visible.exists():
+        return visible
+    return attachment_path(store_root, content_hash, ext, visible=False)
 
 
 def md5_bytes(data: bytes) -> str:
     return hashlib.md5(data).hexdigest()
 
 
-def write_attachment(store_root: str | Path, content_hash: str, ext: str, data: bytes) -> Path:
+def write_attachment(
+    store_root: str | Path, content_hash: str, ext: str, data: bytes, *, visible: bool = False
+) -> Path:
     """Write bytes content-addressed; a no-op if the same content already exists."""
-    path = attachment_path(store_root, content_hash, ext)
+    path = attachment_path(store_root, content_hash, ext, visible=visible)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         temporary = path.with_name(path.name + ".tmp")
@@ -50,8 +89,13 @@ def write_attachment(store_root: str | Path, content_hash: str, ext: str, data: 
 
 
 def delete_attachment_file(store_root: str | Path, content_hash: str, ext: str) -> None:
-    """Remove the stored bytes (used only after the last row referencing them goes)."""
-    attachment_path(store_root, content_hash, ext).unlink(missing_ok=True)
+    """Remove the stored bytes (used only after the last row referencing them goes).
+
+    Clears both layouts so a mode change between write and delete cannot orphan the
+    file; only one of them exists for a given root, so this removes exactly it.
+    """
+    for visible in (True, False):
+        attachment_path(store_root, content_hash, ext, visible=visible).unlink(missing_ok=True)
 
 
 def image_dimensions(data: bytes) -> tuple[int | None, int | None]:

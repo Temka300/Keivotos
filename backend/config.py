@@ -559,7 +559,6 @@ DATA_DB_PATH = METADATA_DIR / "danbooru.sqlite"
 # so it exists with zero modules enabled. A legacy module-home copy is promoted
 # here on startup via promote_user_database(). See SUITE_MODULE_CONTRACT.md 3.1.
 USER_DB_PATH = SUITE_HOME / "user.sqlite"
-THUMB_DIR = METADATA_DIR / "thumbnails"
 SIDECAR_DIR = METADATA_DIR / "sidecars"
 ARTIST_PROFILE_ARCHIVE_DIR = METADATA_DIR / "artist_profile_archive"
 CREDENTIALS_PATH = METADATA_DIR / "danbooru_credentials.json"
@@ -570,7 +569,11 @@ CREDENTIALS_PATH = METADATA_DIR / "danbooru_credentials.json"
 # even with zero modules enabled. See docs/important/SUITE_MODULE_CONTRACT.md.
 BASE_HOME = _DEFAULT_FILES_MODULE.home
 FILES_DB_PATH = _DEFAULT_FILES_MODULE.database
-FILES_THUMB_DIR = BASE_HOME / "thumbnails"
+# The thumbnail cache is shared by the base and every module, and it is
+# disposable (rebuilt on demand), so it lives under the always-on base home
+# rather than inside the Danbooru module's tree. Relocated from
+# METADATA_DIR/thumbnails in v1.1.3; the old cache is harmless orphaned cruft.
+THUMB_DIR = BASE_HOME / "thumbnails"
 
 # Effective descriptors are the registry consumed by the suite shell. Danbooru
 # still supports an explicitly configured metadata directory, so its module DB
@@ -739,3 +742,47 @@ def default_library_pending() -> bool:
 def mark_default_library_created() -> None:
     """Record that the first-run default library was offered, so it never repeats."""
     save_config({"default_library_created": True})
+
+
+def attachment_store_root() -> Path:
+    """The folder that holds origin-note attachment bytes.
+
+    Two modes, chosen by whether a custom folder is configured (see
+    ``attachment_store_mode``):
+
+    * **managed** (default) — the Files base home (``BASE_HOME``); bytes live
+      hidden under ``<root>/.keivotos/attachments/``, covered by the suite backup.
+    * **folder** — a user-picked folder; bytes live *visibly* under
+      ``<root>/Attachments/`` so they appear in Files, at the cost of the hidden
+      dedup store's invisibility.
+    """
+    value = _cfg.get("attachment_root")
+    if isinstance(value, str) and value.strip():
+        candidate = Path(value).expanduser()
+        if candidate.is_absolute():
+            return candidate
+    return BASE_HOME
+
+
+def attachment_store_mode() -> str:
+    """``"folder"`` when a visible custom folder is configured, else ``"managed"``.
+
+    Managed keeps attachments hidden with the suite's data; folder mode stores
+    them browsably inside the chosen folder so they show up in Files.
+    """
+    value = _cfg.get("attachment_root")
+    if isinstance(value, str) and value.strip() and Path(value).expanduser().is_absolute():
+        return "folder"
+    return "managed"
+
+
+def set_attachment_store_root(path: str | None) -> None:
+    """Persist a custom attachment folder, or reset to the default when empty.
+
+    Non-destructive: each stored attachment records its own location, so changing
+    this only affects where *new* attachments are written.
+    """
+    if path is None or not path.strip():
+        save_config({"attachment_root": None})
+    else:
+        save_config({"attachment_root": str(Path(path).expanduser())})

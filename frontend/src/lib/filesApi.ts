@@ -62,6 +62,14 @@ export interface PickResult {
   native: boolean;
 }
 
+export interface AttachmentStore {
+  path: string;
+  /** 'managed' = hidden with the suite data; 'folder' = visible in the chosen folder. */
+  mode: 'managed' | 'folder';
+  is_default: boolean;
+  default: string;
+}
+
 export type LinkKind = 'source' | 'discussion' | 'mirror' | 'author' | 'other';
 
 export interface AnnotationLink {
@@ -175,6 +183,11 @@ export const filesApi = {
   listDuplicates: () => getJson<DuplicateGroup[]>('/duplicates'),
   browseFs: (path = '') => getJson<FsListing>('/fs', { path }),
   pickFolder: () => send<PickResult>('POST', '/pick'),
+  // Where origin-note attachment images/videos are stored. Setting null resets
+  // to the default (the Files base home).
+  getAttachmentStore: () => getJson<AttachmentStore>('/attachment-store'),
+  setAttachmentStore: (path: string | null) =>
+    send<AttachmentStore>('PUT', '/attachment-store', { path }),
   // URL for streaming a file's bytes (preview/open). The backend resolves it
   // against the source root and refuses anything outside it.
   fileUrl: (sourceId: string, relativePath: string) => {

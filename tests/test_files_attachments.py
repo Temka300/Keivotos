@@ -58,11 +58,16 @@ class AttachmentLifecycleTests(unittest.TestCase):
         ]
         for patcher in self._patchers:
             patcher.start()
+        # Attachments default to the (patched) Files base home; ensure no
+        # configured override leaks in from another test.
+        self._orig_attachment_root = config._cfg.pop("attachment_root", "__unset__")
         self.source = files.register_source(
             files.SourceRegister(path=str(self.library), display_name="Lib")
         )
 
     def tearDown(self) -> None:
+        if getattr(self, "_orig_attachment_root", "__unset__") != "__unset__":
+            config._cfg["attachment_root"] = self._orig_attachment_root
         for patcher in self._patchers:
             patcher.stop()
         shutil.rmtree(self.temp, ignore_errors=True)
@@ -75,16 +80,17 @@ class AttachmentLifecycleTests(unittest.TestCase):
             )
         )
 
-    def test_upload_stores_inside_the_first_files_folder(self) -> None:
+    def test_upload_stores_under_the_attachment_root(self) -> None:
         note = self._upload("3D/model.zip", _PNG_1x1, "image/png", "render.png")
         self.assertEqual(len(note.attachments), 1)
         attachment = note.attachments[0]
         self.assertEqual(attachment.media_type, "image/png")
         self.assertEqual(attachment.width, 1)
         self.assertEqual(attachment.height, 1)
-        # Bytes live under the registered library, in the hidden store.
+        # Bytes live under the Files base home (the default attachment store),
+        # in the hidden ``.keivotos`` store — not inside a browsable media folder.
         stored = attachment_store.attachment_path(
-            self.library, attachment.content_hash, "png"
+            config.BASE_HOME, attachment.content_hash, "png"
         )
         self.assertTrue(stored.is_file())
         self.assertIn(".keivotos", stored.parts)
@@ -115,7 +121,7 @@ class AttachmentLifecycleTests(unittest.TestCase):
         first_id = note.attachments[0].id
         self.files.delete_attachment(first_id)
         stored = attachment_store.attachment_path(
-            self.library, note.attachments[0].content_hash, "png"
+            config.BASE_HOME, note.attachments[0].content_hash, "png"
         )
         self.assertTrue(stored.is_file())  # still referenced by the second row
         # Delete the remaining row; now the file is gone.
