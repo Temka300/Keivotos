@@ -1,9 +1,10 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { get } from 'svelte/store';
   import './app.css';
   import { SUITE_NAME } from './lib/product';
   import { suiteApi } from './lib/suiteApi';
-  import { activeModule, enabledModules, interfaceScale, motionPreference, suiteModules } from './lib/stores';
+  import { activeModule, enabledModules, interfaceScale, motionPreference, startupModule, suiteModules } from './lib/stores';
   import { surfaceComponent } from './modules/surfaces';
 
   $: if (typeof document !== 'undefined') {
@@ -29,6 +30,14 @@
       const modules = await suiteApi.listModules();
       suiteModules.set(modules);
       enabledModules.set(modules.filter((m) => m.enabled).map((m) => m.id));
+      // Apply the startup-destination preference now that the registry is known.
+      // 'last' keeps the persisted activeModule; an explicit choice wins, and an
+      // unavailable module quietly falls back to the always-on base.
+      const startup = get(startupModule);
+      if (startup !== 'last') {
+        const target = modules.find((m) => m.slug === startup && m.enabled);
+        activeModule.set(target ? target.slug : 'files');
+      }
     } catch (e) {
       console.error('Failed to load modules:', e);
     }

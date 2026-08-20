@@ -12,6 +12,9 @@ export type MediaPlayback = 'never' | 'hover' | 'always';
 export type MotionPreference = 'system' | 'full' | 'reduced';
 export type InterfaceScale = 'default' | 'comfortable';
 export type StartupView = 'home' | 'gallery' | 'last';
+// Which suite surface opens on launch. 'last' keeps the persisted activeModule
+// (today's default); a module slug forces that module when it is enabled.
+export type StartupModule = 'files' | 'danbooru' | 'last';
 export type HomeLayout = 'discovery' | 'classic';
 export type ArtistNotificationIntervalMinutes = 5 | 15 | 30 | 60;
 
@@ -126,6 +129,10 @@ function normalizeInterfaceScale(value: unknown): InterfaceScale {
 
 function normalizeStartupView(value: unknown): StartupView {
   return value === 'gallery' || value === 'last' ? value : 'home';
+}
+
+function normalizeStartupModule(value: unknown): StartupModule {
+  return value === 'files' || value === 'danbooru' ? value : 'last';
 }
 
 function normalizeHomeLayout(value: unknown): HomeLayout {
@@ -250,6 +257,7 @@ export const profileName = {
 };
 
 export const startupView = persistedWritable<StartupView>(persistentStorageKey('startup-view'), 'home', normalizeStartupView);
+export const startupModule = persistedWritable<StartupModule>(persistentStorageKey('startup-module'), 'last', normalizeStartupModule);
 export const homeLayout = persistedWritable<HomeLayout>(persistentStorageKey('home-layout'), 'discovery', normalizeHomeLayout);
 
 function initialViewMode(): ViewMode {

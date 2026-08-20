@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, tick } from 'svelte';
+  import { get } from 'svelte/store';
   import {
     api,
     type DanbooruCredentialStatus,
@@ -9,8 +10,12 @@
     type ToolInfo,
     type ToolStatus,
   } from '../lib/api';
+  import { filesApi, type AttachmentStore, type SourceInfo } from '../lib/filesApi';
+  import { suiteApi, type FolderBatchResult } from '../lib/suiteApi';
   import BackupRestoreSettings from './BackupRestoreSettings.svelte';
   import LibraryImportSettings from './LibraryImportSettings.svelte';
+  import ManageFoldersDialog from './ManageFoldersDialog.svelte';
+  import PathAutocomplete from './PathAutocomplete.svelte';
   import ThumbnailCacheSettings from './ThumbnailCacheSettings.svelte';
   import { SUITE_NAME } from '../lib/product';
   import { MODULE_NAME } from '../modules/danbooru/identity';
@@ -21,6 +26,7 @@
     artistNotificationsEnabled,
     duplicateScope,
     duplicatesOnly,
+    enabledModules,
     fitMode,
     heartSpamEnabled,
     homeLayout,
@@ -35,43 +41,52 @@
     sidebarOpen,
     sortBy,
     sortOrder,
+    startupModule,
     startupView,
+    suiteModules,
     tagBannerHeight,
   } from '../lib/stores';
-  import type { ArtistNotificationIntervalMinutes, DuplicateScope, FitMode, HomeLayout, ImagePageSize, ImageSize, InterfaceScale, MediaPlayback, MotionPreference, StartupView } from '../lib/stores';
+  import type { ArtistNotificationIntervalMinutes, DuplicateScope, FitMode, HomeLayout, ImagePageSize, ImageSize, InterfaceScale, MediaPlayback, MotionPreference, StartupModule, StartupView } from '../lib/stores';
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
-  let selectedSection = 'browsing';
+  let selectedSection = 'appearance';
   let settingsSearch = '';
 
-  const sections = [
-    {
-      id: 'browsing',
-      label: 'Browsing',
-      icon: 'window',
-    },
-    {
-      id: 'appearance',
-      label: 'Display',
-      icon: 'palette',
-    },
-    {
-      id: 'library',
-      label: 'Library',
-      icon: 'folder',
-    },
-    {
-      id: 'metadata',
-      label: 'Metadata',
-      icon: 'database',
-    },
-    {
-      id: 'safety',
-      label: 'Safety & Recovery',
-      icon: 'shield',
-    },
+  // Settings are grouped by scope, not by function: General affects the whole
+  // suite, Files is the always-on base, and each module (Danbooru) is its own
+  // group that only appears while the module is enabled.
+  const sectionGroups = [
+    { id: 'general', label: 'General', module: null as string | null },
+    { id: 'files', label: 'Files', module: null as string | null },
+    { id: 'danbooru', label: MODULE_NAME, module: 'danbooru' as string | null },
   ];
+
+  const sections = [
+    { id: 'appearance', group: 'general', label: 'Appearance', icon: 'palette' },
+    { id: 'startup', group: 'general', label: 'Startup', icon: 'window' },
+    { id: 'storage', group: 'general', label: 'Storage', icon: 'folder' },
+    { id: 'backup', group: 'general', label: 'Backup', icon: 'shield' },
+    { id: 'roots', group: 'files', label: 'Folders', icon: 'folder' },
+    { id: 'files', group: 'files', label: 'Attachments', icon: 'image' },
+    { id: 'account', group: 'danbooru', label: 'Account', icon: 'database' },
+    { id: 'browsing', group: 'danbooru', label: 'Browsing', icon: 'window' },
+    { id: 'display', group: 'danbooru', label: 'Display', icon: 'palette' },
+    { id: 'library', group: 'danbooru', label: 'Library', icon: 'folder' },
+    { id: 'maintenance', group: 'danbooru', label: 'Advanced', icon: 'shield' },
+  ];
+
+  $: visibleGroups = sectionGroups.filter(
+    (group) => !group.module || $enabledModules.includes(group.module),
+  );
+  $: visibleSections = sections.filter((section) =>
+    visibleGroups.some((group) => group.id === section.group),
+  );
+  // If the selected section belongs to a module that just got disabled, fall
+  // back to the first always-present section.
+  $: if (!visibleSections.some((section) => section.id === selectedSection)) {
+    selectedSection = 'appearance';
+  }
 
   type SettingSearchItem = {
     id: string;
@@ -82,7 +97,18 @@
   };
 
   const settingSearchItems: SettingSearchItem[] = [
-    { id: 'startup-view', section: 'browsing', label: 'Startup destination', description: `Choose where ${MODULE_NAME} opens.`, keywords: ['home', 'browse', 'last page', 'launch'] },
+    { id: 'motion', section: 'appearance', label: 'Interface motion', description: 'Follow the system or reduce interface animation.', keywords: ['animation', 'reduced motion', 'accessibility'] },
+    { id: 'interface-scale', section: 'appearance', label: 'Interface scale', description: 'Use the default or a roomier readable scale.', keywords: ['density', 'comfortable', 'readability', 'text'] },
+    { id: 'startup-module', section: 'startup', label: 'Startup destination', description: `Choose which surface ${SUITE_NAME} opens on launch.`, keywords: ['files', 'module', 'last used', 'launch', 'open'] },
+    { id: 'folder-roles', section: 'roots', label: 'Folder roles', description: `Assign each folder to Files or ${MODULE_NAME}, and choose sidebar visibility.`, keywords: ['role', 'module', 'adopt', 'release', 'sidebar', 'visible', 'assign', 'folders', 'sources'] },
+    { id: 'folders', section: 'storage', label: 'Library folders', description: 'Add, rescan, or remove media roots from the index.', keywords: ['path', 'browse', 'remove', 'register', 'un-index', 'sidecars'] },
+    { id: 'thumbnail-cache', section: 'storage', label: 'Thumbnail cache', description: 'Manage the three derived thumbnail tiers and size limit.', keywords: ['300', '600', '1200', 'cleanup', 'cache'] },
+    { id: 'backup', section: 'backup', label: 'Backup', description: `Choose protected components for the fixed ${SUITE_NAME} backup location.`, keywords: ['snapshot', 'database', 'sidecar', 'destination', 'size', 'metadata'] },
+    { id: 'restore', section: 'backup', label: 'Restore', description: `Validate and restore a ${SUITE_NAME} backup bundle with rollback.`, keywords: ['recovery', 'rollback', 'backup'] },
+    { id: 'local-recovery', section: 'backup', label: 'Automatic local recovery', description: 'Keep rotating user database checkpoints.', keywords: ['checkpoint', 'user sqlite', 'favorites', 'collections', 'automatic'] },
+    { id: 'attachment-location', section: 'files', label: 'Attachment storage', description: 'Choose where origin-note images and videos are saved.', keywords: ['attachment', 'image', 'video', 'origin note', 'screenshot', 'storage', 'location', 'folder', 'path'] },
+    { id: 'danbooru-access', section: 'account', label: 'Danbooru access', description: 'Manage encrypted credentials.', keywords: ['username', 'api key', 'credentials', 'connection'] },
+    { id: 'startup-view', section: 'browsing', label: 'Startup view', description: `Choose which ${MODULE_NAME} page opens first.`, keywords: ['home', 'browse', 'last page', 'launch', 'gallery'] },
     { id: 'home-layout', section: 'browsing', label: 'Home layout', description: 'Use the new discovery dashboard or restore the preserved classic Home.', keywords: ['home', 'classic', 'legacy', 'old design', 'discovery', 'dashboard'] },
     { id: 'rating-filter', section: 'browsing', label: 'Default rating', description: 'Choose the rating used for normal browsing.', keywords: ['general', 'sensitive', 'questionable', 'explicit', 'unrated'] },
     { id: 'browse-sort', section: 'browsing', label: 'Browse sort', description: 'Choose the persisted image order.', keywords: ['date', 'downloaded', 'score', 'views', 'name', 'size'] },
@@ -91,25 +117,17 @@
     { id: 'heart-spam', section: 'browsing', label: 'Heart Spam', description: 'Show the playful heart action in ImageDetail.', keywords: ['image detail', 'button'] },
     { id: 'artist-notifications', section: 'browsing', label: 'Artist notifications', description: 'Check followed artists while the app is open.', keywords: ['danbooru', 'followed', 'polling', 'bell', 'timer', 'interval', 'manual check'] },
     { id: 'duplicate-review', section: 'browsing', label: 'Duplicate review', description: 'Choose which duplicate groups to review.', keywords: ['same folder', 'different folders', 'review'] },
-    { id: 'gallery-card-size', section: 'appearance', label: 'Gallery card size', description: 'Set the image-grid scale.', keywords: ['small', 'medium', 'large', 'huge', 'gigantic', 'absurd'] },
-    { id: 'image-fit', section: 'appearance', label: 'Image fit', description: 'Crop cards or preserve the full image.', keywords: ['crop', 'contain', 'fill'] },
-    { id: 'media-playback', section: 'appearance', label: 'Animated media', description: 'Control GIF and video playback.', keywords: ['autoplay', 'hover', 'never', 'always', 'gif', 'video'] },
-    { id: 'motion', section: 'appearance', label: 'Interface motion', description: 'Follow the system or reduce interface animation.', keywords: ['animation', 'reduced motion', 'accessibility'] },
-    { id: 'interface-scale', section: 'appearance', label: 'Interface scale', description: 'Use the default or a roomier readable scale.', keywords: ['density', 'comfortable', 'readability', 'text'] },
-    { id: 'tag-banner', section: 'appearance', label: 'Tag banner height', description: 'Set tag and artist banner height.', keywords: ['low', 'tall', 'huge', 'artist'] },
+    { id: 'gallery-card-size', section: 'display', label: 'Gallery card size', description: 'Set the image-grid scale.', keywords: ['small', 'medium', 'large', 'huge', 'gigantic', 'absurd'] },
+    { id: 'image-fit', section: 'display', label: 'Image fit', description: 'Crop cards or preserve the full image.', keywords: ['crop', 'contain', 'fill'] },
+    { id: 'media-playback', section: 'display', label: 'Animated media', description: 'Control GIF and video playback.', keywords: ['autoplay', 'hover', 'never', 'always', 'gif', 'video'] },
+    { id: 'tag-banner', section: 'display', label: 'Tag banner height', description: 'Set tag and artist banner height.', keywords: ['low', 'tall', 'huge', 'artist'] },
     { id: 'library-health', section: 'library', label: 'Library health', description: 'See indexed folders, images, and scan state.', keywords: ['status', 'count', 'index'] },
-    { id: 'storage-location', section: 'library', label: 'Generated metadata location', description: 'See where databases, sidecars, and derived files live.', keywords: ['documents', 'portable', 'data', 'sidecars', 'sqlite'] },
-    { id: 'import-pipeline', section: 'metadata', label: 'Import pipeline', description: 'Run the four resumable library import phases.', keywords: ['discover', 'enrich', 'metadata', 'finalize'] },
-    { id: 'folders', section: 'library', label: 'Library folders', description: 'Add, rescan, or remove media roots from the index.', keywords: ['path', 'browse', 'remove', 'register', 'un-index', 'sidecars'] },
     { id: 'rescan', section: 'library', label: 'Re-scan library', description: 'Incrementally reconcile the local index.', keywords: ['sync', 'sqlite', 'changed', 'removed'] },
-    { id: 'danbooru-access', section: 'metadata', label: 'Danbooru access', description: 'Manage encrypted credentials.', keywords: ['username', 'api key', 'credentials', 'connection'] },
-    { id: 'automation', section: 'metadata', label: 'Local library watcher', description: 'Detect new or changed files without contacting Danbooru.', keywords: ['automatic', 'watcher', 'sidecar', 'interval', 'local'] },
-    { id: 'backup', section: 'safety', label: 'Manual metadata backup', description: `Choose protected metadata components for the fixed ${SUITE_NAME} backup location.`, keywords: ['snapshot', 'database', 'sidecar', 'destination', 'size'] },
-    { id: 'restore', section: 'safety', label: 'Restore metadata', description: `Validate and restore a ${SUITE_NAME} backup bundle with rollback.`, keywords: ['recovery', 'rollback', 'backup'] },
-    { id: 'local-recovery', section: 'safety', label: 'Automatic local recovery', description: 'Keep rotating user database checkpoints.', keywords: ['checkpoint', 'user sqlite', 'favorites', 'collections', 'automatic'] },
-    { id: 'thumbnail-cache', section: 'safety', label: 'Thumbnail cache', description: 'Manage the three derived thumbnail tiers and size limit.', keywords: ['300', '600', '1200', 'cleanup', 'cache'] },
-    { id: 'clean-sidecars', section: 'safety', label: 'Clean orphan sidecars', description: 'Remove metadata whose reachable media file is gone.', keywords: ['cleanup', 'orphan', 'metadata'] },
-    { id: 'rebuild', section: 'safety', label: 'Rebuild database', description: 'Recover the regenerable SQLite index from sidecars.', keywords: ['recovery', 'sqlite', 'repair'] },
+    { id: 'storage-location', section: 'library', label: 'Generated metadata location', description: 'See where databases, sidecars, and derived files live.', keywords: ['documents', 'portable', 'data', 'sidecars', 'sqlite'] },
+    { id: 'import-pipeline', section: 'library', label: 'Import pipeline', description: 'Run the four resumable library import phases.', keywords: ['discover', 'enrich', 'metadata', 'finalize'] },
+    { id: 'automation', section: 'library', label: 'Local library watcher', description: 'Detect new or changed files without contacting Danbooru.', keywords: ['automatic', 'watcher', 'sidecar', 'interval', 'local'] },
+    { id: 'clean-sidecars', section: 'maintenance', label: 'Clean orphan sidecars', description: 'Remove metadata whose reachable media file is gone.', keywords: ['cleanup', 'orphan', 'metadata'] },
+    { id: 'rebuild', section: 'maintenance', label: 'Rebuild database', description: 'Recover the regenerable SQLite index from sidecars.', keywords: ['recovery', 'sqlite', 'repair'] },
   ];
 
   let folders: FolderInfo[] = [];
@@ -254,19 +272,124 @@
       await Promise.all([loadFolders(), loadTools(), loadCredentials()]);
     } else if (section === 'safety') {
       await loadTools();
+    } else if (section === 'storage') {
+      await loadFolders();
+    } else if (section === 'roots') {
+      await loadRoleSources();
     }
   }
 
   $: void ensureSectionData(selectedSection);
 
+  let attachmentStore: AttachmentStore | null = null;
+  let attachmentBusy = false;
+  let attachmentError = '';
+  let attachmentPathDraft = '';
+  let attachmentModeView: 'managed' | 'folder' = 'managed';
+
   onMount(() => {
     prepareSettingsPresentation();
+    void loadAttachmentStore();
     return () => {
       stopToolPolling();
       if (searchHighlightTimer) clearTimeout(searchHighlightTimer);
       restoreSettingsPresentation($mediaPlayback === 'always');
     };
   });
+
+  async function loadAttachmentStore() {
+    try {
+      attachmentStore = await filesApi.getAttachmentStore();
+      attachmentModeView = attachmentStore.mode;
+      if (attachmentStore.mode === 'folder') attachmentPathDraft = attachmentStore.path;
+    } catch (error) {
+      attachmentError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  // Managed mode: attachments hidden with the suite data (deduped, backed up).
+  async function useManagedAttachmentStore() {
+    if (attachmentBusy) return;
+    attachmentBusy = true;
+    attachmentError = '';
+    try {
+      attachmentStore = await filesApi.setAttachmentStore(null);
+      attachmentPathDraft = '';
+      attachmentModeView = 'managed';
+    } catch (error) {
+      attachmentError = error instanceof Error ? error.message : String(error);
+    } finally {
+      attachmentBusy = false;
+    }
+  }
+
+  // Folder mode: attachments stored visibly inside the chosen folder.
+  async function saveAttachmentFolder(path?: string) {
+    const target = (path ?? attachmentPathDraft).trim();
+    if (!target || attachmentBusy) return;
+    attachmentBusy = true;
+    attachmentError = '';
+    try {
+      attachmentStore = await filesApi.setAttachmentStore(target);
+      attachmentPathDraft = attachmentStore.path;
+      attachmentModeView = 'folder';
+    } catch (error) {
+      attachmentError = error instanceof Error ? error.message : String(error);
+    } finally {
+      attachmentBusy = false;
+    }
+  }
+
+  async function browseForAttachmentFolder() {
+    if (attachmentBusy) return;
+    attachmentBusy = true;
+    attachmentError = '';
+    try {
+      const picked = await filesApi.pickFolder();
+      if (!picked.native) throw new Error('The native folder picker is unavailable.');
+      if (picked.path) attachmentPathDraft = picked.path;
+    } catch (error) {
+      attachmentError = error instanceof Error ? error.message : String(error);
+    } finally {
+      attachmentBusy = false;
+    }
+  }
+
+  // Folder roles (FILES → Folders). Reuses the suite folder-role manager so each
+  // root can be assigned to Files or a module (adopt/release) from Settings.
+  let showRoleManager = false;
+  let roleSources: SourceInfo[] = [];
+  let roleSourcesLoaded = false;
+
+  async function loadRoleSources(force = false): Promise<void> {
+    if (roleSourcesLoaded && !force) return;
+    roleSources = await filesApi.listSources();
+    roleSourcesLoaded = true;
+    if (get(suiteModules).length === 0) {
+      try {
+        suiteModules.set(await suiteApi.listModules());
+      } catch {
+        // The role dropdown falls back to slugs if the registry is unavailable.
+      }
+    }
+  }
+
+  function moduleLabelForRole(role: string): string {
+    if (role === 'base' || role === 'files') return 'Files';
+    return get(suiteModules).find((module) => module.slug === role)?.name ?? role;
+  }
+
+  function openRoleManager() {
+    void loadRoleSources(true);
+    showRoleManager = true;
+  }
+
+  function roleFoldersSaved(event: CustomEvent<FolderBatchResult>) {
+    roleSources = event.detail.sources;
+    showRoleManager = false;
+    void loadFolders(true);
+    imageRefreshToken.update((n) => n + 1);
+  }
 
   async function saveDanbooruCredentials() {
     if (credentialBusy) return;
@@ -517,6 +640,14 @@
     { value: 'last', label: 'Last visited' },
   ];
 
+  // Which surface opens on launch. Files is always offered; a module appears
+  // only while it is enabled; 'Last used' keeps whatever was open last time.
+  $: startupModuleOptions = [
+    { value: 'files' as StartupModule, label: 'Files' },
+    ...($enabledModules.includes('danbooru') ? [{ value: 'danbooru' as StartupModule, label: MODULE_NAME }] : []),
+    { value: 'last' as StartupModule, label: 'Last used' },
+  ];
+
   const homeLayoutOptions: { value: HomeLayout; label: string }[] = [
     { value: 'discovery', label: 'Discovery' },
     { value: 'classic', label: 'Classic' },
@@ -634,32 +765,6 @@
     }, 1400);
   }
 
-  function resetCurrentSection() {
-    if (selectedSection === 'browsing') {
-      startupView.set('home');
-      homeLayout.set('discovery');
-      activeRating.set('g');
-      sortBy.set('date');
-      sortOrder.set('desc');
-      imagePageSize.set(10);
-      sidebarOpen.set(true);
-      heartSpamEnabled.set(false);
-      artistNotificationsEnabled.set(true);
-      artistNotificationIntervalMinutes.set(15);
-      duplicatesOnly.set(false);
-      duplicateScope.set('all');
-      return;
-    }
-    if (selectedSection === 'appearance') {
-      imageSize.set('medium');
-      fitMode.set('fit');
-      mediaPlayback.set('always');
-      motionPreference.set('system');
-      interfaceScale.set('default');
-      tagBannerHeight.set(520);
-    }
-  }
-
   function compactSegmentClass(active: boolean) {
     return `px-3 py-1.5 text-xs font-medium transition-colors ${
       active
@@ -680,6 +785,9 @@
     }
     if (icon === 'shield') {
       return 'M12 3l7 3v5c0 4.6-2.8 8.2-7 10-4.2-1.8-7-5.4-7-10V6l7-3zm-3 9l2 2 4-4';
+    }
+    if (icon === 'image') {
+      return 'M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm2 10l4-4 3 3 4-5 3 4M9 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3z';
     }
     return 'M4 5h16v14H4V5zm0 4h16M8 5v4';
   }
@@ -741,24 +849,21 @@
         {/if}
       </label>
 
-      <nav class="settings-section-list mt-4 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1" aria-label="Settings sections">
-        {#each sections as section}
-          <button
-            class="group relative flex w-full items-center gap-3 overflow-hidden rounded-xl px-3 py-2.5 text-left transition-all duration-200 {selectedSection === section.id && !query ? 'translate-x-0.5 bg-[#1a1a23] text-gray-100 shadow-inner shadow-white/[0.025]' : 'text-gray-500 hover:translate-x-0.5 hover:bg-[#14141b] hover:text-gray-300'}"
-            type="button"
-            aria-current={selectedSection === section.id && !query ? 'page' : undefined}
-            on:click={() => { selectedSection = section.id; settingsSearch = ''; }}
-          >
-            {#if selectedSection === section.id && !query}
-              <span class="settings-section-marker absolute inset-y-2 left-0 w-0.5 rounded-full {section.id === 'safety' ? 'bg-amber-300' : section.id === 'library' ? 'bg-cyan-300' : section.id === 'appearance' ? 'bg-pink-300' : 'bg-purple-300'}"></span>
-            {/if}
-            <span class="grid h-8 w-8 shrink-0 place-items-center rounded-lg border transition-all duration-200 {selectedSection === section.id && !query ? 'border-white/10 bg-white/[0.055]' : 'border-transparent bg-white/[0.02] group-hover:bg-white/[0.045]'}">
-              <svg class="h-[18px] w-[18px] {section.id === 'safety' ? 'text-amber-300' : section.id === 'library' ? 'text-cyan-300' : section.id === 'appearance' ? 'text-pink-300' : 'text-purple-300'}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d={iconPath(section.icon)} />
-              </svg>
-            </span>
-            <span class="min-w-0 truncate text-[13px] font-semibold">{section.label}</span>
-          </button>
+      <nav class="settings-section-list mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1" aria-label="Settings sections">
+        {#each visibleGroups as group}
+          <div>
+            <div class="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-600">{group.label}</div>
+            <div class="space-y-0.5">
+              {#each sections.filter((section) => section.group === group.id) as section}
+                <button
+                  class="settings-section-item w-full rounded-md px-3 py-2 text-left text-sm transition-colors {selectedSection === section.id && !query ? 'bg-[#1a1a23] text-gray-100' : 'text-gray-400 hover:bg-[#141419] hover:text-gray-200'}"
+                  type="button"
+                  aria-current={selectedSection === section.id && !query ? 'page' : undefined}
+                  on:click={() => { selectedSection = section.id; settingsSearch = ''; }}
+                >{section.label}</button>
+              {/each}
+            </div>
+          </div>
         {/each}
       </nav>
     </aside>
@@ -807,7 +912,7 @@
           {/if}
         </section>
       {:else}
-        {#if activeToolStatus && ['library', 'metadata', 'safety'].includes(selectedSection)}
+        {#if activeToolStatus && ['library', 'maintenance'].includes(selectedSection)}
           <section class="mb-4 rounded-xl border border-purple-400/20 bg-purple-500/[0.055] p-3.5">
             <div class="flex items-center justify-between gap-4">
               <div>
@@ -832,26 +937,43 @@
           </section>
         {/if}
 
-        {#if selectedSection === 'browsing'}
+        {#if selectedSection === 'appearance'}
           <div class="mx-auto max-w-3xl space-y-4">
-            <section class="rounded-2xl border border-purple-400/20 bg-[radial-gradient(circle_at_85%_0%,rgba(168,85,247,.16),transparent_38%),linear-gradient(135deg,#171420,#101017_70%)] px-4 py-3.5" aria-label="Current browsing defaults">
-              <div class="flex flex-wrap items-end justify-between gap-3">
-                <div class="min-w-0">
-                  <h3 class="mb-2 text-sm font-semibold text-purple-100">Browsing</h3>
-                  <div class="flex flex-wrap gap-2 text-[11px]">
-                    <span class="rounded-full border border-white/5 bg-black/20 px-2.5 py-1 text-gray-300">Start: {startupOptions.find(option => option.value === $startupView)?.label}</span>
-                    <span class="rounded-full border border-white/5 bg-black/20 px-2.5 py-1 text-gray-300">{$imagePageSize === 'all' ? 'All images' : ($imagePageSize + ' per page')}</span>
-                    <span class="rounded-full border border-white/5 bg-black/20 px-2.5 py-1 text-gray-300">{$artistNotificationsEnabled ? `Artist check: ${$artistNotificationIntervalMinutes} min` : 'Artist check: Off'}</span>
-                  </div>
+            <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
+              <div class="divide-y divide-[#22222e]">
+                <div id="setting-motion" class="flex items-center justify-between gap-5 px-4 py-3">
+                  <div class="text-sm font-medium text-gray-200">Interface motion</div>
+                  <div class="flex divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">{#each motionOptions as option}<button class={compactSegmentClass($motionPreference === option.value)} type="button" on:click={() => motionPreference.set(option.value)}>{option.label}</button>{/each}</div>
                 </div>
-                <button class="shrink-0 rounded-lg border border-white/10 bg-black/15 px-3 py-1.5 text-xs text-gray-400 hover:bg-white/5 hover:text-gray-200" type="button" on:click={resetCurrentSection}>Reset section</button>
+                <div id="setting-interface-scale" class="flex items-center justify-between gap-5 px-4 py-3">
+                  <div class="text-sm font-medium text-gray-200">Interface scale</div>
+                  <div class="flex divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">{#each interfaceScaleOptions as option}<button class={compactSegmentClass($interfaceScale === option.value)} type="button" on:click={() => interfaceScale.set(option.value)}>{option.label}</button>{/each}</div>
+                </div>
               </div>
             </section>
-
+          </div>
+        {:else if selectedSection === 'startup'}
+          <div class="mx-auto max-w-3xl space-y-4">
+            <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
+              <div class="divide-y divide-[#22222e]">
+                <div id="setting-startup-module" class="flex items-center justify-between gap-5 px-4 py-3">
+                  <div>
+                    <div class="text-sm font-medium text-gray-200">Startup destination</div>
+                    <div class="mt-0.5 text-xs text-gray-500">Which surface opens when {SUITE_NAME} launches.</div>
+                  </div>
+                  <select class="w-40 shrink-0 rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200 outline-none focus:border-purple-400/60" value={$startupModule} on:change={(event) => startupModule.set((event.currentTarget as HTMLSelectElement).value as StartupModule)}>
+                    {#each startupModuleOptions as option}<option value={option.value}>{option.label}</option>{/each}
+                  </select>
+                </div>
+              </div>
+            </section>
+          </div>
+        {:else if selectedSection === 'browsing'}
+          <div class="mx-auto max-w-3xl space-y-4">
             <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
               <div class="divide-y divide-[#22222e]">
                 <div id="setting-startup-view" class="flex items-center justify-between gap-5 px-4 py-3">
-                  <div class="text-sm font-medium text-gray-200">Startup destination</div>
+                  <div class="text-sm font-medium text-gray-200">Startup view</div>
                   <div class="flex shrink-0 divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">
                     {#each startupOptions as option}
                       <button class={compactSegmentClass($startupView === option.value)} type="button" on:click={() => startupView.set(option.value)}>{option.label}</button>
@@ -938,23 +1060,8 @@
               </div>
             </section>
           </div>
-        {:else if selectedSection === 'appearance'}
+        {:else if selectedSection === 'display'}
           <div class="mx-auto max-w-3xl space-y-4">
-            <section class="rounded-2xl border border-pink-400/20 bg-[radial-gradient(circle_at_20%_0%,rgba(236,72,153,.14),transparent_38%),linear-gradient(135deg,#1b131c,#101017_72%)] px-4 py-3.5" aria-label="Current display settings">
-              <div class="flex flex-wrap items-end justify-between gap-3">
-                <div class="min-w-0">
-                  <h3 class="mb-2 text-sm font-semibold text-pink-100">Display</h3>
-                  <div class="flex flex-wrap gap-2 text-[11px]">
-                    <span class="rounded-full border border-white/5 bg-black/20 px-2.5 py-1 text-gray-300">Cards: {selectedImageSize.label} ({selectedImageSize.cardWidth}px)</span>
-                    <span class="rounded-full border border-white/5 bg-black/20 px-2.5 py-1 text-gray-300">Fit: {$fitMode === 'fit' ? 'Crop fill' : 'Contain'}</span>
-                    <span class="rounded-full border border-white/5 bg-black/20 px-2.5 py-1 text-gray-300">Animation: {$mediaPlayback === 'always' ? 'Always' : $mediaPlayback === 'hover' ? 'On hover' : 'Never'}</span>
-                    <span class="rounded-full border border-white/5 bg-black/20 px-2.5 py-1 text-gray-300">Motion: {$motionPreference === 'system' ? 'System' : $motionPreference === 'full' ? 'Full' : 'Reduced'}</span>
-                    <span class="rounded-full border border-white/5 bg-black/20 px-2.5 py-1 text-gray-300">Scale: {$interfaceScale === 'comfortable' ? 'Comfortable' : 'Default'}</span>
-                  </div>
-                </div>
-                <button class="shrink-0 rounded-lg border border-white/10 bg-black/15 px-3 py-1.5 text-xs text-gray-400 hover:bg-white/5 hover:text-gray-200" type="button" on:click={resetCurrentSection}>Reset section</button>
-              </div>
-            </section>
 
             <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
               <div class="divide-y divide-[#22222e]">
@@ -976,14 +1083,6 @@
                 <div id="setting-media-playback" class="flex items-center justify-between gap-5 px-4 py-3">
                   <div class="text-sm font-medium text-gray-200">Animated media</div>
                   <div class="flex shrink-0 divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">{#each playbackOptions as option}<button class={compactSegmentClass($mediaPlayback === option.value)} type="button" on:click={() => mediaPlayback.set(option.value)}>{option.label}</button>{/each}</div>
-                </div>
-                <div id="setting-motion" class="flex items-center justify-between gap-5 px-4 py-3">
-                  <div class="text-sm font-medium text-gray-200">Interface motion</div>
-                  <div class="flex divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">{#each motionOptions as option}<button class={compactSegmentClass($motionPreference === option.value)} type="button" on:click={() => motionPreference.set(option.value)}>{option.label}</button>{/each}</div>
-                </div>
-                <div id="setting-interface-scale" class="flex items-center justify-between gap-5 px-4 py-3">
-                  <div class="text-sm font-medium text-gray-200">Interface scale</div>
-                  <div class="flex divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">{#each interfaceScaleOptions as option}<button class={compactSegmentClass($interfaceScale === option.value)} type="button" on:click={() => interfaceScale.set(option.value)}>{option.label}</button>{/each}</div>
                 </div>
               </div>
             </section>
@@ -1023,6 +1122,10 @@
               {/if}
             </section>
 
+            <LibraryImportSettings {toolRunning} surface="metadata" />
+          </div>
+        {:else if selectedSection === 'storage'}
+          <div class="mx-auto max-w-3xl space-y-4">
             <section id="setting-folders" class="overflow-visible rounded-xl border border-[#292938] bg-[#111118]">
               <div class="border-b border-[#242432] p-4">
                 <div class="flex items-center justify-between gap-4"><h4 class="text-sm font-semibold text-gray-200">Library roots</h4><span class="rounded-full bg-cyan-500/10 px-2.5 py-1 text-[11px] text-cyan-300">{libraryFolders.length}</span></div>
@@ -1052,20 +1155,77 @@
                 {/each}
               </div>
             </section>
+            <ThumbnailCacheSettings />
           </div>
-        {:else if selectedSection === 'metadata'}
+        {:else if selectedSection === 'roots'}
           <div class="mx-auto max-w-3xl space-y-4">
-            <section class="rounded-2xl border border-purple-400/20 bg-[radial-gradient(circle_at_50%_-20%,rgba(139,92,246,.18),transparent_48%),linear-gradient(135deg,#171322,#101017_72%)] p-4" aria-label="Metadata flow">
-              <div class="mb-3 text-sm font-semibold text-purple-100">Metadata flow</div>
-              <div class="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-3">
-                <div class="rounded-xl border border-white/5 bg-black/20 p-3 text-center"><div class="text-xs font-semibold text-gray-200">Media</div><div class="mt-1 text-[10px] text-gray-600">{foldersLoaded ? `${totalIndexedImages.toLocaleString()} indexed` : 'Loading…'}</div></div>
-                <span class="text-gray-700">→</span>
-                <div class="rounded-xl border border-purple-300/10 bg-purple-500/[0.07] p-3 text-center"><div class="text-xs font-semibold text-purple-100">Sidecars</div><div class="mt-1 text-[10px] text-purple-300">Durable metadata</div></div>
-                <span class="text-gray-700">→</span>
-                <div class="rounded-xl border border-cyan-300/10 bg-cyan-500/[0.06] p-3 text-center"><div class="text-xs font-semibold text-cyan-100">SQLite</div><div class="mt-1 text-[10px] {toolRunning ? 'text-purple-300' : 'text-green-400'}">{toolRunning ? 'Working' : 'Ready'}</div></div>
+            <section id="setting-folder-roles" class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
+              <div class="border-b border-[#242432] p-4">
+                <div class="flex items-center justify-between gap-4">
+                  <div class="flex items-center gap-2"><h4 class="text-sm font-semibold text-gray-200">Folders</h4><span class="rounded-full bg-cyan-500/10 px-2.5 py-1 text-[11px] text-cyan-300">{roleSources.length}</span></div>
+                  <button class="rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-cyan-500/50 hover:text-white" type="button" on:click={openRoleManager}>Manage folders…</button>
+                </div>
+                <p class="mt-1 text-xs leading-relaxed text-gray-500">Folders registered with Files. Each is owned by Files or handed to a module ({MODULE_NAME}); use <span class="text-gray-400">Manage folders…</span> to add, assign a role, rename, or hide one.</p>
+              </div>
+              <div class="space-y-2 p-3">
+                {#if !roleSourcesLoaded}<div class="rounded-xl border border-dashed border-[#303040] px-4 py-8 text-center text-sm text-gray-500">Loading folders…</div>{:else if roleSources.length === 0}<div class="rounded-xl border border-dashed border-[#303040] px-4 py-8 text-center text-sm text-gray-500">No folders registered yet. Use Manage folders to add one.</div>{/if}
+                {#each roleSources as source (source.source_id)}
+                  <div class="flex items-center gap-3 rounded-xl border border-white/5 bg-[#0d0d13] px-3 py-2.5">
+                    <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-500/10 text-cyan-300"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d={iconPath('folder')} /></svg></span>
+                    <div class="min-w-0 flex-1"><div class="flex items-baseline gap-2"><span class="truncate text-sm font-semibold text-gray-200">{source.display_name}</span><span class="shrink-0 rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300">{moduleLabelForRole(source.role)}</span>{#if !source.visible}<span class="shrink-0 rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-gray-500">hidden</span>{/if}</div><div class="mt-0.5 truncate text-xs text-gray-600" title={source.path}>{source.path}</div></div>
+                  </div>
+                {/each}
               </div>
             </section>
+          </div>
+        {:else if selectedSection === 'files'}
+          <div class="mx-auto max-w-3xl space-y-4">
+            <section id="setting-attachment-location" class="rounded-xl border border-[#292938] bg-[#111118] p-4">
+              <div class="flex items-start gap-3">
+                <span class="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-purple-500/10 text-purple-300"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d={iconPath('image')} /></svg></span>
+                <div class="min-w-0 flex-1">
+                  <h3 class="text-sm font-semibold text-gray-100">Attachment storage</h3>
+                  <p class="mt-0.5 text-xs leading-relaxed text-gray-500">Where images and videos you attach to a file's origin note are saved. Existing attachments stay where they are — this changes only where new ones go.</p>
+                  {#if attachmentStore}
+                    <div class="mt-3 flex divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">
+                      <button class={compactSegmentClass(attachmentModeView === 'managed')} type="button" on:click={() => (attachmentModeView = 'managed')} disabled={attachmentBusy}>Managed</button>
+                      <button class={compactSegmentClass(attachmentModeView === 'folder')} type="button" on:click={() => (attachmentModeView = 'folder')} disabled={attachmentBusy}>Choose a folder</button>
+                    </div>
 
+                    {#if attachmentModeView === 'managed'}
+                      <div class="mt-3 rounded-lg border border-[#2a2a3a] bg-[#0d0d14] px-3 py-2.5">
+                        <p class="text-xs leading-relaxed text-gray-400">Stored with {SUITE_NAME}'s own data — hidden from browsing, de-duplicated, and covered by the app backup. Recommended.</p>
+                        <div class="mt-1.5 break-all font-mono text-[11px] text-gray-600">{attachmentStore.default}\.keivotos\attachments</div>
+                      </div>
+                      {#if attachmentStore.mode !== 'managed'}
+                        <div class="mt-3 flex items-center gap-2">
+                          <button type="button" class="rounded-lg bg-purple-500/20 px-3 py-1.5 text-xs font-semibold text-purple-100 transition-colors hover:bg-purple-500/30 disabled:opacity-40" on:click={useManagedAttachmentStore} disabled={attachmentBusy}>Use managed storage</button>
+                          <span class="text-[11px] text-gray-500">Currently saving to a folder.</span>
+                        </div>
+                      {:else}
+                        <p class="mt-2 text-[11px] text-green-400">Managed storage is active.</p>
+                      {/if}
+                    {:else}
+                      <p class="mt-3 text-xs leading-relaxed text-gray-500">Pick a folder inside your library. New attachments are saved there as browsable files (under an <span class="font-mono text-gray-400">Attachments</span> subfolder), so they show up in Files.</p>
+                      <div class="mt-2">
+                        <PathAutocomplete bind:value={attachmentPathDraft} disabled={attachmentBusy} on:submit={(event) => saveAttachmentFolder(event.detail)} />
+                      </div>
+                      <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <button type="button" class="rounded-lg bg-purple-500/20 px-3 py-1.5 text-xs font-semibold text-purple-100 transition-colors hover:bg-purple-500/30 disabled:opacity-40" on:click={() => saveAttachmentFolder()} disabled={attachmentBusy || !attachmentPathDraft.trim()}>Save folder</button>
+                        <button type="button" class="rounded-lg border border-[#2a2a3a] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:text-white disabled:opacity-40" on:click={browseForAttachmentFolder} disabled={attachmentBusy}>Browse…</button>
+                        {#if attachmentStore.mode === 'folder'}<span class="text-[11px] text-green-400">Saving to this folder now.</span>{/if}
+                      </div>
+                    {/if}
+                  {:else}
+                    <p class="mt-3 text-xs text-gray-600">Loading…</p>
+                  {/if}
+                  {#if attachmentError}<p class="mt-2 text-[11px] text-red-300">{attachmentError}</p>{/if}
+                </div>
+              </div>
+            </section>
+          </div>
+        {:else if selectedSection === 'account'}
+          <div class="mx-auto max-w-3xl space-y-4">
             <details id="setting-danbooru-access" class="group overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
               <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3.5">
                 <div class="flex items-center gap-3"><span class="grid h-9 w-9 place-items-center rounded-xl bg-amber-500/10 text-amber-300"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4" /></svg></span><div class="text-sm font-semibold text-gray-200">Danbooru credentials</div></div>
@@ -1081,15 +1241,13 @@
                 {#if credentialMessage}<p class="mt-2 text-xs text-green-400">{credentialMessage}</p>{/if}{#if credentialError}<p class="mt-2 text-xs text-red-400">{credentialError}</p>{/if}
               </div>
             </details>
-
-            <LibraryImportSettings {toolRunning} surface="metadata" />
-            {#if toolError}<p class="rounded-xl border border-red-400/15 bg-red-500/[0.06] px-4 py-3 text-xs text-red-300">{toolError}</p>{/if}
           </div>
-        {:else}
+        {:else if selectedSection === 'backup'}
           <div class="mx-auto max-w-3xl space-y-4">
             <BackupRestoreSettings {toolRunning} />
-            <ThumbnailCacheSettings />
-
+          </div>
+        {:else if selectedSection === 'maintenance'}
+          <div class="mx-auto max-w-3xl space-y-4">
             <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
               <div class="border-b border-[#242432] px-4 py-3"><h4 class="text-sm font-semibold text-gray-200">Recovery maintenance</h4></div>
               <div class="divide-y divide-[#22222e]">
@@ -1102,9 +1260,6 @@
               </div>
             </section>
 
-            <section class="rounded-xl border border-green-400/15 bg-green-500/[0.045] px-4 py-3.5" aria-label="Cleanup safety">
-              <div class="flex flex-wrap items-center gap-2 text-[11px]"><span class="font-semibold text-green-200">Cleanup safety</span><span class="rounded-full bg-black/15 px-2.5 py-1 text-green-100/65">Originals untouched</span><span class="rounded-full bg-black/15 px-2.5 py-1 text-green-100/65">Sidecar deletes counted first</span><span class="rounded-full bg-black/15 px-2.5 py-1 text-green-100/65">Unavailable roots skipped</span></div>
-            </section>
             {#if toolError}<p class="rounded-xl border border-red-400/15 bg-red-500/[0.06] px-4 py-3 text-xs text-red-300">{toolError}</p>{/if}
           </div>
         {/if}
@@ -1112,6 +1267,15 @@
 
     </main>
   </div>
+
+  {#if showRoleManager}
+    <ManageFoldersDialog
+      sources={roleSources}
+      modules={$suiteModules}
+      on:saved={roleFoldersSaved}
+      on:close={() => (showRoleManager = false)}
+    />
+  {/if}
 
   {#if folderRemovalFolder}
     <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->

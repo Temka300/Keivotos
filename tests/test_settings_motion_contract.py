@@ -33,15 +33,17 @@ class SettingsMotionContractTests(unittest.TestCase):
         )
         self.assertIn("void target.getBoundingClientRect()", self.source)
 
-    def test_colored_preference_summaries_have_visible_names(self) -> None:
-        self.assertIn(
-            'text-purple-100">Browsing</h3>',
-            self.source,
-        )
-        self.assertIn(
-            'text-pink-100">Display</h3>',
-            self.source,
-        )
+    def test_sections_are_grouped_by_scope(self) -> None:
+        # v1.1.3: the flat functional list became scope groups — General (whole
+        # suite), Files (the base), and one group per module. The module group is
+        # registry-driven so it disappears when the module is disabled.
+        self.assertIn("const sectionGroups = [", self.source)
+        self.assertIn("label: 'General'", self.source)
+        self.assertIn("label: 'Files'", self.source)
+        # The module group's label comes from the module's identity, not a literal
+        # (keeps the release-layout no-hardcoded-'Danbooru' guard happy).
+        self.assertIn("label: MODULE_NAME", self.source)
+        self.assertIn("$enabledModules.includes(group.module)", self.source)
 
 
 if __name__ == "__main__":
