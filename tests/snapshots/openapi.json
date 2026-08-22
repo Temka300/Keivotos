@@ -544,6 +544,51 @@
         "title": "ArtistUrl",
         "type": "object"
       },
+      "AttachmentStoreInfo": {
+        "properties": {
+          "default": {
+            "title": "Default",
+            "type": "string"
+          },
+          "is_default": {
+            "title": "Is Default",
+            "type": "boolean"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "mode",
+          "is_default",
+          "default"
+        ],
+        "title": "AttachmentStoreInfo",
+        "type": "object"
+      },
+      "AttachmentStoreRequest": {
+        "properties": {
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "title": "AttachmentStoreRequest",
+        "type": "object"
+      },
       "AutomationStatus": {
         "properties": {
           "candidate_count": {
@@ -4385,7 +4430,7 @@
   },
   "info": {
     "title": "Keivotos",
-    "version": "1.1.2"
+    "version": "1.1.3"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -6151,6 +6196,62 @@
           }
         },
         "summary": "Upload Attachment"
+      }
+    },
+    "/api/files/attachment-store": {
+      "get": {
+        "description": "Where origin-note attachment images/videos are stored.",
+        "operationId": "get_attachment_store_api_files_attachment_store_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentStoreInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Attachment Store"
+      },
+      "put": {
+        "description": "Point the attachment store at a folder, or reset to the default (empty path).\n\nNon-destructive: only new attachments follow this; existing ones resolve from\ntheir own recorded location.",
+        "operationId": "set_attachment_store_api_files_attachment_store_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachmentStoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentStoreInfo"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Set Attachment Store"
       }
     },
     "/api/files/attachment/{attachment_id}": {
