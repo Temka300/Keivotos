@@ -15,6 +15,14 @@ FolderPreviewHook = Callable[[str], dict[str, Any]]
 FolderUpdateHook = Callable[[str], None]
 RescanHook = Callable[[str], dict[str, Any]]
 RelocateHook = Callable[[str, str], dict[str, Any]]
+# Returns the APIRouters this surface contributes. Typed loosely so this
+# boundary module need not import FastAPI; the shell mounts whatever comes back.
+RouterProvider = Callable[[], "list[Any]"]
+# Synchronous once-at-startup work for an active module (e.g. a schema/migration).
+StartupHook = Callable[[], None]
+# Returns ``(name, coroutine)`` pairs the suite lifespan runs as background tasks
+# for the module's lifetime. Typed loosely to keep asyncio out of this boundary.
+BackgroundTasksHook = Callable[[], "list[Any]"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +51,36 @@ class ModuleDescriptor:
     folder_update_hook: FolderUpdateHook | None = None
     rescan_hook: RescanHook | None = None
     relocate_hook: RelocateHook | None = None
+    router_provider: RouterProvider | None = None
+    startup_hook: StartupHook | None = None
+    background_tasks_hook: BackgroundTasksHook | None = None
+
+    def run_startup(self) -> None:
+        """Synchronous once-at-startup work, run only when the module is active."""
+        if self.startup_hook is not None:
+            self.startup_hook()
+
+    def background_tasks(self) -> "list[Any]":
+        """``(name, coroutine)`` pairs to run for the module's lifetime.
+
+        Resolved only when the module is active, so a disabled module never
+        constructs its coroutines. An empty list means no background work.
+        """
+        if self.background_tasks_hook is None:
+            return []
+        return list(self.background_tasks_hook())
+
+    def routers(self) -> "list[Any]":
+        """The APIRouters this surface contributes, resolved lazily at compose time.
+
+        Returning them from a provider (rather than importing routers when the
+        registry is built) keeps descriptor construction free of route imports,
+        so ``config`` can build the registry without pulling in a module's HTTP
+        layer. A surface with no HTTP routes returns an empty list.
+        """
+        if self.router_provider is None:
+            return []
+        return list(self.router_provider())
 
     def publish(self, user_connection: sqlite3.Connection) -> None:
         if self.publish_hook is not None:

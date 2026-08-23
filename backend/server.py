@@ -1,17 +1,21 @@
 """FastAPI composition root for Keivotos."""
 
-from config import CODE_ROOT
+from config import CODE_ROOT, MODULE_REGISTRY
 from fastapi.responses import FileResponse
 from app_factory import app
-from routers import artists, collections, discovery, files, folders, images_media, stats, suite, tags, tools, user_library
+from routers import stats, suite
 
-for domain_router in (
-    images_media.router, discovery.router, tags.router, artists.router,
-    folders.router, user_library.router, collections.router, stats.router, tools.router,
-    files.router,  # Files base (V1.1.0) — always mounted, isolated from core
-    suite.router,  # Suite module registry (V1.1.0) — isolated from core
-):
-    app.include_router(domain_router)
+# Suite-shell routers: the module registry itself and suite-level user settings.
+# They belong to no module and are always mounted.
+for shell_router in (suite.router, stats.router):
+    app.include_router(shell_router)
+
+# Every registered surface contributes its own routers — the Files base and each
+# optional module. Adding a module is a descriptor field, never an edit here.
+# Routers stay always-mounted (contract §8); endpoints gate on enabled state.
+for descriptor in MODULE_REGISTRY:
+    for module_router in descriptor.routers():
+        app.include_router(module_router)
 
 FRONTEND_DIST = CODE_ROOT / 'frontend' / 'dist'
 

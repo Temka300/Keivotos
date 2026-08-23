@@ -55,6 +55,44 @@ def relocate_source(source_id: str, new_path: str) -> dict[str, object]:
     return relocate_shared_source(source_id, new_path)
 
 
+def _routers() -> list:
+    """Danbooru's HTTP surface, imported lazily at app-composition time.
+
+    These routes are still unprefixed and physically live under ``routers/``
+    (grandfathered, SUITE_MODULE_CONTRACT §8). Declaring them here makes the
+    module own its surface without moving files; the relocation behind
+    ``/api/danbooru`` is the v1.1.6 modularization work.
+    """
+    from routers import (
+        artists,
+        collections,
+        discovery,
+        folders,
+        images_media,
+        tags,
+        tools,
+        user_library,
+    )
+
+    return [
+        images_media.router,
+        discovery.router,
+        tags.router,
+        artists.router,
+        folders.router,
+        user_library.router,
+        collections.router,
+        tools.router,
+    ]
+
+
+def _background_tasks() -> list:
+    """Danbooru's lifetime background work, imported lazily at startup."""
+    from modules.danbooru.lifecycle import background_tasks
+
+    return background_tasks()
+
+
 def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
     home = suite_home / "modules" / "danbooru"
     return ModuleDescriptor(
@@ -75,4 +113,6 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         folder_update_hook=update_folder,
         rescan_hook=rescan_source,
         relocate_hook=relocate_source,
+        router_provider=_routers,
+        background_tasks_hook=_background_tasks,
     )
