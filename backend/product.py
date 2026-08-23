@@ -1,7 +1,7 @@
 """Suite-owned product identity exposed by the application."""
 
 SUITE_NAME = "Keivotos"
-VERSION = "1.1.4"
+VERSION = "1.1.5"
 DISPLAY_NAME = SUITE_NAME
 WEB_TITLE = SUITE_NAME
 DEFAULT_HOST = "localhost"
