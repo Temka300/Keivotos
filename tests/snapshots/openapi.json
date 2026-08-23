@@ -544,6 +544,24 @@
         "title": "ArtistUrl",
         "type": "object"
       },
+      "AttachmentMigrateResult": {
+        "properties": {
+          "migrated": {
+            "title": "Migrated",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "migrated",
+          "skipped"
+        ],
+        "title": "AttachmentMigrateResult",
+        "type": "object"
+      },
       "AttachmentStoreInfo": {
         "properties": {
           "default": {
@@ -1710,59 +1728,17 @@
         "title": "FolderRelocate",
         "type": "object"
       },
-      "FolderRelocateResult": {
+      "FolderRelocatePayload": {
         "properties": {
-          "active_tool_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active Tool Id"
-          },
-          "files_updated": {
-            "title": "Files Updated",
-            "type": "integer"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
           "path": {
             "title": "Path",
-            "type": "string"
-          },
-          "root_id": {
-            "title": "Root Id",
-            "type": "string"
-          },
-          "selector": {
-            "title": "Selector",
-            "type": "string"
-          },
-          "status": {
-            "const": "relocated",
-            "title": "Status",
-            "type": "string"
-          },
-          "sync": {
-            "title": "Sync",
             "type": "string"
           }
         },
         "required": [
-          "status",
-          "name",
-          "selector",
-          "path",
-          "root_id",
-          "files_updated",
-          "sync"
+          "path"
         ],
-        "title": "FolderRelocateResult",
+        "title": "FolderRelocatePayload",
         "type": "object"
       },
       "FolderRemovalPreview": {
@@ -1863,6 +1839,31 @@
           "files_removed"
         ],
         "title": "FolderRemovalResult",
+        "type": "object"
+      },
+      "FolderRescanResult": {
+        "properties": {
+          "base": {
+            "additionalProperties": true,
+            "title": "Base",
+            "type": "object"
+          },
+          "module": {
+            "additionalProperties": true,
+            "title": "Module",
+            "type": "object"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "base",
+          "module"
+        ],
+        "title": "FolderRescanResult",
         "type": "object"
       },
       "FsEntry": {
@@ -3221,6 +3222,11 @@
             "title": "Display Name",
             "type": "string"
           },
+          "entry_count": {
+            "default": 0,
+            "title": "Entry Count",
+            "type": "integer"
+          },
           "path": {
             "title": "Path",
             "type": "string"
@@ -4425,12 +4431,85 @@
         ],
         "title": "ValidationError",
         "type": "object"
+      },
+      "models__FolderRelocateResult": {
+        "properties": {
+          "active_tool_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Tool Id"
+          },
+          "files_updated": {
+            "title": "Files Updated",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "root_id": {
+            "title": "Root Id",
+            "type": "string"
+          },
+          "selector": {
+            "title": "Selector",
+            "type": "string"
+          },
+          "status": {
+            "const": "relocated",
+            "title": "Status",
+            "type": "string"
+          },
+          "sync": {
+            "title": "Sync",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "name",
+          "selector",
+          "path",
+          "root_id",
+          "files_updated",
+          "sync"
+        ],
+        "title": "FolderRelocateResult",
+        "type": "object"
+      },
+      "routers__suite__FolderRelocateResult": {
+        "properties": {
+          "files_updated": {
+            "default": 0,
+            "title": "Files Updated",
+            "type": "integer"
+          },
+          "source_id": {
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id"
+        ],
+        "title": "FolderRelocateResult",
+        "type": "object"
       }
     }
   },
   "info": {
     "title": "Keivotos",
-    "version": "1.1.3"
+    "version": "1.1.4"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -6254,6 +6333,25 @@
         "summary": "Set Attachment Store"
       }
     },
+    "/api/files/attachment-store/migrate": {
+      "post": {
+        "description": "Copy existing attachments into the current visible folder store and repoint them.\n\nOnly valid in folder mode. Non-destructive: bytes are copied (deduped) into\n``<folder>/Attachments/`` and each row is repointed there, so previously hidden\nattachments become browsable in Files. The old managed copy is left untouched.",
+        "operationId": "migrate_attachments_to_folder_api_files_attachment_store_migrate_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttachmentMigrateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Migrate Attachments To Folder"
+      }
+    },
     "/api/files/attachment/{attachment_id}": {
       "delete": {
         "operationId": "delete_attachment_api_files_attachment__attachment_id__delete",
@@ -7334,7 +7432,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/FolderRelocateResult"
+                  "$ref": "#/components/schemas/models__FolderRelocateResult"
                 }
               }
             },
@@ -8549,6 +8647,96 @@
           }
         },
         "summary": "Preview Folder Forget"
+      }
+    },
+    "/api/suite/folders/{source_id}/path": {
+      "put": {
+        "description": "Point a moved folder at a new path through the module that owns it.",
+        "operationId": "relocate_folder_source_api_suite_folders__source_id__path_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FolderRelocatePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/routers__suite__FolderRelocateResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Relocate Folder Source"
+      }
+    },
+    "/api/suite/folders/{source_id}/rescan": {
+      "post": {
+        "description": "Re-index one registered folder through the module that owns it.",
+        "operationId": "rescan_folder_source_api_suite_folders__source_id__rescan_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "source_id",
+            "required": true,
+            "schema": {
+              "title": "Source Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FolderRescanResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rescan Folder Source"
       }
     },
     "/api/suite/modules": {

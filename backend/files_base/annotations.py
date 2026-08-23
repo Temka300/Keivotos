@@ -469,6 +469,37 @@ def get_attachment(
     )
 
 
+def list_all_attachments(user_conn: sqlite3.Connection) -> list[StoredAttachment]:
+    """Every attachment row with its byte-store location (used by store migration)."""
+    rows = user_conn.execute(
+        "SELECT id, annotation_id, content_hash, file_name, media_type, size, stored_root "
+        "FROM files_annotation_attachments ORDER BY id"
+    ).fetchall()
+    return [
+        StoredAttachment(
+            id=row["id"],
+            annotation_id=row["annotation_id"],
+            content_hash=row["content_hash"],
+            file_name=row["file_name"],
+            media_type=row["media_type"],
+            size=row["size"],
+            stored_root=row["stored_root"],
+        )
+        for row in rows
+    ]
+
+
+def update_attachment_stored_root(
+    user_conn: sqlite3.Connection, attachment_id: int, stored_root: str
+) -> None:
+    """Repoint one attachment at a new store root after its bytes were relocated."""
+    user_conn.execute(
+        "UPDATE files_annotation_attachments SET stored_root = ? WHERE id = ?",
+        (stored_root, attachment_id),
+    )
+    user_conn.commit()
+
+
 def remove_attachment(
     user_conn: sqlite3.Connection, annotation_id: int, attachment_id: int
 ) -> bool:

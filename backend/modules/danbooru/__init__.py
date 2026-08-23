@@ -43,6 +43,18 @@ def update_folder(source_id: str) -> None:
     update_shared_source_presentation(source_id)
 
 
+def rescan_source(source_id: str) -> dict[str, object]:
+    from routers.folders import rescan_shared_source
+
+    return rescan_shared_source(source_id)
+
+
+def relocate_source(source_id: str, new_path: str) -> dict[str, object]:
+    from routers.folders import relocate_shared_source
+
+    return relocate_shared_source(source_id, new_path)
+
+
 def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
     home = suite_home / "modules" / "danbooru"
     return ModuleDescriptor(
@@ -61,4 +73,6 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         release_hook=release_source,
         folder_preview_hook=folder_preview,
         folder_update_hook=update_folder,
+        rescan_hook=rescan_source,
+        relocate_hook=relocate_source,
     )

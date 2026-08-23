@@ -374,6 +374,31 @@ def adopt_shared_source(source_id: str) -> dict:
     return result
 
 
+def rescan_shared_source(source_id: str) -> dict:
+    """Re-run the Danbooru library import for one adopted folder."""
+    source = _shared_source(source_id)
+    sync = _start_folder_import([source.path])
+    return {
+        "status": sync["status"],
+        "active_tool_id": sync.get("active_tool_id"),
+        "source_id": source_id,
+    }
+
+
+def relocate_shared_source(source_id: str, new_path: str) -> dict:
+    """Relocate the Danbooru library root behind a suite source to a new path.
+
+    Reuses the stable-root relocate so tags, favorites, and collections stay
+    attached to the moved files; the shared source list follows on re-publish.
+    """
+    source = _shared_source(source_id)
+    registered = _registered_folder_for_path(source.path)
+    if registered is None or not registered.get("root_id"):
+        raise HTTPException(404, "This folder is not a Danbooru library root")
+    result = relocate_folder(str(registered["root_id"]), FolderRelocate(path=new_path))
+    return {"source_id": source_id, "files_updated": result.files_updated}
+
+
 def release_shared_source(source_id: str, *, forget: bool = False) -> dict:
     """Release a Danbooru source without deleting originals or sidecars."""
     running_tool = active_tool_id()

@@ -202,6 +202,66 @@ def apply_changes(changes: list[FolderChange]) -> dict[str, Any]:
     }
 
 
+def rescan(source_id: str) -> dict[str, Any]:
+    """Re-index one folder through its owning module.
+
+    The base always refreshes its own filesystem index (browse/thumbnails); a
+    non-base owner then runs its richer rescan (e.g. the Danbooru library sync).
+    The suite only dispatches — each module decides what "rescan" means for its
+    role — which keeps the base module-agnostic.
+    """
+    with get_user_db() as connection:
+        sources.ensure_sources_schema(connection)
+        source = sources.get_source(connection, source_id)
+        all_sources = sources.list_sources(connection)
+    if source is None:
+        raise FolderRegistryError(404, "Unknown folder source")
+    with index.open_index(FILES_DB_PATH) as index_connection:
+        base = _scan_registered_source(index_connection, source, all_sources)
+    descriptor = MODULE_REGISTRY.require(sources.canonical_role(source.role))
+    module = {} if descriptor.is_base else descriptor.rescan(source_id)
+    return {"source_id": source_id, "base": base, "module": module}
+
+
+def relocate(source_id: str, new_path: str) -> dict[str, Any]:
+    """Point a moved folder at its new location through its owning module.
+
+    Files folders take their identity from their path, so relocating one is just
+    removing it and adding the new path — the caller should do that instead. A
+    module folder keeps a stable identity: its module rewrites its own index and
+    re-publishes the shared source (a new path-derived id), and we then refresh
+    the base index at the new location.
+    """
+    with get_user_db() as connection:
+        sources.ensure_sources_schema(connection)
+        source = sources.get_source(connection, source_id)
+    if source is None:
+        raise FolderRegistryError(404, "Unknown folder source")
+    descriptor = MODULE_REGISTRY.require(sources.canonical_role(source.role))
+    if descriptor.is_base:
+        raise FolderRegistryError(
+            400,
+            "Files folders are identified by their path — remove this one and add it at the new location.",
+        )
+    try:
+        result = descriptor.relocate(source_id, new_path)
+    except ValueError as exc:
+        raise FolderRegistryError(400, str(exc)) from exc
+    with get_user_db() as connection:
+        sources.ensure_sources_schema(connection)
+        descriptor.publish(connection)
+        moved = sources.get_source(connection, sources.deterministic_source_id(new_path))
+        all_sources = sources.list_sources(connection)
+    if moved is not None:
+        with index.open_index(FILES_DB_PATH) as index_connection:
+            index.drop_source(index_connection, source_id)
+            _scan_registered_source(index_connection, moved, all_sources)
+    return {
+        "source_id": moved.source_id if moved is not None else source_id,
+        "files_updated": int(result.get("files_updated", 0)),
+    }
+
+
 def forget_preview(source_id: str) -> dict[str, Any]:
     with get_user_db() as connection:
         sources.ensure_sources_schema(connection)

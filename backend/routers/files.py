@@ -64,6 +64,7 @@ class SourceInfo(BaseModel):
     role: str
     visible: bool
     added_at: str | None = None
+    entry_count: int = 0
 
 
 class SourceRegister(BaseModel):
@@ -211,7 +212,7 @@ def _entry_to_node(entry: index.FileEntry) -> FileNode:
     )
 
 
-def _source_to_info(source: sources.Source) -> SourceInfo:
+def _source_to_info(source: sources.Source, entry_count: int = 0) -> SourceInfo:
     return SourceInfo(
         source_id=source.source_id,
         path=source.path,
@@ -219,6 +220,7 @@ def _source_to_info(source: sources.Source) -> SourceInfo:
         role=source.role,
         visible=source.visible,
         added_at=source.added_at,
+        entry_count=entry_count,
     )
 
 
@@ -308,7 +310,13 @@ def browse_filesystem(path: str = Query("")) -> FsListing:
 def list_sources() -> list[SourceInfo]:
     with get_user_db() as user_conn:
         sources.ensure_sources_schema(user_conn)
-        return [_source_to_info(source) for source in sources.list_sources(user_conn)]
+        source_list = sources.list_sources(user_conn)
+    with index.open_index(config.FILES_DB_PATH) as index_conn:
+        counts = {
+            source.source_id: index.source_entry_count(index_conn, source.source_id)
+            for source in source_list
+        }
+    return [_source_to_info(source, counts.get(source.source_id, 0)) for source in source_list]
 
 
 @router.post("/api/files/sources", response_model=SourceInfo)
@@ -1126,6 +1134,53 @@ def _attachment_store_info() -> AttachmentStoreInfo:
 def get_attachment_store() -> AttachmentStoreInfo:
     """Where origin-note attachment images/videos are stored."""
     return _attachment_store_info()
+
+
+class AttachmentMigrateResult(BaseModel):
+    migrated: int
+    skipped: int
+
+
+@router.post("/api/files/attachment-store/migrate", response_model=AttachmentMigrateResult)
+def migrate_attachments_to_folder() -> AttachmentMigrateResult:
+    """Copy existing attachments into the current visible folder store and repoint them.
+
+    Only valid in folder mode. Non-destructive: bytes are copied (deduped) into
+    ``<folder>/Attachments/`` and each row is repointed there, so previously hidden
+    attachments become browsable in Files. The old managed copy is left untouched.
+    """
+    if config.attachment_store_mode() != "folder":
+        raise HTTPException(status_code=400, detail="Choose a folder store first, then migrate.")
+    target_root = config.attachment_store_root()
+    migrated = 0
+    skipped = 0
+    with get_user_db() as user_conn:
+        annotations.ensure_annotations_schema(user_conn)
+        rows = annotations.list_all_attachments(user_conn)
+        for row in rows:
+            if not row.stored_root:
+                skipped += 1
+                continue
+            ext = attachment_store.extension_for(row.file_name, row.media_type)
+            target = attachment_store.attachment_path(target_root, row.content_hash, ext, visible=True)
+            if target.is_file():
+                # Already visible under the target store; just make sure the row agrees.
+                if row.stored_root != str(target_root):
+                    annotations.update_attachment_stored_root(user_conn, row.id, str(target_root))
+                    migrated += 1
+                else:
+                    skipped += 1
+                continue
+            current = attachment_store.resolve_attachment(row.stored_root, row.content_hash, ext)
+            if not current.is_file():
+                skipped += 1
+                continue
+            attachment_store.write_attachment(
+                target_root, row.content_hash, ext, current.read_bytes(), visible=True
+            )
+            annotations.update_attachment_stored_root(user_conn, row.id, str(target_root))
+            migrated += 1
+    return AttachmentMigrateResult(migrated=migrated, skipped=skipped)
 
 
 @router.put("/api/files/attachment-store", response_model=AttachmentStoreInfo)

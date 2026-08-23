@@ -1,5 +1,5 @@
 export const SUITE_NAME = 'Keivotos';
-export const VERSION = '1.1.3';
+export const VERSION = '1.1.4';
 export const DISPLAY_NAME = SUITE_NAME;
 export const DEFAULT_PROFILE_NAME = SUITE_NAME;
 

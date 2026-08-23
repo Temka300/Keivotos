@@ -13,6 +13,8 @@ AdoptHook = Callable[[str], dict[str, Any]]
 ReleaseHook = Callable[[str, bool], dict[str, Any]]
 FolderPreviewHook = Callable[[str], dict[str, Any]]
 FolderUpdateHook = Callable[[str], None]
+RescanHook = Callable[[str], dict[str, Any]]
+RelocateHook = Callable[[str, str], dict[str, Any]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +41,8 @@ class ModuleDescriptor:
     release_hook: ReleaseHook | None = None
     folder_preview_hook: FolderPreviewHook | None = None
     folder_update_hook: FolderUpdateHook | None = None
+    rescan_hook: RescanHook | None = None
+    relocate_hook: RelocateHook | None = None
 
     def publish(self, user_connection: sqlite3.Connection) -> None:
         if self.publish_hook is not None:
@@ -62,3 +66,19 @@ class ModuleDescriptor:
     def update_folder(self, source_id: str) -> None:
         if self.folder_update_hook is not None:
             self.folder_update_hook(source_id)
+
+    def rescan(self, source_id: str) -> dict[str, Any]:
+        """Module-specific re-index for one folder (e.g. a library sync).
+
+        The base's own filesystem index is refreshed by the suite regardless; a
+        module that has nothing extra to do simply reports no module work.
+        """
+        if self.rescan_hook is None:
+            return {}
+        return self.rescan_hook(source_id)
+
+    def relocate(self, source_id: str, new_path: str) -> dict[str, Any]:
+        """Point a moved folder at ``new_path``, preserving the module's identity."""
+        if self.relocate_hook is None:
+            raise ValueError(f"{self.name} folders cannot be relocated")
+        return self.relocate_hook(source_id, new_path)

@@ -201,6 +201,83 @@ class FolderRoleServiceTests(unittest.TestCase):
             self.assertEqual(owner["source_id"], parent.source_id)
         self.assertTrue(nested_file.is_file())
 
+    def test_rescan_files_source_refreshes_the_base_index(self) -> None:
+        added = folder_roles.apply_changes([
+            folder_roles.FolderChange(None, str(self.library), "Library", "files")
+        ])
+        source = added["sources"][0]
+        result = folder_roles.rescan(source.source_id)
+        self.assertEqual(result["source_id"], source.source_id)
+        # A base (Files) folder has no extra module rescan.
+        self.assertEqual(result["module"], {})
+        with index.open_index(self.files_db) as connection:
+            self.assertEqual(index.source_entry_count(connection, source.source_id), 1)
+
+    def test_rescan_unknown_source_raises_not_found(self) -> None:
+        with self.assertRaises(folder_roles.FolderRegistryError) as caught:
+            folder_roles.rescan("does-not-exist")
+        self.assertEqual(caught.exception.status_code, 404)
+
+    def test_relocate_rejects_a_files_folder(self) -> None:
+        added = folder_roles.apply_changes([
+            folder_roles.FolderChange(None, str(self.library), "Library", "files")
+        ])
+        source = added["sources"][0]
+        with self.assertRaises(folder_roles.FolderRegistryError) as caught:
+            folder_roles.relocate(source.source_id, str(self.temp / "elsewhere"))
+        self.assertEqual(caught.exception.status_code, 400)
+
+    def test_relocate_dispatches_to_module_and_reindexes_at_new_path(self) -> None:
+        with database.get_user_db() as connection:
+            source = sources.register_source(connection, self.library, "Library", role="danbooru")
+        with index.open_index(self.files_db) as index_connection:
+            index.scan_source(index_connection, source.source_id, self.library, excluded_roots=[])
+
+        moved_dir = self.temp / "moved-library"
+        shutil.move(str(self.library), str(moved_dir))
+
+        def fake_module_relocate(source_id: str, new_path: str) -> dict:
+            # Stand in for the Danbooru relocate + re-publish: the module keeps its
+            # own stable identity and re-points the shared source at the new path.
+            with database.get_user_db() as connection:
+                sources.ensure_sources_schema(connection)
+                sources.remove_source(connection, source_id)
+                sources.register_source(connection, new_path, "Library", role="danbooru")
+            return {"files_updated": 7}
+
+        danbooru = config.MODULE_REGISTRY.require("danbooru")
+        registry = config.MODULE_REGISTRY.replacing(replace(
+            danbooru,
+            relocate_hook=fake_module_relocate,
+            publish_hook=lambda connection: None,
+        ))
+        with patch.object(folder_roles, "MODULE_REGISTRY", registry):
+            result = folder_roles.relocate(source.source_id, str(moved_dir))
+
+        new_id = sources.deterministic_source_id(moved_dir)
+        self.assertEqual(result["source_id"], new_id)
+        self.assertEqual(result["files_updated"], 7)
+        with index.open_index(self.files_db) as index_connection:
+            self.assertEqual(index.source_entry_count(index_connection, source.source_id), 0)
+            self.assertEqual(index.source_entry_count(index_connection, new_id), 1)
+
+    def test_rescan_dispatches_to_the_owning_module_hook(self) -> None:
+        calls: list[str] = []
+        with database.get_user_db() as connection:
+            source = sources.register_source(connection, self.library, "Library", role="danbooru")
+        danbooru = config.MODULE_REGISTRY.require("danbooru")
+        registry = config.MODULE_REGISTRY.replacing(replace(
+            danbooru,
+            rescan_hook=lambda source_id: (calls.append(source_id), {"status": "started"})[-1],
+        ))
+        with patch.object(folder_roles, "MODULE_REGISTRY", registry):
+            result = folder_roles.rescan(source.source_id)
+        # The module's own rescan ran, and the base index was refreshed too.
+        self.assertEqual(calls, [source.source_id])
+        self.assertEqual(result["module"], {"status": "started"})
+        with index.open_index(self.files_db) as connection:
+            self.assertEqual(index.source_entry_count(connection, source.source_id), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

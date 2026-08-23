@@ -66,6 +66,21 @@ class FolderForgetPreview(BaseModel):
     sidecars_preserved: int
 
 
+class FolderRescanResult(BaseModel):
+    source_id: str
+    base: dict
+    module: dict
+
+
+class FolderRelocatePayload(BaseModel):
+    path: str
+
+
+class FolderRelocateResult(BaseModel):
+    source_id: str
+    files_updated: int = 0
+
+
 @router.get("/api/suite/modules", response_model=list[SuiteModule])
 def list_modules() -> list[SuiteModule]:
     with get_user_db() as user_conn:
@@ -134,5 +149,23 @@ def apply_folder_changes(payload: FolderBatchPayload) -> FolderBatchResult:
 def preview_folder_forget(source_id: str) -> FolderForgetPreview:
     try:
         return FolderForgetPreview(**folder_roles.forget_preview(source_id))
+    except folder_roles.FolderRegistryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.post("/api/suite/folders/{source_id}/rescan", response_model=FolderRescanResult)
+def rescan_folder_source(source_id: str) -> FolderRescanResult:
+    """Re-index one registered folder through the module that owns it."""
+    try:
+        return FolderRescanResult(**folder_roles.rescan(source_id))
+    except folder_roles.FolderRegistryError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.put("/api/suite/folders/{source_id}/path", response_model=FolderRelocateResult)
+def relocate_folder_source(source_id: str, payload: FolderRelocatePayload) -> FolderRelocateResult:
+    """Point a moved folder at a new path through the module that owns it."""
+    try:
+        return FolderRelocateResult(**folder_roles.relocate(source_id, payload.path))
     except folder_roles.FolderRegistryError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
