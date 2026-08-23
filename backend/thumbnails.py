@@ -20,6 +20,9 @@ THUMB_CACHE_VERSION = "v4"
 WEBP_QUALITY = 88
 SUPPORTED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".jfif"}
 SUPPORTED_VIDEOS = {".mp4", ".webm"}
+# Audio tiles are drawn from the track's embedded cover art (FLAC PICTURE, ID3
+# APIC, MP4 covr, …). Mirrors the frontend AUDIO set in filePreview.ts.
+SUPPORTED_AUDIO = {".mp3", ".flac", ".ogg", ".oga", ".m4a", ".wav"}
 
 # These are local library files, not untrusted uploads. Some Danbooru images are
 # very large source canvases, and the gallery still needs small previews for them.
@@ -124,6 +127,25 @@ def _video_frame(source_path: Path) -> Image.Image:
     return image
 
 
+def _audio_cover(source_path: Path) -> Image.Image | None:
+    """The embedded cover art of an audio file as a PIL image, or ``None``.
+
+    Uses tinytag (pure-Python, MIT) to read only the file's metadata — never the
+    audio stream — so drawing a tile for a large FLAC stays cheap. A track with
+    no embedded picture is a deliberate ``None`` (the grid keeps its 🎵 glyph),
+    not an error.
+    """
+    from tinytag import TinyTag
+
+    tag = TinyTag.get(str(source_path), duration=False, image=True)
+    picture = tag.images.any
+    if picture is None or not picture.data:
+        return None
+    image = Image.open(io.BytesIO(picture.data))
+    image.load()
+    return image
+
+
 def _thumbnail_lock(path: Path) -> threading.Lock:
     return _key_locks[hash(str(path)) % len(_key_locks)]
 
@@ -154,7 +176,7 @@ def ensure_thumbnail(
     global _writes_since_prune
     max_size = normalize_thumbnail_size(max_size)
     src = Path(source_path)
-    if not src.exists() or src.suffix.lower() not in SUPPORTED_IMAGES | SUPPORTED_VIDEOS:
+    if not src.exists() or src.suffix.lower() not in SUPPORTED_IMAGES | SUPPORTED_VIDEOS | SUPPORTED_AUDIO:
         return None
     thumb_path = get_thumbnail_path(source_path, max_size, content_md5)
 
@@ -168,8 +190,14 @@ def ensure_thumbnail(
             return thumb_path
         remove_legacy_thumbnail_cache(source_path, content_md5)
         try:
-            if src.suffix.lower() in SUPPORTED_VIDEOS:
+            suffix = src.suffix.lower()
+            if suffix in SUPPORTED_VIDEOS:
                 img = _video_frame(src)
+            elif suffix in SUPPORTED_AUDIO:
+                img = _audio_cover(src)
+                if img is None:
+                    # No embedded cover art: a deliberate miss, not an error.
+                    return None
             else:
                 img = Image.open(src)
             with img:

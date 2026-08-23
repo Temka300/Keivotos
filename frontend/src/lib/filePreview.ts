@@ -36,12 +36,17 @@ export function previewMode(ext: string | null | undefined): PreviewMode {
 
 /** Extensions the backend can actually produce a thumbnail for.
  *
- * Mirrors ``SUPPORTED_IMAGES | SUPPORTED_VIDEOS`` in backend/thumbnails.py, which
- * is deliberately narrower than the inline-preview sets above: avif, bmp and m4v
- * render inline but have no thumbnail path. Asking outside this set only earns a
- * 404, so the grid checks first rather than firing one doomed request per tile.
+ * Mirrors ``SUPPORTED_IMAGES | SUPPORTED_VIDEOS | SUPPORTED_AUDIO`` in
+ * backend/thumbnails.py, which is deliberately narrower than the inline-preview
+ * sets above: avif, bmp and m4v render inline but have no thumbnail path. Audio
+ * tiles ask because the track may carry embedded cover art; one with none falls
+ * back to the 🎵 glyph on a 404, so the grid checks this set first rather than
+ * firing one doomed request per tile.
  */
-const THUMBNAILABLE = new Set(['png', 'jpg', 'jpeg', 'jfif', 'gif', 'webp', 'mp4', 'webm']);
+const THUMBNAILABLE = new Set([
+  'png', 'jpg', 'jpeg', 'jfif', 'gif', 'webp', 'mp4', 'webm',
+  'mp3', 'flac', 'wav', 'ogg', 'oga', 'm4a',
+]);
 
 /** Whether a browsed entry should try for a real thumbnail instead of a glyph.
  *

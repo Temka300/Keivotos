@@ -2,6 +2,8 @@
 
 Keivotos source code is licensed under Apache-2.0. It depends on open-source Python and JavaScript packages whose copyrights and licenses remain with their respective authors. The Windows build collects installed runtime license files into `licenses/`; `package-lock.json` and `uv.lock` record the resolved package set used by the build.
 
+Every *imported* Python library is permissively licensed so it can be linked into the Apache-2.0 application; GPL tools are used only as separately-invoked subprocesses (below), never imported. Notable imported libraries include Pillow (HPND), FastAPI (MIT), uvicorn (BSD), and **tinytag 2.3.0 (MIT)** — added for embedded audio cover-art extraction. `mutagen` was deliberately not adopted for that purpose because it is GPL-2.0-or-later.
+
 ## Separately invoked tools
 
 The portable folder keeps the following command-line tools separate from `Keivotos.exe` and invokes them as child processes:

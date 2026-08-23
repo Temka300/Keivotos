@@ -85,6 +85,41 @@ class ThumbnailTests(unittest.TestCase):
         with Image.open(result) as image:
             self.assertEqual(image.format, "WEBP")
 
+    def _make_flac(self, name: str, *, cover: bool) -> Path:
+        import imageio_ffmpeg
+
+        track = self.root / name
+        command = [
+            imageio_ffmpeg.get_ffmpeg_exe(), "-hide_banner", "-loglevel", "error",
+            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono",
+        ]
+        if cover:
+            cover_png = self.root / "cover.png"
+            Image.new("RGB", (64, 64), "orange").save(cover_png)
+            command += [
+                "-i", str(cover_png), "-map", "0:a", "-map", "1:v",
+                "-c:a", "flac", "-c:v", "copy", "-disposition:v", "attached_pic",
+            ]
+        else:
+            command += ["-c:a", "flac"]
+        command += ["-t", "0.2", "-y", str(track)]
+        subprocess.run(command, check=True, timeout=30)
+        return track
+
+    def test_flac_uses_embedded_cover_art(self) -> None:
+        track = self._make_flac("track.flac", cover=True)
+        content_md5 = hashlib.md5(track.read_bytes()).hexdigest()
+        result = thumbnails.ensure_thumbnail(str(track), 300, content_md5)
+        self.assertIsNotNone(result)
+        self.assertTrue(result.exists())
+        with Image.open(result) as image:
+            self.assertEqual(image.format, "WEBP")
+
+    def test_audio_without_cover_art_returns_none(self) -> None:
+        track = self._make_flac("silent.flac", cover=False)
+        content_md5 = hashlib.md5(track.read_bytes()).hexdigest()
+        self.assertIsNone(thumbnails.ensure_thumbnail(str(track), 300, content_md5))
+
     def test_thumbnail_endpoint_selects_and_uses_local_md5(self) -> None:
         source = self.root / "endpoint.png"
         Image.new("RGB", (80, 40), "blue").save(source)
