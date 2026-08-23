@@ -42,6 +42,19 @@ export interface FolderForgetPreview {
   sidecars_preserved: number;
 }
 
+export interface FolderRescanResult {
+  source_id: string;
+  /** Base filesystem index counts (added/updated/…). */
+  base: Record<string, number>;
+  /** Owning module's rescan result — e.g. {status, active_tool_id} for Danbooru. */
+  module: Record<string, unknown>;
+}
+
+export interface FolderRelocateResult {
+  source_id: string;
+  files_updated: number;
+}
+
 /** The folder's own name, used as the default label for a newly added source. */
 export function displayNameForPath(path: string): string {
   const parts = path.replace(/[\\/]+$/, '').split(/[\\/]/);
@@ -86,6 +99,16 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return res.json();
 }
 
+async function putJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(BASE + path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw await apiError(res);
+  return res.json();
+}
+
 export const suiteApi = {
   listModules: () => getJson<SuiteModule[]>('/modules'),
   enableModule: (id: string) => post<SuiteModule>(`/modules/${encodeURIComponent(id)}/enable`),
@@ -94,4 +117,8 @@ export const suiteApi = {
     postJson<FolderBatchResult>('/folders/apply', { folders }),
   previewFolderForget: (sourceId: string) =>
     getJson<FolderForgetPreview>(`/folders/${encodeURIComponent(sourceId)}/forget-preview`),
+  rescanFolder: (sourceId: string) =>
+    post<FolderRescanResult>(`/folders/${encodeURIComponent(sourceId)}/rescan`),
+  relocateFolder: (sourceId: string, path: string) =>
+    putJson<FolderRelocateResult>(`/folders/${encodeURIComponent(sourceId)}/path`, { path }),
 };

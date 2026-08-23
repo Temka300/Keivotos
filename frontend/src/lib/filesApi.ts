@@ -24,6 +24,8 @@ export interface SourceInfo {
   role: string;
   visible: boolean;
   added_at: string | null;
+  /** Files indexed under this source; absent on rows returned by a folder mutation. */
+  entry_count?: number;
 }
 
 export interface ScanSummary {
@@ -188,6 +190,8 @@ export const filesApi = {
   getAttachmentStore: () => getJson<AttachmentStore>('/attachment-store'),
   setAttachmentStore: (path: string | null) =>
     send<AttachmentStore>('PUT', '/attachment-store', { path }),
+  migrateAttachments: () =>
+    send<{ migrated: number; skipped: number }>('POST', '/attachment-store/migrate'),
   // URL for streaming a file's bytes (preview/open). The backend resolves it
   // against the source root and refuses anything outside it.
   fileUrl: (sourceId: string, relativePath: string) => {

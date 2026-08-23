@@ -100,8 +100,7 @@
     { id: 'motion', section: 'appearance', label: 'Interface motion', description: 'Follow the system or reduce interface animation.', keywords: ['animation', 'reduced motion', 'accessibility'] },
     { id: 'interface-scale', section: 'appearance', label: 'Interface scale', description: 'Use the default or a roomier readable scale.', keywords: ['density', 'comfortable', 'readability', 'text'] },
     { id: 'startup-module', section: 'startup', label: 'Startup destination', description: `Choose which surface ${SUITE_NAME} opens on launch.`, keywords: ['files', 'module', 'last used', 'launch', 'open'] },
-    { id: 'folder-roles', section: 'roots', label: 'Folder roles', description: `Assign each folder to Files or ${MODULE_NAME}, and choose sidebar visibility.`, keywords: ['role', 'module', 'adopt', 'release', 'sidebar', 'visible', 'assign', 'folders', 'sources'] },
-    { id: 'folders', section: 'storage', label: 'Library folders', description: 'Add, rescan, or remove media roots from the index.', keywords: ['path', 'browse', 'remove', 'register', 'un-index', 'sidecars'] },
+    { id: 'folder-roles', section: 'roots', label: 'Folders', description: `Add, re-scan, relocate, or remove folders, and assign each to Files or ${MODULE_NAME}.`, keywords: ['role', 'module', 'adopt', 'release', 'sidebar', 'visible', 'assign', 'folders', 'sources', 'library', 'roots', 'rescan', 'relocate', 'remove', 'path', 'register'] },
     { id: 'thumbnail-cache', section: 'storage', label: 'Thumbnail cache', description: 'Manage the three derived thumbnail tiers and size limit.', keywords: ['300', '600', '1200', 'cleanup', 'cache'] },
     { id: 'backup', section: 'backup', label: 'Backup', description: `Choose protected components for the fixed ${SUITE_NAME} backup location.`, keywords: ['snapshot', 'database', 'sidecar', 'destination', 'size', 'metadata'] },
     { id: 'restore', section: 'backup', label: 'Restore', description: `Validate and restore a ${SUITE_NAME} backup bundle with rollback.`, keywords: ['recovery', 'rollback', 'backup'] },
@@ -127,13 +126,11 @@
     { id: 'import-pipeline', section: 'library', label: 'Import pipeline', description: 'Run the four resumable library import phases.', keywords: ['discover', 'enrich', 'metadata', 'finalize'] },
     { id: 'automation', section: 'library', label: 'Local library watcher', description: 'Detect new or changed files without contacting Danbooru.', keywords: ['automatic', 'watcher', 'sidecar', 'interval', 'local'] },
     { id: 'clean-sidecars', section: 'maintenance', label: 'Clean orphan sidecars', description: 'Remove metadata whose reachable media file is gone.', keywords: ['cleanup', 'orphan', 'metadata'] },
+    { id: 'folder-sidecars', section: 'maintenance', label: 'Folder sidecars', description: 'Delete the central sidecar metadata for a registered folder.', keywords: ['sidecar', 'delete', 'remove', 'folder', 'metadata', 'un-index'] },
     { id: 'rebuild', section: 'maintenance', label: 'Rebuild database', description: 'Recover the regenerable SQLite index from sidecars.', keywords: ['recovery', 'sqlite', 'repair'] },
   ];
 
   let folders: FolderInfo[] = [];
-  let folderPathInput = '';
-  let folderBusy = false;
-  let folderError = '';
   let folderMessage = '';
   let folderRemovalFolder: FolderInfo | null = null;
   let folderRemovalPreview: FolderRemovalPreview | null = null;
@@ -270,10 +267,8 @@
       await Promise.all([loadFolders(), loadTools()]);
     } else if (section === 'metadata') {
       await Promise.all([loadFolders(), loadTools(), loadCredentials()]);
-    } else if (section === 'safety') {
-      await loadTools();
-    } else if (section === 'storage') {
-      await loadFolders();
+    } else if (section === 'maintenance') {
+      await Promise.all([loadTools(), loadFolders()]);
     } else if (section === 'roots') {
       await loadRoleSources();
     }
@@ -340,6 +335,26 @@
     }
   }
 
+  // Copy attachments made in managed mode into the chosen visible folder and
+  // repoint them, so previously hidden ones become browsable in Files.
+  let attachmentMigrateMessage = '';
+  async function migrateAttachmentsToFolder() {
+    if (attachmentBusy) return;
+    attachmentBusy = true;
+    attachmentError = '';
+    attachmentMigrateMessage = '';
+    try {
+      const result = await filesApi.migrateAttachments();
+      attachmentMigrateMessage = result.migrated
+        ? `Moved ${result.migrated} attachment${result.migrated === 1 ? '' : 's'} into this folder${result.skipped ? ` (${result.skipped} already here)` : ''}. Re-scan the folder to see them in Files.`
+        : 'Nothing to move — all attachments are already in this folder.';
+    } catch (error) {
+      attachmentError = error instanceof Error ? error.message : String(error);
+    } finally {
+      attachmentBusy = false;
+    }
+  }
+
   async function browseForAttachmentFolder() {
     if (attachmentBusy) return;
     attachmentBusy = true;
@@ -360,6 +375,9 @@
   let showRoleManager = false;
   let roleSources: SourceInfo[] = [];
   let roleSourcesLoaded = false;
+  let rescanBusyId: string | null = null;
+  let rescanError = '';
+  let rescanMessage = '';
 
   async function loadRoleSources(force = false): Promise<void> {
     if (roleSourcesLoaded && !force) return;
@@ -387,8 +405,94 @@
   function roleFoldersSaved(event: CustomEvent<FolderBatchResult>) {
     roleSources = event.detail.sources;
     showRoleManager = false;
+    void loadRoleSources(true); // refetch so per-folder counts are populated
     void loadFolders(true);
     imageRefreshToken.update((n) => n + 1);
+  }
+
+  // Re-scan one folder through its owning module (Files → base scan, a module →
+  // its own sync). A module sync runs in the background as a tool, so hand it to
+  // the existing tool poller; a base scan finishes synchronously.
+  async function rescanRoleFolder(source: SourceInfo) {
+    if (rescanBusyId) return;
+    rescanBusyId = source.source_id;
+    rescanError = '';
+    rescanMessage = '';
+    try {
+      const result = await suiteApi.rescanFolder(source.source_id);
+      const toolId = result.module?.active_tool_id;
+      if (typeof toolId === 'string' && toolId) {
+        startToolPolling(toolId);
+        rescanMessage = `Re-scan started for ${source.display_name} — running in the background.`;
+      } else {
+        rescanMessage = `Re-scanned ${source.display_name}.`;
+        imageRefreshToken.update((n) => n + 1);
+      }
+    } catch (error) {
+      rescanError = error instanceof Error ? error.message : String(error);
+    } finally {
+      rescanBusyId = null;
+    }
+  }
+
+  // Remove = the suite "forget": stop tracking the folder and drop its index
+  // rows, but never touch the media or sidecars on disk. Works for any role.
+  async function removeRoleFolder(source: SourceInfo) {
+    if (rescanBusyId) return;
+    rescanError = '';
+    rescanMessage = '';
+    try {
+      const preview = await suiteApi.previewFolderForget(source.source_id);
+      const indexed = preview.base_files + preview.module_files;
+      const confirmed = window.confirm(
+        `Remove “${preview.display_name}” from ${SUITE_NAME}?\n\n` +
+        `${indexed} indexed entries will be dropped. The folder itself and ` +
+        `${preview.sidecars_preserved} sidecars stay on disk — nothing is deleted.`
+      );
+      if (!confirmed) return;
+      const result = await suiteApi.applyFolderChanges([
+        {
+          source_id: source.source_id,
+          path: source.path,
+          display_name: source.display_name,
+          role: source.role === 'base' ? 'files' : source.role,
+          visible: source.visible,
+          forget: true,
+        },
+      ]);
+      roleSources = result.sources;
+      rescanMessage = `Removed ${source.display_name}. Your files were not touched.`;
+      void loadRoleSources(true); // refetch so remaining counts are populated
+      void loadFolders(true);
+      imageRefreshToken.update((n) => n + 1);
+    } catch (error) {
+      rescanError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  // A module-owned folder keeps a stable identity, so it can be relocated (Files
+  // folders are keyed by path — remove + re-add instead, so no Relocate is shown).
+  function isModuleFolder(role: string): boolean {
+    return role !== 'files' && role !== 'base';
+  }
+
+  // Relocate = the folder moved on disk; re-point its module index at the new
+  // path without moving any files. Uses the native picker for the new location.
+  async function relocateRoleFolder(source: SourceInfo) {
+    if (rescanBusyId) return;
+    rescanError = '';
+    rescanMessage = '';
+    try {
+      const picked = await filesApi.pickFolder();
+      if (!picked.native) throw new Error('The native folder picker is unavailable.');
+      if (!picked.path) return;
+      const result = await suiteApi.relocateFolder(source.source_id, picked.path);
+      await Promise.all([loadRoleSources(true), loadFolders(true)]);
+      rescanMessage = `Relocated ${source.display_name} — ${result.files_updated.toLocaleString()} indexed references updated. Files were not moved.`;
+      imageRefreshToken.update((n) => n + 1);
+    } catch (error) {
+      rescanError = error instanceof Error ? error.message : String(error);
+    }
   }
 
   async function saveDanbooruCredentials() {
@@ -477,95 +581,6 @@
     }
   }
 
-  async function browseForFolder() {
-    if (folderBusy) return;
-    folderError = '';
-    folderMessage = '';
-    folderBusy = true;
-    try {
-      const result = await api.browseFolder();
-      if (result.path) folderPathInput = result.path;
-    } catch (error) {
-      folderError = error instanceof Error ? error.message : String(error);
-    } finally {
-      folderBusy = false;
-    }
-  }
-
-  async function addFolder() {
-    const path = folderPathInput.trim();
-    if (!path || folderBusy) return;
-    folderError = '';
-    folderMessage = '';
-    folderBusy = true;
-    try {
-      const result = await api.registerFolder(path);
-      folderPathInput = '';
-      folders = [
-        {
-          name: result.name,
-          selector: result.selector,
-          count: 0,
-          path: result.path,
-          root_id: result.root_id,
-          registered: true,
-        },
-        ...folders,
-      ];
-      if (result.sync === 'started' || result.sync === 'already_running') {
-        startToolPolling('sync');
-      } else if (result.active_tool_id) {
-        startToolPolling(result.active_tool_id);
-        folderError = `Folder registered. Waiting for the active ${result.active_tool_id} job; run Sync afterward to index it.`;
-      }
-    } catch (error) {
-      folderError = error instanceof Error ? error.message : String(error);
-    } finally {
-      folderBusy = false;
-    }
-  }
-
-  async function rescanLibraryFolder(folder: FolderInfo) {
-    folderError = '';
-    folderMessage = '';
-    try {
-      const result = await api.rescanFolder(folder.root_id ?? folder.selector);
-      if (result.status === 'started' || result.status === 'already_running') {
-        startToolPolling('sync');
-      } else if (result.active_tool_id) {
-        startToolPolling(result.active_tool_id);
-        folderError = `Cannot rescan while ${result.active_tool_id} is running.`;
-      }
-    } catch (error) {
-      folderError = error instanceof Error ? error.message : String(error);
-    }
-  }
-
-  async function relocateLibraryFolder(folder: FolderInfo) {
-    if (!folder.root_id || folderBusy || syncRunning || toolRunning) return;
-    folderError = '';
-    folderMessage = '';
-    folderBusy = true;
-    try {
-      const selection = await api.browseFolder();
-      if (!selection.path) return;
-      const result = await api.relocateFolder(folder.root_id, selection.path);
-      folders = folders.map(item => item.root_id === result.root_id
-        ? { ...item, name: result.name, selector: result.selector, path: result.path }
-        : item
-      );
-      imageRefreshToken.update(n => n + 1);
-      folderMessage = `Relocated ${result.files_updated.toLocaleString()} indexed file references. Originals and sidecars were not moved.`;
-      if (result.sync === 'started' || result.sync === 'already_running') {
-        startToolPolling('sync');
-      }
-    } catch (error) {
-      folderError = error instanceof Error ? error.message : String(error);
-    } finally {
-      folderBusy = false;
-    }
-  }
-
   async function openFolderRemoval(folder: FolderInfo) {
     if (folderRemovalBusy) return;
     folderRemovalFolder = folder;
@@ -593,7 +608,6 @@
     const folder = folderRemovalFolder;
     folderRemovalBusy = true;
     folderRemovalError = '';
-    folderError = '';
     folderMessage = '';
     try {
       const result = await api.removeFolder(folder.root_id ?? folder.selector, mode);
@@ -1126,53 +1140,34 @@
           </div>
         {:else if selectedSection === 'storage'}
           <div class="mx-auto max-w-3xl space-y-4">
-            <section id="setting-folders" class="overflow-visible rounded-xl border border-[#292938] bg-[#111118]">
-              <div class="border-b border-[#242432] p-4">
-                <div class="flex items-center justify-between gap-4"><h4 class="text-sm font-semibold text-gray-200">Library roots</h4><span class="rounded-full bg-cyan-500/10 px-2.5 py-1 text-[11px] text-cyan-300">{libraryFolders.length}</span></div>
-                <div class="mt-3 flex gap-2">
-                  <input class="min-w-0 flex-1 rounded-xl border border-[#303040] bg-[#0d0d13] px-3 py-2 text-sm text-gray-200 outline-none placeholder:text-gray-650 focus:border-cyan-400/50" type="text" placeholder="D:\Pictures\MyFolder" bind:value={folderPathInput} on:keydown={(event) => event.key === 'Enter' && addFolder()} />
-                  <button class="rounded-xl border border-[#303040] px-3 py-2 text-xs text-gray-300 hover:bg-white/5 disabled:opacity-50" type="button" disabled={folderBusy} on:click={browseForFolder}>Browse…</button>
-                  <button class="rounded-xl bg-cyan-500/15 px-4 py-2 text-xs font-semibold text-cyan-100 hover:bg-cyan-500/25 disabled:opacity-40" type="button" disabled={folderBusy || !folderPathInput.trim()} on:click={addFolder}>Add folder</button>
-                </div>
-                {#if folderError}<p class="mt-2 text-xs text-red-400">{folderError}</p>{/if}
-                {#if folderMessage}<p class="mt-2 text-xs text-green-400">{folderMessage}</p>{/if}
-              </div>
-              <div class="space-y-2 p-3">
-                {#if !foldersLoaded}<div class="rounded-xl border border-dashed border-[#303040] px-4 py-8 text-center text-sm text-gray-500">Loading library roots…</div>{:else if libraryFolders.length === 0}<div class="rounded-xl border border-dashed border-[#303040] px-4 py-8 text-center text-sm text-gray-500">No library roots yet. Add an existing media folder above.</div>{/if}
-                {#each libraryFolders as folder (folder.selector)}
-                  <div class="relative flex items-center gap-3 rounded-xl border border-white/5 bg-[#0d0d13] px-3 py-2.5 transition-colors hover:border-cyan-300/15">
-                    <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-500/10 text-cyan-300"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d={iconPath('folder')} /></svg></span>
-                    <div class="min-w-0 flex-1"><div class="flex items-baseline gap-2"><span class="truncate text-sm font-semibold text-gray-200">{folder.name}</span><span class="shrink-0 rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-gray-500">{folder.count.toLocaleString()} images</span></div><div class="mt-0.5 truncate text-xs text-gray-600" title={folder.path ?? ''}>{folder.path ?? 'Built-in scan folder'}</div></div>
-                    <details class="group relative">
-                      <summary class="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-lg text-gray-500 hover:bg-white/5 hover:text-gray-200" title="Folder actions" aria-label="Folder actions">•••</summary>
-                      <div class="absolute right-0 top-9 z-20 w-36 overflow-hidden rounded-lg border border-[#303040] bg-[#191920] p-1 shadow-xl shadow-black/50">
-                        <button class="w-full rounded-md px-3 py-2 text-left text-xs text-gray-300 hover:bg-white/5" type="button" disabled={syncRunning || toolRunning} on:click={() => rescanLibraryFolder(folder)}>Re-scan</button>
-                        {#if folder.registered}<button class="w-full rounded-md px-3 py-2 text-left text-xs text-cyan-200 hover:bg-cyan-500/10" type="button" disabled={folderBusy || syncRunning || toolRunning} on:click={() => relocateLibraryFolder(folder)}>Relocate…</button>{/if}
-                        {#if folder.registered}<button class="w-full rounded-md px-3 py-2 text-left text-xs text-red-300 hover:bg-red-500/10" type="button" disabled={folderRemovalBusy} on:click={() => openFolderRemoval(folder)}>Remove…</button>{/if}
-                      </div>
-                    </details>
-                  </div>
-                {/each}
-              </div>
-            </section>
             <ThumbnailCacheSettings />
           </div>
         {:else if selectedSection === 'roots'}
           <div class="mx-auto max-w-3xl space-y-4">
-            <section id="setting-folder-roles" class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
+            <section id="setting-folder-roles" class="overflow-visible rounded-xl border border-[#292938] bg-[#111118]">
               <div class="border-b border-[#242432] p-4">
                 <div class="flex items-center justify-between gap-4">
                   <div class="flex items-center gap-2"><h4 class="text-sm font-semibold text-gray-200">Folders</h4><span class="rounded-full bg-cyan-500/10 px-2.5 py-1 text-[11px] text-cyan-300">{roleSources.length}</span></div>
                   <button class="rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-cyan-500/50 hover:text-white" type="button" on:click={openRoleManager}>Manage folders…</button>
                 </div>
                 <p class="mt-1 text-xs leading-relaxed text-gray-500">Folders registered with Files. Each is owned by Files or handed to a module ({MODULE_NAME}); use <span class="text-gray-400">Manage folders…</span> to add, assign a role, rename, or hide one.</p>
+                {#if rescanMessage}<p class="mt-2 text-xs text-green-400">{rescanMessage}</p>{/if}
+                {#if rescanError}<p class="mt-2 text-xs text-red-400">{rescanError}</p>{/if}
               </div>
               <div class="space-y-2 p-3">
                 {#if !roleSourcesLoaded}<div class="rounded-xl border border-dashed border-[#303040] px-4 py-8 text-center text-sm text-gray-500">Loading folders…</div>{:else if roleSources.length === 0}<div class="rounded-xl border border-dashed border-[#303040] px-4 py-8 text-center text-sm text-gray-500">No folders registered yet. Use Manage folders to add one.</div>{/if}
                 {#each roleSources as source (source.source_id)}
-                  <div class="flex items-center gap-3 rounded-xl border border-white/5 bg-[#0d0d13] px-3 py-2.5">
+                  <div class="flex items-center gap-3 rounded-xl border border-white/5 bg-[#0d0d13] px-3 py-2.5 transition-colors hover:border-cyan-300/15">
                     <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-cyan-500/10 text-cyan-300"><svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d={iconPath('folder')} /></svg></span>
-                    <div class="min-w-0 flex-1"><div class="flex items-baseline gap-2"><span class="truncate text-sm font-semibold text-gray-200">{source.display_name}</span><span class="shrink-0 rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300">{moduleLabelForRole(source.role)}</span>{#if !source.visible}<span class="shrink-0 rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-gray-500">hidden</span>{/if}</div><div class="mt-0.5 truncate text-xs text-gray-600" title={source.path}>{source.path}</div></div>
+                    <div class="min-w-0 flex-1"><div class="flex items-baseline gap-2"><span class="truncate text-sm font-semibold text-gray-200">{source.display_name}</span><span class="shrink-0 rounded-full bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300">{moduleLabelForRole(source.role)}</span><span class="shrink-0 rounded-full bg-white/[0.04] px-2 py-0.5 text-[10px] text-gray-500">{(source.entry_count ?? 0).toLocaleString()} items</span>{#if !source.visible}<span class="shrink-0 text-[10px] text-gray-600">hidden</span>{/if}</div><div class="mt-0.5 truncate text-xs text-gray-600" title={source.path}>{source.path}</div></div>
+                    <button class="shrink-0 rounded-lg border border-[#2a2a3a] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-cyan-500/50 hover:text-white disabled:opacity-40" type="button" title="Re-index this folder" disabled={rescanBusyId !== null || toolRunning} on:click={() => rescanRoleFolder(source)}>{rescanBusyId === source.source_id ? 'Re-scanning…' : 'Re-scan'}</button>
+                    <details class="group relative shrink-0">
+                      <summary class="grid h-8 w-8 cursor-pointer list-none place-items-center rounded-lg text-gray-500 hover:bg-white/5 hover:text-gray-200" title="Folder actions" aria-label="Folder actions">•••</summary>
+                      <div class="absolute right-0 top-9 z-20 w-40 overflow-hidden rounded-lg border border-[#303040] bg-[#191920] p-1 shadow-xl shadow-black/50">
+                        {#if isModuleFolder(source.role)}<button class="w-full rounded-md px-3 py-2 text-left text-xs text-cyan-200 hover:bg-cyan-500/10" type="button" disabled={toolRunning} on:click={() => relocateRoleFolder(source)}>Relocate…</button>{/if}
+                        <button class="w-full rounded-md px-3 py-2 text-left text-xs text-red-300 hover:bg-red-500/10" type="button" on:click={() => removeRoleFolder(source)}>Remove…</button>
+                      </div>
+                    </details>
                   </div>
                 {/each}
               </div>
@@ -1215,6 +1210,15 @@
                         <button type="button" class="rounded-lg border border-[#2a2a3a] px-3 py-1.5 text-xs text-gray-400 transition-colors hover:text-white disabled:opacity-40" on:click={browseForAttachmentFolder} disabled={attachmentBusy}>Browse…</button>
                         {#if attachmentStore.mode === 'folder'}<span class="text-[11px] text-green-400">Saving to this folder now.</span>{/if}
                       </div>
+                      {#if attachmentStore.mode === 'folder'}
+                        <div class="mt-3 rounded-lg border border-[#2a2a3a] bg-[#0d0d14] px-3 py-2.5">
+                          <p class="text-xs leading-relaxed text-gray-500">Attachments you added while on <span class="text-gray-400">Managed</span> stay hidden. Move them into this folder so they show up in Files too.</p>
+                          <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <button type="button" class="rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-purple-500/50 hover:text-white disabled:opacity-40" on:click={migrateAttachmentsToFolder} disabled={attachmentBusy}>Move existing attachments here</button>
+                          </div>
+                          {#if attachmentMigrateMessage}<p class="mt-2 text-[11px] text-green-400">{attachmentMigrateMessage}</p>{/if}
+                        </div>
+                      {/if}
                     {/if}
                   {:else}
                     <p class="mt-3 text-xs text-gray-600">Loading…</p>
@@ -1256,6 +1260,25 @@
                     <div class="flex items-start gap-3"><span class="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg {tool.id === 'sqlite' ? 'bg-red-500/10 text-red-300' : 'bg-amber-500/10 text-amber-300'}"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">{#if tool.id === 'sqlite'}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d={iconPath('database')} />{:else}<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 7h16M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" />{/if}</svg></span><div><h4 class="text-sm font-semibold text-gray-200">{maintenanceDisplayName(tool)}</h4><p class="mt-0.5 text-xs leading-relaxed text-gray-500">{tool.description}</p>{#if tool.id === 'sqlite'}<p class="mt-1 text-[11px] text-red-200/60">Recovery only. The user database is kept separately.</p>{/if}</div></div>
                     <button class="shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold disabled:opacity-50 {tool.id === 'sqlite' ? 'border-red-400/20 text-red-300 hover:bg-red-500/10' : 'border-amber-400/20 text-amber-300 hover:bg-amber-500/10'}" type="button" disabled={toolRunning} on:click={() => runMaintenanceTool(tool)}>{tool.status === 'running' ? 'Running…' : 'Run'}</button>
                   </div>
+                {/each}
+              </div>
+            </section>
+
+            <section id="setting-folder-sidecars" class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
+              <div class="border-b border-[#242432] p-4">
+                <h4 class="text-sm font-semibold text-gray-200">Folder sidecars</h4>
+                <p class="mt-1 text-xs leading-relaxed text-gray-500">Permanently delete the central sidecar metadata for a registered {MODULE_NAME} folder. Your media files and the archived sidecar history are always kept.</p>
+                {#if folderMessage}<p class="mt-2 text-xs text-green-400">{folderMessage}</p>{/if}
+              </div>
+              <div class="space-y-2 p-3">
+                {#each libraryFolders.filter((folder) => folder.registered) as folder (folder.selector)}
+                  <div class="flex items-center gap-3 rounded-xl border border-white/5 bg-[#0d0d13] px-3 py-2.5">
+                    <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-amber-500/10 text-amber-300"><svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d={iconPath('folder')} /></svg></span>
+                    <div class="min-w-0 flex-1"><div class="truncate text-sm font-semibold text-gray-200">{folder.name}</div><div class="mt-0.5 truncate text-xs text-gray-600" title={folder.path ?? ''}>{folder.path ?? ''}</div></div>
+                    <button class="shrink-0 rounded-lg border border-red-400/20 px-3 py-1.5 text-xs text-red-300 transition-colors hover:bg-red-500/10 disabled:opacity-40" type="button" disabled={folderRemovalBusy} on:click={() => openFolderRemoval(folder)}>Delete sidecars…</button>
+                  </div>
+                {:else}
+                  <div class="rounded-xl border border-dashed border-[#303040] px-4 py-8 text-center text-sm text-gray-500">No registered {MODULE_NAME} folders.</div>
                 {/each}
               </div>
             </section>
