@@ -2,7 +2,7 @@
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { prepareSettingsPresentation } from '../lib/settingsPresentation';
   import { loadSettingsModal, type SettingsModalModule } from '../lib/settingsLoader';
-  import { SUITE_NAME } from '../lib/product';
+  import { SUITE_NAME, VERSION } from '../lib/product';
   import { activeModule, enabledModules, suiteModules } from '../lib/stores';
   import { suiteApi, type SuiteModule } from '../lib/suiteApi';
   import { activateModule, moduleUi } from '../modules/registry';
@@ -108,7 +108,10 @@
     <header class="flex h-[53px] items-center justify-between border-b border-[#292937] px-4">
       <div class="flex items-center gap-2.5">
         <img src="/keivotos-logo.png" alt="" class="h-8 w-8 rounded-lg shadow-[0_0_20px_rgba(85,217,255,0.22)]" />
-        <span class="text-lg font-semibold text-purple-100">{SUITE_NAME}</span>
+        <div class="flex flex-col leading-none">
+          <span class="text-lg font-semibold text-purple-100">{SUITE_NAME}</span>
+          <span class="mt-0.5 text-[10px] font-medium tracking-wide text-gray-500">v{VERSION}</span>
+        </div>
       </div>
       <button
         class="grid h-8 w-8 place-items-center rounded-full border border-[#303040] text-gray-400 transition-colors hover:border-purple-500/50 hover:bg-purple-500/10 hover:text-purple-100"
