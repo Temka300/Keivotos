@@ -744,6 +744,46 @@ def mark_default_library_created() -> None:
     save_config({"default_library_created": True})
 
 
+def migrate_legacy_thumbnail_cache() -> dict[str, Any]:
+    """Copy the pre-v1.1.3 thumbnail cache into the current shared location, once.
+
+    v1.1.3 relocated the cache from ``METADATA_DIR/thumbnails`` to the always-on
+    base home (``THUMB_DIR``) but left the old files behind, so every thumbnail
+    regenerated from scratch after updating — slow browsing until the cache
+    re-warmed. The cache is keyed by content MD5 and its on-disk naming
+    (``{md5}_v4.webp``) is location-independent, so the old files are directly
+    reusable: copy them across, skipping any the new cache already holds and
+    preserving the source. Derived data only — never touches originals, metadata,
+    sidecars, or user data. Idempotent and flag-guarded, so it runs at most once.
+    """
+    if _cfg.get("thumbnail_cache_migrated"):
+        return {"migrated": False, "copied": 0}
+    target = THUMB_DIR.resolve(strict=False)
+    legacy_dirs: list[Path] = []
+    seen = {target}
+    for candidate in (METADATA_DIR / "thumbnails", LEGACY_DEFAULT_METADATA_DIR / "thumbnails"):
+        resolved = candidate.resolve(strict=False)
+        if resolved not in seen and candidate.is_dir():
+            legacy_dirs.append(candidate)
+            seen.add(resolved)
+
+    copied = 0
+    if legacy_dirs:
+        THUMB_DIR.mkdir(parents=True, exist_ok=True)
+        for legacy in legacy_dirs:
+            for source in legacy.glob("*.webp"):
+                destination = THUMB_DIR / source.name
+                if destination.exists():
+                    continue
+                try:
+                    shutil.copy2(source, destination)
+                    copied += 1
+                except OSError:
+                    continue
+    save_config({"thumbnail_cache_migrated": True})
+    return {"migrated": True, "copied": copied}
+
+
 def attachment_store_root() -> Path:
     """The folder that holds origin-note attachment bytes.
 

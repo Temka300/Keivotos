@@ -28,6 +28,7 @@ from config import (
     MODULE_REGISTRY,
     SUITE_HOME,
     migrate_legacy_default_metadata,
+    migrate_legacy_thumbnail_cache,
     promote_legacy_module_backups,
     promote_user_database,
 )
@@ -131,6 +132,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "Flattened legacy metadata directory: %s moved, %s identical duplicates removed",
             migration["moved"],
             migration["deduplicated"],
+        )
+    thumbnail_migration = migrate_legacy_thumbnail_cache()
+    if thumbnail_migration.get("copied"):
+        logger.info(
+            "Warmed the thumbnail cache from the pre-v1.1.3 location: %s files copied",
+            thumbnail_migration["copied"],
         )
     init_data_db()
     init_user_db()

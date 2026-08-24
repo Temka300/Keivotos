@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 import thumbnails  # noqa: E402
 import database  # noqa: E402
+import config  # noqa: E402
 from routers import images_media  # noqa: E402
 
 
@@ -154,3 +155,58 @@ class ThumbnailTests(unittest.TestCase):
 
         self.assertLessEqual(len(locks), 64)
         self.assertEqual(len(thumbnails._key_locks), 64)
+
+
+class ThumbnailCacheMigrationTests(unittest.TestCase):
+    """The one-time copy of the pre-v1.1.3 cache into the current location."""
+
+    def setUp(self) -> None:
+        self.root = ROOT / "tests" / ".tmp-thumb-migration"
+        shutil.rmtree(self.root, ignore_errors=True)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._saved = {
+            "THUMB_DIR": config.THUMB_DIR,
+            "METADATA_DIR": config.METADATA_DIR,
+            "LEGACY_DEFAULT_METADATA_DIR": config.LEGACY_DEFAULT_METADATA_DIR,
+            "save_config": config.save_config,
+            "cfg": dict(config._cfg),
+        }
+        self.metadata = self.root / "metadata_dir"
+        self.old = self.metadata / "thumbnails"      # the abandoned cache
+        self.new = self.root / "base" / "thumbnails"  # the current THUMB_DIR
+        self.old.mkdir(parents=True, exist_ok=True)
+        self.new.mkdir(parents=True, exist_ok=True)
+        (self.old / "aaa_v4.webp").write_bytes(b"old-a")
+        (self.old / "bbb_v4_600.webp").write_bytes(b"old-b")
+        (self.new / "aaa_v4.webp").write_bytes(b"already-here")  # must survive
+        config.THUMB_DIR = self.new
+        config.METADATA_DIR = self.metadata
+        config.LEGACY_DEFAULT_METADATA_DIR = self.root / "legacy_metadata"  # absent
+        config._cfg = {}
+        config.save_config = lambda overrides: config._cfg.update(overrides)
+
+    def tearDown(self) -> None:
+        config.THUMB_DIR = self._saved["THUMB_DIR"]
+        config.METADATA_DIR = self._saved["METADATA_DIR"]
+        config.LEGACY_DEFAULT_METADATA_DIR = self._saved["LEGACY_DEFAULT_METADATA_DIR"]
+        config.save_config = self._saved["save_config"]
+        config._cfg = self._saved["cfg"]
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def test_copies_missing_preserves_existing_and_runs_once(self) -> None:
+        result = config.migrate_legacy_thumbnail_cache()
+        self.assertTrue(result["migrated"])
+        self.assertEqual(result["copied"], 1)  # only bbb; aaa already present
+
+        # Missing key copied; the pre-existing newer entry left untouched.
+        self.assertEqual((self.new / "bbb_v4_600.webp").read_bytes(), b"old-b")
+        self.assertEqual((self.new / "aaa_v4.webp").read_bytes(), b"already-here")
+        # Source preserved (never moved/deleted).
+        self.assertTrue((self.old / "aaa_v4.webp").exists())
+        self.assertTrue((self.old / "bbb_v4_600.webp").exists())
+
+        # Flag set → a second run is a no-op.
+        self.assertTrue(config._cfg.get("thumbnail_cache_migrated"))
+        second = config.migrate_legacy_thumbnail_cache()
+        self.assertFalse(second["migrated"])
+        self.assertEqual(second["copied"], 0)
