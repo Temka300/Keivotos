@@ -16,7 +16,7 @@
     collectionRefreshToken,
     fitMode,
     imageSize,
-    imageSizeByValue,
+    gridSizeByValue,
     imagePageSize,
     blacklistedTagNames,
     duplicatesOnly,
@@ -77,7 +77,7 @@
   let activeBrowseTag: BrowseTagSelection | null = null;
   let observedCollectionRefreshToken = 0;
 
-  $: selectedSize = imageSizeByValue[$imageSize];
+  $: selectedSize = gridSizeByValue[$imageSize];
   $: imageSizeVars = `--image-card-width: ${selectedSize.cardWidth}px; --image-card-max-height: ${selectedSize.maxHeight}px; --image-grid-min: ${selectedSize.gridMin}px;`;
   $: gridStyle = $fitMode === 'contain'
     ? imageSizeVars

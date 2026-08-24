@@ -34,7 +34,7 @@
     imagePageSizeOptions,
     imageRefreshToken,
     imageSize,
-    imageSizeOptions,
+    gridSizeOptions,
     interfaceScale,
     mediaPlayback,
     motionPreference,
@@ -46,7 +46,7 @@
     suiteModules,
     tagBannerHeight,
   } from '../lib/stores';
-  import type { ArtistNotificationIntervalMinutes, DuplicateScope, FitMode, HomeLayout, ImagePageSize, ImageSize, InterfaceScale, MediaPlayback, MotionPreference, StartupModule, StartupView } from '../lib/stores';
+  import type { ArtistNotificationIntervalMinutes, DuplicateScope, FitMode, HomeLayout, ImagePageSize, GridSize, InterfaceScale, MediaPlayback, MotionPreference, StartupModule, StartupView } from '../lib/stores';
 
   const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -720,7 +720,7 @@
           || left.label.localeCompare(right.label))
     : [];
   $: currentDuplicateMode = $duplicatesOnly ? $duplicateScope : 'off';
-  $: selectedImageSize = imageSizeOptions.find(option => option.value === $imageSize) ?? imageSizeOptions[1];
+  $: selectedImageSize = gridSizeOptions.find(option => option.value === $imageSize) ?? gridSizeOptions[1];
 
   function close() {
     dispatch('close');
@@ -1081,8 +1081,8 @@
               <div class="divide-y divide-[#22222e]">
                 <div id="setting-gallery-card-size" class="flex items-center justify-between gap-5 px-4 py-3">
                   <div class="flex items-center gap-2 text-sm font-medium text-gray-200">Gallery card size <span class="rounded-full bg-pink-500/10 px-2 py-0.5 text-[10px] text-pink-200">{selectedImageSize.cardWidth}px</span></div>
-                  <select class="w-40 rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200 outline-none focus:border-pink-400/60" value={$imageSize} on:change={(event) => imageSize.set((event.currentTarget as HTMLSelectElement).value as ImageSize)}>
-                    {#each imageSizeOptions as option}<option value={option.value}>{option.label}</option>{/each}
+                  <select class="w-40 rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200 outline-none focus:border-pink-400/60" value={$imageSize} on:change={(event) => imageSize.set((event.currentTarget as HTMLSelectElement).value as GridSize)}>
+                    {#each gridSizeOptions as option}<option value={option.value}>{option.label}</option>{/each}
                   </select>
                 </div>
                 <div id="setting-image-fit" class="flex items-center justify-between gap-5 px-4 py-3">

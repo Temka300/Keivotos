@@ -2,7 +2,7 @@
   import { createEventDispatcher } from 'svelte';
   import type { ImageSummary } from '../lib/api';
   import { imageFileUrl, thumbnailUrl } from '../lib/api';
-  import { fitMode, imageSize, imageSizeByValue, mediaPlayback } from '../lib/stores';
+  import { fitMode, imageSize, gridSizeByValue, mediaPlayback } from '../lib/stores';
 
   export let image: ImageSummary;
   export let selectMode = false;
@@ -29,7 +29,7 @@
     return date.toLocaleDateString();
   }
 
-  $: selectedSize = imageSizeByValue[$imageSize];
+  $: selectedSize = gridSizeByValue[$imageSize];
   $: imageAspect = image.width && image.height ? image.width / image.height : 1;
   $: containMaxHeight = selectedSize.maxHeight;
   $: containMaxWidth = selectedSize.maxHeight * 2.2;

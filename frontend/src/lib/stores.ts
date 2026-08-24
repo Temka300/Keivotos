@@ -5,7 +5,7 @@ import type { SuiteModule } from './suiteApi';
 
 export type ViewMode = 'home' | 'profile' | 'gallery' | 'favorites' | 'collections' | 'collection-detail' | 'tags' | 'popularity' | 'timelapse' | 'challenges';
 export type FitMode = 'fit' | 'contain';
-export type ImageSize = 'small' | 'medium' | 'large' | 'huge' | 'gigantic' | 'absurd';
+export type GridSize = 'small' | 'medium' | 'large' | 'huge' | 'gigantic' | 'absurd';
 export type ImagePageSize = 10 | 20 | 30 | 50 | 'all';
 export type DuplicateScope = 'all' | 'same_folder' | 'different_folder';
 export type MediaPlayback = 'never' | 'hover' | 'always';
@@ -27,8 +27,8 @@ export interface BrowseTagSelection {
   source: 'danbooru' | 'user';
 }
 
-export interface ImageSizeOption {
-  value: ImageSize;
+export interface GridSizeOption {
+  value: GridSize;
   label: string;
   cardWidth: number;
   maxHeight: number;
@@ -36,7 +36,7 @@ export interface ImageSizeOption {
   previewSize: number;
 }
 
-export const imageSizeOptions: ImageSizeOption[] = [
+export const gridSizeOptions: GridSizeOption[] = [
   { value: 'small', label: 'Small', cardWidth: 128, maxHeight: 192, gridMin: 128, previewSize: 360 },
   { value: 'medium', label: 'Medium', cardWidth: 192, maxHeight: 288, gridMin: 176, previewSize: 420 },
   { value: 'large', label: 'Large', cardWidth: 256, maxHeight: 384, gridMin: 240, previewSize: 520 },
@@ -57,9 +57,9 @@ export function thumbnailTierFor(gridMin: number): 300 | 600 | 1200 {
   return 1200;
 }
 
-export const imageSizeByValue = Object.fromEntries(
-  imageSizeOptions.map(option => [option.value, option])
-) as Record<ImageSize, ImageSizeOption>;
+export const gridSizeByValue = Object.fromEntries(
+  gridSizeOptions.map(option => [option.value, option])
+) as Record<GridSize, GridSizeOption>;
 
 export const imagePageSizeOptions: { value: ImagePageSize; label: string }[] = [
   { value: 10, label: '10' },
@@ -99,8 +99,8 @@ function normalizeFitMode(value: unknown): FitMode {
   return value === 'contain' ? 'contain' : 'fit';
 }
 
-function normalizeImageSize(value: unknown): ImageSize {
-  return imageSizeOptions.some(option => option.value === value) ? value as ImageSize : 'medium';
+function normalizeGridSize(value: unknown): GridSize {
+  return gridSizeOptions.some(option => option.value === value) ? value as GridSize : 'medium';
 }
 
 function normalizeBoolean(value: unknown): boolean {
@@ -313,13 +313,13 @@ export const activeCollectionId = writable<number | null>(null);
 export const sidebarOpen = persistedWritable<boolean>(persistentStorageKey('sidebar-open'), true, normalizeBoolean);
 export const sidebarHandlePosition = persistedWritable<number>(persistentStorageKey('sidebar-handle-position'), 50, normalizeSidebarHandlePosition);
 export const fitMode = persistedWritable<FitMode>(persistentStorageKey('fit-mode'), 'fit', normalizeFitMode);
-export const imageSize = persistedWritable<ImageSize>(persistentStorageKey('image-size'), 'medium', normalizeImageSize);
+export const imageSize = persistedWritable<GridSize>(persistentStorageKey('image-size'), 'medium', normalizeGridSize);
 // Files keeps its own chosen size while sharing Danbooru's scale. The two are
 // different browsing jobs - a uniform image wall versus a mixed folder of
 // models, archives and documents - so one value would be wrong for one of them.
 // Danbooru's existing `image-size` key is deliberately left alone: renaming it
 // would silently reset the user's saved preference.
-export const filesGridSize = persistedWritable<ImageSize>(persistentStorageKey('files-grid-size'), 'medium', normalizeImageSize);
+export const filesGridSize = persistedWritable<GridSize>(persistentStorageKey('files-grid-size'), 'medium', normalizeGridSize);
 
 export const imagePageSize = persistedWritable<ImagePageSize>(persistentStorageKey('image-page-size'), 10, normalizeImagePageSize);
 export const mediaPlayback = persistedWritable<MediaPlayback>(persistentStorageKey('media-autoplay'), 'always', normalizeMediaPlayback);

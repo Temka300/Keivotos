@@ -12,7 +12,7 @@
     type TagWikiTextLine,
   } from '../lib/api';
   import { cacheView, getCachedView, invalidateViewCache } from '../lib/viewCache';
-  import { activeTags, artistFollowRefreshToken, browseTagSelection, fitMode, imageSize, imageSizeByValue, selectedImageId, tagRefreshToken, viewMode } from '../lib/stores';
+  import { activeTags, artistFollowRefreshToken, browseTagSelection, fitMode, imageSize, gridSizeByValue, selectedImageId, tagRefreshToken, viewMode } from '../lib/stores';
   import ImageCard from './ImageCard.svelte';
   import TagBrowseHeader from './TagBrowseHeader.svelte';
 
@@ -667,7 +667,7 @@
   $: tagGridStyle = tagDisplayMode === 'wide'
     ? 'grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));'
     : 'grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));';
-  $: selectedImageSize = imageSizeByValue[$imageSize];
+  $: selectedImageSize = gridSizeByValue[$imageSize];
   $: tagImageSizeVars = `--image-card-width: ${selectedImageSize.cardWidth}px; --image-card-max-height: ${selectedImageSize.maxHeight}px; --image-grid-min: ${selectedImageSize.gridMin}px;`;
   $: tagImageGridStyle = $fitMode === 'contain'
     ? tagImageSizeVars

@@ -3,7 +3,7 @@
   import { filesApi, type DuplicateGroup, type FileNode, type SourceInfo } from '../lib/filesApi';
   import { fileGlyph, hasThumbnail, type Subject } from '../lib/filePreview';
   import GridSizeMenu from './GridSizeMenu.svelte';
-  import { filesGridSize, imageSizeByValue, thumbnailTierFor } from '../lib/stores';
+  import { filesGridSize, gridSizeByValue, thumbnailTierFor } from '../lib/stores';
   import { SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/stores';
   import {
@@ -383,7 +383,7 @@
   let annotationRevision = 0;
 
   // Files keeps its own size choice; the scale itself is shared with Danbooru.
-  $: gridSize = imageSizeByValue[$filesGridSize];
+  $: gridSize = gridSizeByValue[$filesGridSize];
   $: thumbTier = thumbnailTierFor(gridSize.gridMin);
   // Keeps the picture box proportional to the column so tiles stay square-ish
   // at every step instead of a fixed box floating in a huge tile.

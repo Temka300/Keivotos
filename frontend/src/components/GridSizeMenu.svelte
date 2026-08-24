@@ -8,9 +8,9 @@
   // menus clear the others when they open, which only works if it can reach
   // this flag. Left unbound (as in Files) the component just manages itself.
   import type { Writable } from 'svelte/store';
-  import { imageSizeOptions, type ImageSize } from '../lib/stores';
+  import { gridSizeOptions, type GridSize } from '../lib/stores';
 
-  export let value: Writable<ImageSize>;
+  export let value: Writable<GridSize>;
   export let open = false;
 
   function toggle(): void {
@@ -21,12 +21,12 @@
     open = false;
   }
 
-  function choose(size: ImageSize): void {
+  function choose(size: GridSize): void {
     value.set(size);
     close();
   }
 
-  $: selected = imageSizeOptions.find((option) => option.value === $value) ?? imageSizeOptions[1];
+  $: selected = gridSizeOptions.find((option) => option.value === $value) ?? gridSizeOptions[1];
 </script>
 
 <svelte:window on:click={close} />
@@ -50,7 +50,7 @@
       class="absolute right-0 top-full mt-1 w-40 overflow-hidden rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] shadow-xl z-50"
       on:click|stopPropagation
     >
-      {#each imageSizeOptions as option}
+      {#each gridSizeOptions as option}
         <button
           type="button"
           class="w-full flex items-center justify-between px-3 py-1.5 text-sm transition-colors {$value === option.value ? 'text-purple-300 bg-purple-600/10' : 'text-gray-400 hover:bg-[#2a2a3a]'}"
