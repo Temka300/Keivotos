@@ -234,7 +234,7 @@
   }
 </script>
 
-<aside class="flex h-full min-h-0 w-64 shrink-0 flex-col overflow-y-auto border-r border-[#2a2a3a] bg-[#13131b]">
+<aside class="sidebar-scroll flex h-full min-h-0 w-64 shrink-0 flex-col overflow-y-auto border-r border-[#2a2a3a] bg-[#13131b]">
   <div class="p-3 border-b border-[#2a2a3a]">
     <div class="mb-2 grid grid-cols-2 gap-2 text-sm font-medium">
         <span class="text-gray-300"><strong class="font-semibold text-gray-100">{stats.total_images.toLocaleString()}</strong> images</span>
@@ -476,3 +476,14 @@
   {/if}
 
 </aside>
+
+<style>
+  /* A thin, low-contrast scrollbar: noticeable when you look for it, quiet
+     otherwise. Uses the standard scrollbar properties, which Firefox/Zen honor
+     natively (they ignore ::-webkit-scrollbar) and Chromium supports too — so
+     no custom widget is needed. */
+  .sidebar-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #2f2f3d transparent;
+  }
+</style>
