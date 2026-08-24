@@ -29,6 +29,11 @@ SUPPORTED_AUDIO = {".mp3", ".flac", ".ogg", ".oga", ".m4a", ".wav"}
 Image.MAX_IMAGE_PIXELS = 500_000_000
 _cache_lock = threading.Lock()
 _key_locks: tuple[threading.Lock, ...] = tuple(threading.Lock() for _ in range(64))
+# Cap concurrent thumbnail *generation* (decode + resize + encode) so a
+# cold-browse storm cannot peg every core and starve the browser's own render
+# thread — the app and browser share one machine. Cache hits return before this
+# is ever acquired, so serving warm thumbnails stays unbounded and fast.
+_generation_semaphore = threading.Semaphore(max(2, (os.cpu_count() or 4) // 2))
 _prune_state_lock = threading.Lock()
 _writes_since_prune = 0
 _prune_scheduled = False
@@ -189,44 +194,45 @@ def ensure_thumbnail(
         if thumb_path.exists():
             return thumb_path
         remove_legacy_thumbnail_cache(source_path, content_md5)
-        try:
-            suffix = src.suffix.lower()
-            if suffix in SUPPORTED_VIDEOS:
-                img = _video_frame(src)
-            elif suffix in SUPPORTED_AUDIO:
-                img = _audio_cover(src)
-                if img is None:
-                    # No embedded cover art: a deliberate miss, not an error.
-                    return None
-            else:
-                img = Image.open(src)
-            with img:
-                source_format = img.format
-                try:
-                    img.seek(0)
-                except EOFError:
-                    pass
+        with _generation_semaphore:
+            try:
+                suffix = src.suffix.lower()
+                if suffix in SUPPORTED_VIDEOS:
+                    img = _video_frame(src)
+                elif suffix in SUPPORTED_AUDIO:
+                    img = _audio_cover(src)
+                    if img is None:
+                        # No embedded cover art: a deliberate miss, not an error.
+                        return None
+                else:
+                    img = Image.open(src)
+                with img:
+                    source_format = img.format
+                    try:
+                        img.seek(0)
+                    except EOFError:
+                        pass
 
-                if source_format == "JPEG":
-                    img.draft("RGB", (max_size, max_size))
+                    if source_format == "JPEG":
+                        img.draft("RGB", (max_size, max_size))
 
-                img = ImageOps.exif_transpose(img)
-                img.thumbnail((max_size, max_size), Image.LANCZOS)
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-            img.save(thumb_path, "WEBP", quality=WEBP_QUALITY, method=5)
-            should_prune = False
-            with _prune_state_lock:
-                _writes_since_prune += 1
-                if _writes_since_prune >= 25:
-                    _writes_since_prune = 0
-                    should_prune = True
-            if should_prune:
-                _schedule_thumbnail_prune()
-            return thumb_path
-        except Exception as exc:  # noqa: BLE001 - failed previews degrade to placeholders.
-            logger.warning("Could not create thumbnail for %s: %s", src, exc)
-            return None
+                    img = ImageOps.exif_transpose(img)
+                    img.thumbnail((max_size, max_size), Image.LANCZOS)
+                    if img.mode != "RGB":
+                        img = img.convert("RGB")
+                img.save(thumb_path, "WEBP", quality=WEBP_QUALITY, method=5)
+                should_prune = False
+                with _prune_state_lock:
+                    _writes_since_prune += 1
+                    if _writes_since_prune >= 25:
+                        _writes_since_prune = 0
+                        should_prune = True
+                if should_prune:
+                    _schedule_thumbnail_prune()
+                return thumb_path
+            except Exception as exc:  # noqa: BLE001 - failed previews degrade to placeholders.
+                logger.warning("Could not create thumbnail for %s: %s", src, exc)
+                return None
 
 
 def clear_thumbnail_cache() -> int:
