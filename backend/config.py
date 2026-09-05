@@ -30,10 +30,10 @@ SOURCE_CONFIG_FILE = CODE_ROOT / "config.json"
 
 class _Guid(ctypes.Structure):
     _fields_ = [
-        ("Data1", wintypes.DWORD),
-        ("Data2", wintypes.WORD),
-        ("Data3", wintypes.WORD),
-        ("Data4", ctypes.c_ubyte * 8),
+        ("Data1", ctypes.c_uint32),
+        ("Data2", ctypes.c_uint16),
+        ("Data3", ctypes.c_uint16),
+        ("Data4", ctypes.c_uint8 * 8),
     ]
 
     @classmethod
