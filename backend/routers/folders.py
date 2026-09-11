@@ -485,7 +485,7 @@ def browse_for_folder():
         detail = (result.stderr or "").strip()[:300]
         raise HTTPException(500, f"Windows folder picker failed: {detail or 'unknown error'}")
     chosen = (result.stdout or "").strip()
-    return {"path": str(Path(chosen)) if chosen else None}
+    return {"path": chosen if chosen else None}
 
 
 @router.post("/api/folders/{folder_identifier}/rescan")
