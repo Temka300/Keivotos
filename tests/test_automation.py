@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 import types
@@ -34,7 +35,10 @@ class AutomationCandidateTests(unittest.TestCase):
         manifest = {}
         for path in (unchanged_media, changed_media):
             stat = path.stat()
-            manifest[str(path.resolve()).lower()] = (stat.st_mtime_ns, stat.st_size)
+            manifest[os.path.normcase(os.path.abspath(path))] = (
+                stat.st_mtime_ns,
+                stat.st_size,
+            )
         changed_media.write_bytes(b"changed fixture is a different size")
         new_media.write_bytes(b"new")
 
