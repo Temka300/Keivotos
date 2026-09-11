@@ -7,11 +7,13 @@ import shutil
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 import database  # noqa: E402
+from modules.danbooru import image_queries  # noqa: E402
 from routers import images_media  # noqa: E402
 
 
@@ -42,14 +44,18 @@ class ImageGoldenMasterTests(unittest.TestCase):
         self.root = root
         self.data_db = root / "danbooru.sqlite"
         self.user_db = root / "user.sqlite"
-        self.originals = (
-            database.DATA_DB_PATH,
-            database.USER_DB_PATH,
-            images_media.USER_DB_PATH,
-        )
-        database.DATA_DB_PATH = self.data_db
-        database.USER_DB_PATH = self.user_db
-        images_media.USER_DB_PATH = self.user_db
+        # Extracted helpers own their imported path constants independently of
+        # the router. Redirect every consumer to this fixture, including the
+        # favorites query's ATTACH, and restore patches even if setup fails.
+        for owner, name, value in (
+            (database, "DATA_DB_PATH", self.data_db),
+            (database, "USER_DB_PATH", self.user_db),
+            (images_media, "USER_DB_PATH", self.user_db),
+            (image_queries, "USER_DB_PATH", self.user_db),
+        ):
+            override = patch.object(owner, name, value)
+            override.start()
+            self.addCleanup(override.stop)
 
         with closing(sqlite3.connect(self.data_db)) as connection:
             connection.executescript(DATA_SCHEMA)
@@ -75,7 +81,6 @@ class ImageGoldenMasterTests(unittest.TestCase):
         database.init_user_db()
 
     def tearDown(self) -> None:
-        database.DATA_DB_PATH, database.USER_DB_PATH, images_media.USER_DB_PATH = self.originals
         shutil.rmtree(self.root, ignore_errors=True)
 
     def _case(self, **kwargs):

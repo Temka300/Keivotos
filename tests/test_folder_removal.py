@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from routers import folders  # noqa: E402
+from modules.danbooru import folder_registry  # noqa: E402
 from files_base import sources  # noqa: E402
 from schema import ensure_data_schema  # noqa: E402
 from storage_layout import legacy_hashed_sidecar_path  # noqa: E402
@@ -90,6 +91,12 @@ class FolderRemovalTests(unittest.TestCase):
         )
         connection.commit()
         connection.close()
+
+        # Registration's duplicate check now lives in the extracted helper;
+        # patching only the router's connection leaves that read unisolated.
+        registry_connection = patch.object(folder_registry, "get_user_db", self.user_connection)
+        registry_connection.start()
+        self.addCleanup(registry_connection.stop)
 
     def tearDown(self) -> None:
         shutil.rmtree(self.temp, ignore_errors=True)
