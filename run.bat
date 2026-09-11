@@ -11,45 +11,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [SETUP] Synchronizing the locked Python 3.11 environment...
-uv sync --locked --python 3.11
-if errorlevel 1 (
-    echo [ERROR] Python dependency synchronization failed.
-    pause
-    exit /b 1
-)
-
-if not exist "frontend\dist\index.html" (
-    where npm.cmd >nul 2>nul
-    if errorlevel 1 (
-        echo [ERROR] The frontend is not built and Node.js is unavailable.
-        echo [ERROR] Install current Node.js LTS, then run run.bat again.
-        pause
-        exit /b 1
-    )
-    echo [SETUP] Installing locked frontend dependencies...
-    pushd frontend
-    call npm.cmd ci
-    if errorlevel 1 (
-        popd
-        echo [ERROR] Frontend dependency installation failed.
-        pause
-        exit /b 1
-    )
-    call npm.cmd run build
-    if errorlevel 1 (
-        popd
-        echo [ERROR] Frontend build failed.
-        pause
-        exit /b 1
-    )
-    popd
-)
-
-echo [RUN] Starting Keivotos - Danbooru...
-".venv\Scripts\python.exe" app.py %*
-
-if errorlevel 1 (
-    echo [ERROR] Keivotos exited with an error.
+uv run --locked --python 3.11 run.py %*
+set "KEIVOTOS_EXIT_CODE=%ERRORLEVEL%"
+if not "%KEIVOTOS_EXIT_CODE%"=="0" (
+    echo [ERROR] Keivotos setup or startup failed. See the output above.
     pause
 )
+exit /b %KEIVOTOS_EXIT_CODE%

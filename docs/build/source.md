@@ -2,9 +2,9 @@
 
 ## Requirements
 
-- Windows 10 or later
+- Windows 10 or later, or Linux/WSL (see platform limitations below)
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 24 or another version accepted by the locked frontend toolchain
+- Node.js 24 or another version accepted by the locked frontend toolchain, only when building the frontend
 - Git only when using a clone; a source ZIP works too
 
 Python itself can be provisioned by uv.
@@ -13,11 +13,26 @@ Python itself can be provisioned by uv.
 
 From the repository root:
 
-```powershell
-.\run.bat
+```text
+uv run --locked run.py
 ```
 
-`run.bat` synchronizes Python 3.11 from `pyproject.toml` and `uv.lock`. If the committed frontend output is unavailable, it installs from `package-lock.json` and builds it. The launcher window uses the Keivotos icon and the `Keivotos - Danbooru` title while keeping setup, runtime, LAN-address, and error output visible. The browser then opens at <http://localhost:52325/>.
+The same command works in Windows and Linux/WSL terminals. uv prepares Python 3.11 from `pyproject.toml` and the existing `uv.lock`; `--locked` refuses an outdated lockfile instead of changing it. `run.py` installs frontend dependencies from `package-lock.json` and builds only when `frontend/dist/index.html` is missing, then runs the existing `app.py` in the same process. Setup failures stop startup; Ctrl+C stops the server.
+
+Convenience shortcuts call this same launcher:
+
+- Windows: double-click `run.bat`, or run `.\run.bat` in a terminal. Errors remain visible before the window closes; the exit code is preserved. Windows console branding is retained.
+- Linux/WSL: run `sh run.sh` (or `./run.sh` when executable).
+
+Arguments pass through unchanged, for example `uv run --locked run.py --no-browser --port 52326` or `sh run.sh --dev`. The default browser address is <http://localhost:52325/>.
+
+## Windows and WSL environments
+
+Use a separate checkout and dependency environment for each operating system. A Windows `.venv` or `frontend/node_modules` must not be reused by Linux, or vice versa. In WSL, install and run Linux uv and Node tools inside the distribution. Keep the WSL checkout in its Linux filesystem; run the Windows shortcut from a Windows checkout.
+
+Startup support does not yet mean complete Linux feature parity: Danbooru's native folder dialog and saved-key encryption remain Windows-specific. Files has an in-app folder-picker fallback. Linux Danbooru credentials can come from environment variables; browser opening and external open/reveal depend on desktop integration. These need separate compatibility work.
+
+Do not point a new WSL run at the Windows application-data directory as a migration shortcut. Existing Windows library paths and sidecar identities need a separately verified migration. A fresh Linux run uses its own application-data defaults.
 
 ## Trusted devices on the same network
 

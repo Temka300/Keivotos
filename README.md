@@ -23,13 +23,13 @@ If you downloaded a release with a `.sha256` file next to it, you can use it to 
 
 ### From source
 
-Install [uv](https://docs.astral.sh/uv/) and a current Node.js LTS, then:
+Install [uv](https://docs.astral.sh/uv/). Node.js 24 is needed only if the frontend must be built. From the repository root on Windows or Linux/WSL:
 
-```powershell
-.\run.bat
+```text
+uv run --locked run.py
 ```
 
-The launcher sets up Python 3.11 from `uv.lock`, builds the frontend if needed, and starts the server. Manual commands and dev mode are in [docs/build/source.md](docs/build/source.md).
+Windows also supports double-clicking `run.bat`; Linux/WSL can use `sh run.sh`. The shared launcher sets up the locked Python environment through uv, builds the frontend only when missing, and starts the server. Linux startup is supported; folder picking, saved credentials, and desktop integration still have platform limitations. Manual commands and dev mode are in [docs/build/source.md](docs/build/source.md).
 
 ## Features
 
