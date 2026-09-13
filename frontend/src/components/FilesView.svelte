@@ -17,6 +17,9 @@
   import FileContextMenu from './FileContextMenu.svelte';
   import FileInfoPanel from './FileInfoPanel.svelte';
   import ManageFoldersDialog from './ManageFoldersDialog.svelte';
+  import DirectoryPicker from './DirectoryPicker.svelte';
+
+  let directoryPicker: DirectoryPicker;
 
   let sources: SourceInfo[] = [];
   let selectedSourceId: string | null = null;
@@ -285,11 +288,7 @@
     addingFolder = true;
     error = '';
     try {
-      const picked = await filesApi.pickFolder();
-      if (!picked.native) {
-        throw new Error('The native Windows folder picker is unavailable.');
-      }
-      const pickedPath = picked.path;
+      const pickedPath = await directoryPicker.pick();
       if (!pickedPath) return;
       // A one-item batch through the same path Manage folders uses, so quick-add
       // cannot accept a folder the dialog would reject.
@@ -424,6 +423,8 @@
     return `${i === 0 ? n : n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
   }
 </script>
+
+<DirectoryPicker bind:this={directoryPicker} />
 
 <!-- Files owns one compact bar: drawer, breadcrumb, then the source tools. -->
 <header class="flex shrink-0 items-center gap-3 border-b border-[#2a2a3a] bg-[#16161e] px-4 py-2">

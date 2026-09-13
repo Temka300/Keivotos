@@ -15,6 +15,7 @@
   import BackupRestoreSettings from './BackupRestoreSettings.svelte';
   import LibraryImportSettings from './LibraryImportSettings.svelte';
   import ManageFoldersDialog from './ManageFoldersDialog.svelte';
+  import DirectoryPicker from './DirectoryPicker.svelte';
   import PathAutocomplete from './PathAutocomplete.svelte';
   import ThumbnailCacheSettings from './ThumbnailCacheSettings.svelte';
   import { SUITE_NAME } from '../lib/product';
@@ -48,6 +49,7 @@
   } from '../lib/stores';
   import type { ArtistNotificationIntervalMinutes, DuplicateScope, FitMode, HomeLayout, ImagePageSize, GridSize, InterfaceScale, MediaPlayback, MotionPreference, StartupModule, StartupView } from '../lib/stores';
 
+  let directoryPicker: DirectoryPicker;
   const dispatch = createEventDispatcher<{ close: void }>();
 
   let selectedSection = 'appearance';
@@ -360,9 +362,8 @@
     attachmentBusy = true;
     attachmentError = '';
     try {
-      const picked = await filesApi.pickFolder();
-      if (!picked.native) throw new Error('The native folder picker is unavailable.');
-      if (picked.path) attachmentPathDraft = picked.path;
+      const pickedPath = await directoryPicker.pick(attachmentPathDraft);
+      if (pickedPath) attachmentPathDraft = pickedPath;
     } catch (error) {
       attachmentError = error instanceof Error ? error.message : String(error);
     } finally {
@@ -483,10 +484,9 @@
     rescanError = '';
     rescanMessage = '';
     try {
-      const picked = await filesApi.pickFolder();
-      if (!picked.native) throw new Error('The native folder picker is unavailable.');
-      if (!picked.path) return;
-      const result = await suiteApi.relocateFolder(source.source_id, picked.path);
+      const pickedPath = await directoryPicker.pick(source.path);
+      if (!pickedPath) return;
+      const result = await suiteApi.relocateFolder(source.source_id, pickedPath);
       await Promise.all([loadRoleSources(true), loadFolders(true)]);
       rescanMessage = `Relocated ${source.display_name} — ${result.files_updated.toLocaleString()} indexed references updated. Files were not moved.`;
       imageRefreshToken.update((n) => n + 1);
@@ -806,6 +806,8 @@
     return 'M4 5h16v14H4V5zm0 4h16M8 5v4';
   }
 </script>
+
+<DirectoryPicker bind:this={directoryPicker} />
 
 <svelte:window on:keydown={handleKeydown} />
 

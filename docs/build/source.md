@@ -30,7 +30,7 @@ Arguments pass through unchanged, for example `uv run --locked run.py --no-brows
 
 Use a separate checkout and dependency environment for each operating system. A Windows `.venv` or `frontend/node_modules` must not be reused by Linux, or vice versa. In WSL, install and run Linux uv and Node tools inside the distribution. Keep the WSL checkout in its Linux filesystem; run the Windows shortcut from a Windows checkout.
 
-Startup support does not yet mean complete Linux feature parity: Danbooru's native folder dialog and saved-key encryption remain Windows-specific. Files has an in-app folder-picker fallback. Linux Danbooru credentials can come from environment variables; browser opening and external open/reveal depend on desktop integration. These need separate compatibility work.
+Files Add folder and Settings attachment/relocation selection use the native Windows dialog when available, otherwise a shared in-app directory picker. Canceling the native dialog does not open the fallback. The Manage folders picker remains restricted to subfolders of registered roots. Saved-key encryption remains Windows-specific. Linux Danbooru credentials can come from environment variables; browser opening and external open/reveal depend on desktop integration. These need separate compatibility work.
 
 Do not point a new WSL run at the Windows application-data directory as a migration shortcut. Existing Windows library paths and sidecar identities need a separately verified migration. A fresh Linux run uses its own application-data defaults.
 
@@ -91,3 +91,26 @@ npm.cmd run build
 ```
 
 Set `KEIVOTOS_HOME` to an empty temporary directory for isolated runtime or CI checks. This redirects all default writable paths without editing `config.json`.
+
+
+## Folder-picker browser regression checks (Linux/WSL)
+
+With the frontend built and Node + Playwright/Chromium available externally:
+
+```sh
+.venv/bin/python tests/run_directory_picker_browser.py
+```
+
+Use `--node /absolute/path/to/node` when Node is not on PATH. If Playwright is
+not resolvable normally, set `PLAYWRIGHT_MODULE` to its absolute package
+folder; `PLAYWRIGHT_BROWSERS_PATH` can point to an external browser cache.
+No Playwright dependency is added to the project. The browser also needs its
+usual Linux shared libraries.
+
+The runner creates disposable case-sensitive directories and application data,
+starts a loopback server on a free port, and shuts it down afterwards. It checks
+actual registration, picker navigation/cancellation/focus, overlapping requests,
+attachment drafts, and relocation path forwarding. Native dialog responses and
+the relocation mutation are intercepted; the test does not open an OS dialog,
+relocate live data, or run Danbooru acquisition. Run on a Linux filesystem that
+distinguishes `Upper` and `upper`.

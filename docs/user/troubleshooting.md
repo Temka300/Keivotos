@@ -45,6 +45,18 @@ Keep `gallery-dl.exe` and `ffmpeg.exe` beside `Keivotos.exe`. These are separate
 Open the exact location shown in Settings → Library. Keivotos asks the Windows Known Folder API for machine-local application data, normally
 `C:\Users\<name>\AppData\Local\Keivotos`. See [`data-layout.md`](data-layout.md) before moving, restoring, or backing up any files. Never delete `user.sqlite` as a cache.
 
+## Choosing folders on Linux/WSL
+
+Files → Add folder and Settings → Attachments → Browse / Folders → Relocate
+open an in-app picker when a native dialog is unavailable. Browse directories
+or paste an absolute Linux path (for example `/mnt/d/Pictures`), press **Go**,
+then **Choose this folder**. Paths keep their original casing. **Cancel** or
+Escape closes only the picker. Choosing an attachment folder fills the draft;
+use **Save folder** to apply it. Existing folder-registration checks still apply.
+
+Windows continues to use its native dialog. Manage folders → Add folder still
+selects subfolders inside folders already registered with Files.
+
 ## A registered image folder moved or its drive letter changed
 
 Reconnect the drive, then use Settings → Library → the root's menu → **Relocate…** and choose its new folder. Keivotos preserves the stable root ID and sidecars, updates indexed/user references, and runs an incremental scan. It does not move original images.
