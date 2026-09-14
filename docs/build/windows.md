@@ -50,10 +50,30 @@ On Linux or inside WSL, the equivalent build command is:
 bash scripts/release/build_linux.sh
 ```
 
-Optional Bash arguments are `--version` and `--output-directory`. The version
+Both entry points support both targets. From WSL:
+
+```bash
+bash scripts/release/build_linux.sh --target both
+```
+
+Bash accepts `--target linux|windows|both` (default: `linux`), `--version`, and
+`--output-directory`. The Windows target requires WSL interoperability and
+Windows uv and Node.js/npm. It passes a curated source copy into a temporary
+Windows workspace, builds there, and copies the ZIP/checksum back to the
+requested output directory. It does not reuse the Linux virtual environment or
+frontend dependencies. Native Linux without Windows/WSL access can build only
+the Linux target. The bridge uses a process-only PowerShell execution-policy
+bypass to run its scripts; it does not change the system policy.
+
+Both-target runs build Linux first and stop on failure. If Windows then fails,
+the completed Linux artifact remains available. Choose a new output directory
+when retrying both, or retry only the failed target.
+
+Optional version/output arguments apply to both targets. The version
 must match `backend/product.py`. Output paths must be inside the repository.
-Linux builds refuse to overwrite existing archives; choose a new output folder
-for another build. Windows retains its existing output replacement behavior.
+Bash builds refuse to overwrite existing archives for either target; choose a
+new output folder for another build. Direct Windows PowerShell builds retain
+their existing output replacement behavior.
 
 Linux builds use a temporary source copy and a separate virtual environment,
 run the locked frontend checks/build, bundle the app, gallery-dl and FFmpeg,

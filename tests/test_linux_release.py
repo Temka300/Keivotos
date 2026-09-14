@@ -144,3 +144,86 @@ def test_smoke_terminates_server_after_success(tmp_path):
         builder.smoke(tmp_path, tmp_path / "isolated-home")
     process.terminate.assert_called_once()
     process.wait.assert_called_once_with(timeout=10)
+
+
+def test_windows_target_does_not_require_linux_build_dependencies(tmp_path, monkeypatch):
+    monkeypatch.setattr(builder.sys, "platform", "linux")
+    monkeypatch.setattr(builder.platform, "machine", lambda: "x86_64")
+    output = ROOT / "artifacts/test-dispatch-only"
+    with patch.object(builder, "windows_tools", return_value=("wslpath", "powershell.exe")), patch.object(builder, "build_windows") as windows, patch.object(builder.shutil, "which", side_effect=AssertionError("Linux tools queried")), patch.object(Path, "mkdir"):
+        assert builder.main(["--target", "windows", "--output-directory", str(output)]) == 0
+    assert windows.call_args.args[1] == output
+
+
+def test_windows_target_requires_interop_before_build(monkeypatch):
+    monkeypatch.setattr(builder.sys, "platform", "linux")
+    monkeypatch.setattr(builder.platform, "machine", lambda: "x86_64")
+    with patch.object(builder, "windows_tools", side_effect=RuntimeError("Windows builds require WSL")), patch.object(builder, "copy_sources") as copy:
+        with pytest.raises(SystemExit):
+            builder.main(["--target", "both"])
+    copy.assert_not_called()
+
+
+def test_windows_bridge_uses_curated_copy_and_literal_arguments(tmp_path):
+    import json
+    with patch.object(builder.subprocess, "check_output", side_effect=lambda args, **kw: args[-1]), patch.object(builder, "run") as invoke:
+        def inspect(*args, **kwargs):
+            request = json.loads(Path(args[-1]).read_text())
+            source = Path(request["source"])
+            assert request["output"] == str(tmp_path / "output with spaces")
+            assert not (source / ".venv").exists()
+            assert (source / ".github/SECURITY.md").is_file()
+            assert (source / "scripts/release/build_windows_from_wsl.ps1").is_file()
+        invoke.side_effect = inspect
+        builder.build_windows("1.2.3", tmp_path / "output with spaces", ("wslpath", "powershell.exe"))
+    command = invoke.call_args.args
+    assert "-File" in command
+    assert "-Command" not in command
+    assert "-RequestFile" in command
+    assert not Path(command[-1]).exists()
+
+
+def test_windows_bridge_propagates_failure_and_cleans_input(tmp_path):
+    with patch.object(builder.subprocess, "check_output", side_effect=lambda args, **kw: args[-1]), patch.object(builder, "run", side_effect=subprocess.CalledProcessError(7, "powershell.exe")) as invoke:
+        with pytest.raises(subprocess.CalledProcessError):
+            builder.build_windows("1.2.3", tmp_path, ("wslpath", "powershell.exe"))
+    assert not Path(invoke.call_args.args[-1]).exists()
+
+
+def test_both_target_runs_linux_then_windows(tmp_path, monkeypatch):
+    # Exercise the complete dispatch with fake build outputs, never PyInstaller.
+    monkeypatch.setattr(builder.sys, "platform", "linux")
+    monkeypatch.setattr(builder.platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(builder, "ROOT", tmp_path)
+    (tmp_path / "backend").mkdir()
+    (tmp_path / "backend/product.py").write_text('VERSION = "1.2.3"\n')
+    sequence = []
+    def copy_sources(root, destination):
+        (destination / "frontend").mkdir()
+        (destination / "docs/user").mkdir(parents=True)
+        (destination / "packaging/linux").mkdir(parents=True)
+        for name in ("README.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "SECURITY.md", "packaging/linux/FFMPEG_SOURCE.md"):
+            (destination / name).touch()
+    def run(*args, cwd, **kwargs):
+        if "PyInstaller" in args:
+            dist = Path(args[args.index("--distpath") + 1])
+            dist.mkdir(exist_ok=True)
+            if "--onefile" in args:
+                (dist / "gallery-dl").touch()
+            else:
+                (dist / "Keivotos").mkdir()
+        elif "scripts/release/collect_licenses.py" in args:
+            Path(args[2]).mkdir()
+    ffmpeg = tmp_path / "ffmpeg"
+    ffmpeg.touch()
+    monkeypatch.setattr(builder, "copy_sources", copy_sources)
+    monkeypatch.setattr(builder, "run", run)
+    monkeypatch.setattr(builder.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(builder, "windows_tools", lambda: ("wslpath", "powershell.exe"))
+    monkeypatch.setattr(builder.subprocess, "check_output", lambda *a, **k: str(ffmpeg))
+    monkeypatch.setattr(builder.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="license", stderr=""))
+    monkeypatch.setattr(builder, "smoke", lambda *a: sequence.append("linux"))
+    monkeypatch.setattr(builder, "build_windows", lambda *a: sequence.append("windows"))
+    assert builder.main(["--target", "both"]) == 0
+    assert sequence == ["linux", "windows"]
+    assert (tmp_path / "artifacts/Keivotos-V1.2.3-linux-x64.zip.sha256").is_file()

@@ -26,7 +26,7 @@ if ($Version -notmatch '^[0-9]+(?:\.[0-9]+){2}[A-Za-z0-9._-]*$') {
 
 # Linux builds run with Linux dependencies, including when invoked from Windows.
 if ($Target -in @("linux", "both")) {
-    $LinuxArguments = @("--version", $Version, "--output-directory", $OutputDirectory)
+    $LinuxArguments = @("--target", "linux", "--version", $Version, "--output-directory", $OutputDirectory)
     if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
         $LinuxRoot = (& wsl.exe --exec wslpath -u $Root)
         if ($LASTEXITCODE -ne 0) { throw "Could not resolve repository in the default WSL distribution" }

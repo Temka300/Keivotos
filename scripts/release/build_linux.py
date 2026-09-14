@@ -1,8 +1,9 @@
-"""Build on Linux in a disposable workspace; never reuse a host virtualenv."""
+"""Build Linux, Windows (through WSL), or both in isolated workspaces."""
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 from pathlib import Path
 import platform
@@ -37,6 +38,8 @@ def copy_sources(root: Path, destination: Path) -> None:
         if item.is_file() and item.suffix in (".json", ".js", ".ts", ".html"):
             shutil.copy2(item, destination / "frontend" / item.name)
     shutil.copy2(root / ".github/SECURITY.md", destination / "SECURITY.md")
+    (destination / ".github").mkdir()
+    shutil.copy2(root / ".github/SECURITY.md", destination / ".github/SECURITY.md")
 
 
 def smoke(stage: Path, home: Path) -> None:
@@ -86,8 +89,40 @@ def archive(stage: Path, destination: Path) -> None:
             output.write(item, Path(stage.name) / item.relative_to(stage))
 
 
+def windows_tools() -> tuple[str, str]:
+    converter = shutil.which("wslpath")
+    powershell = shutil.which("powershell.exe")
+    fallback = Path("/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe")
+    if not powershell and fallback.is_file():
+        powershell = str(fallback)
+    if not converter or not powershell:
+        raise RuntimeError("Windows builds require WSL with Windows PowerShell access; use --target linux on native Linux")
+    return converter, powershell
+
+
+def build_windows(version: str, output: Path, tools: tuple[str, str]) -> None:
+    converter, powershell = tools
+    def windows_path(path: Path) -> str:
+        return subprocess.check_output([converter, "-w", str(path)], text=True).strip()
+
+    # Only selected source inputs cross into Windows; never pass a Linux venv
+    # to uv on Windows. JSON keeps paths/version out of PowerShell source code.
+    with tempfile.TemporaryDirectory(prefix="keivotos-windows-input-") as temporary:
+        work = Path(temporary)
+        source = work / "source"
+        source.mkdir()
+        copy_sources(ROOT, source)
+        request = work / "request.json"
+        request.write_text(json.dumps({"source": windows_path(source),
+                                       "output": windows_path(output), "version": version}))
+        run(powershell, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File",
+            windows_path(source / "scripts/release/build_windows_from_wsl.ps1"),
+            "-RequestFile", windows_path(request), cwd=ROOT)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--target", choices=("linux", "windows", "both"), default="linux")
     parser.add_argument("--version", default="")
     parser.add_argument("--output-directory", default="artifacts")
     args = parser.parse_args(argv)
@@ -101,6 +136,19 @@ def main(argv=None) -> int:
     output = (ROOT / args.output_directory).resolve()
     if output == ROOT or not output.is_relative_to(ROOT):
         parser.error("Output directory must be inside the repository")
+    native_tools = None
+    if args.target in ("windows", "both"):
+        try:
+            native_tools = windows_tools()
+        except RuntimeError as error:
+            parser.error(str(error))
+        windows_name = f"Keivotos-V{version}-windows-x64.zip"
+        if any((output / name).exists() for name in (windows_name, windows_name + ".sha256")):
+            parser.error("Windows artifact already exists; choose another --output-directory")
+    if args.target == "windows":
+        output.mkdir(parents=True, exist_ok=True)
+        build_windows(version, output, native_tools)
+        return 0
     for tool in ("uv", "npm", "node"):
         if not shutil.which(tool):
             parser.error(f"Install Linux {tool} and put it on PATH first")
@@ -155,6 +203,8 @@ def main(argv=None) -> int:
             digest = hasher.hexdigest()
         checksum.write_text(f"{digest}  {destination.name}\n")
     print(f"Portable archive: {destination}")
+    if args.target == "both":
+        build_windows(version, output, native_tools)
     return 0
 
 
