@@ -1,9 +1,11 @@
 """Credential storage contracts; all secrets and files are disposable fixtures."""
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import sys
+import threading
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -50,6 +52,53 @@ def test_linux_save_replace_reuse_clear_and_redaction(vault):
     assert credentials.clear_credentials()['configured'] is False
     assert not vault
     assert not credentials.CREDENTIALS_PATH.exists()
+
+
+@pytest.mark.parametrize('reader', ['saved_credentials', 'effective_credentials'])
+@pytest.mark.parametrize('mutation', ['replace', 'clear'])
+def test_read_keeps_manifest_and_vault_consistent_during_mutation(vault, monkeypatch, reader, mutation):
+    credentials.save_credentials('old-user', 'dummy-old-secret')
+    reading_secret = threading.Event()
+    release_reader = threading.Event()
+    mutation_started = threading.Event()
+    mutation_finished = threading.Event()
+    original_vault = credentials._vault
+    reader_thread = None
+
+    def operation(op, ref, secret=None):
+        if op == 'get' and threading.get_ident() == reader_thread:
+            reading_secret.set()
+            assert release_reader.wait(5), 'Reader was not released'
+        return original_vault(op, ref, secret)
+
+    def read():
+        nonlocal reader_thread
+        reader_thread = threading.get_ident()
+        return getattr(credentials, reader)()
+
+    def mutate():
+        mutation_started.set()
+        if mutation == 'replace':
+            result = credentials.save_credentials('new-user', 'dummy-new-secret')
+        else:
+            result = credentials.clear_credentials()
+        mutation_finished.set()
+        return result
+
+    monkeypatch.setattr(credentials, '_vault', operation)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        reading = pool.submit(read)
+        try:
+            assert reading_secret.wait(5), 'Read never reached the vault'
+            writing = pool.submit(mutate)
+            assert mutation_started.wait(5), 'Mutation never started'
+            assert not mutation_finished.wait(.2), 'Mutation invalidated an in-flight read'
+        finally:
+            release_reader.set()
+        assert reading.result(timeout=5)[:2] == ('old-user', 'dummy-old-secret')
+        writing.result(timeout=5)
+    expected = ('new-user', 'dummy-new-secret') if mutation == 'replace' else (None, None)
+    assert credentials.saved_credentials() == expected
 
 
 def test_each_platform_preserves_other_platform_credentials(vault, monkeypatch):

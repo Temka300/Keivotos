@@ -147,28 +147,32 @@ def _saved_payload() -> dict[str, Any]:
 
 
 def saved_credentials(*, strict: bool = False) -> tuple[str | None, str | None]:
-    payload = _saved_payload()
-    if _uses_linux_vault() and isinstance(payload.get("linux_secret_service"), dict):
-        linux = payload["linux_secret_service"]
-        username = str(linux.get("username") or "").strip() or None
-        reference = str(linux.get("reference") or "")
-        try:
-            secret = _vault("get", reference)
-            if not secret:
-                raise RuntimeError("Saved Linux credential is missing from the vault; enter the API key again.")
-            return username, secret
-        except RuntimeError:
-            if strict:
-                raise
+    # Keep the manifest reference and its secret together while save/clear
+    # replaces or removes vault items. Status/save/clear may already hold this
+    # reentrant lock; ordinary request/background reads must take it too.
+    with _credential_lock:
+        payload = _saved_payload()
+        if _uses_linux_vault() and isinstance(payload.get("linux_secret_service"), dict):
+            linux = payload["linux_secret_service"]
+            username = str(linux.get("username") or "").strip() or None
+            reference = str(linux.get("reference") or "")
+            try:
+                secret = _vault("get", reference)
+                if not secret:
+                    raise RuntimeError("Saved Linux credential is missing from the vault; enter the API key again.")
+                return username, secret
+            except RuntimeError:
+                if strict:
+                    raise
+                return username, None
+        username = str(payload.get("username") or "").strip() or None
+        protected = str(payload.get("api_key_dpapi") or "").strip()
+        if not protected:
             return username, None
-    username = str(payload.get("username") or "").strip() or None
-    protected = str(payload.get("api_key_dpapi") or "").strip()
-    if not protected:
-        return username, None
-    try:
-        return username, _unprotect(protected)
-    except Exception:
-        return username, None
+        try:
+            return username, _unprotect(protected)
+        except Exception:
+            return username, None
 
 
 def _effective(saved: tuple[str | None, str | None]) -> tuple[str | None, str | None, str]:
