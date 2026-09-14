@@ -37,13 +37,43 @@ class ResolveServedFileTests(unittest.TestCase):
         resolved = serving.resolve_served_file(self.source, "sub/clip.mp4", [])
         self.assertEqual(resolved.read_bytes(), b"video")
 
+    @unittest.skipIf(os.name == "nt", "colon filenames require a POSIX filesystem")
+    def test_resolves_posix_colon_filenames(self) -> None:
+        for name in ("a:notes.txt", "a:", "sub/a:notes.txt", "日本語:notes.txt"):
+            with self.subTest(name=name):
+                target = self.source / name
+                target.write_bytes(b"colon filename")
+                resolved = serving.resolve_served_file(self.source, name, [])
+                self.assertEqual(resolved, target.resolve())
+                self.assertEqual(resolved.read_bytes(), b"colon filename")
+
+    @unittest.skipIf(os.name == "nt", "colon filenames require a POSIX filesystem")
+    def test_colon_filenames_keep_symlink_and_forbidden_root_guards(self) -> None:
+        link = self.source / "a:escape.txt"
+        link.symlink_to(self.outside / "secret.txt")
+        with self.assertRaises(serving.ServeDenied) as caught:
+            serving.resolve_served_file(self.source, link.name, [])
+        self.assertEqual(caught.exception.status_code, 403)
+        target = self.source / "a:private.txt"
+        target.write_bytes(b"private")
+        with self.assertRaises(serving.ServeDenied) as caught:
+            serving.resolve_served_file(self.source, target.name, [self.source])
+        self.assertEqual(caught.exception.status_code, 403)
+
+    @unittest.skipUnless(os.name == "nt", "Windows drive-relative path semantics")
+    def test_rejects_windows_drive_relative_paths(self) -> None:
+        for name in ("C:notes.txt", "C:"):
+            with self.subTest(name=name), self.assertRaises(serving.ServeDenied) as caught:
+                serving.resolve_served_file(self.source, name, [])
+            self.assertEqual(caught.exception.status_code, 400)
+
     def test_rejects_dotdot_traversal(self) -> None:
         with self.assertRaises(serving.ServeDenied) as caught:
             serving.resolve_served_file(self.source, "../outside/secret.txt", [])
         self.assertEqual(caught.exception.status_code, 400)
 
     def test_rejects_absolute_and_drive_paths(self) -> None:
-        for hostile in ("/etc/passwd", "\\\\server\\share", "C:\\Windows\\win.ini"):
+        for hostile in ("/etc/passwd", "\\\\server\\share", "C:\\Windows\\win.ini", "C:/Windows/win.ini"):
             with self.assertRaises(serving.ServeDenied) as caught:
                 serving.resolve_served_file(self.source, hostile, [])
             self.assertEqual(caught.exception.status_code, 400)

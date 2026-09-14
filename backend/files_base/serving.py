@@ -55,7 +55,11 @@ _INLINE_AUDIO = {
 _INLINE_TEXT = {"srt", "txt", "ass", "ssa", "vtt", "md", "log", "lrc"}
 _INLINE_APPLICATION = {"pdf": "application/pdf"}
 
-_DRIVE_OR_ABSOLUTE = re.compile(r"^(?:[A-Za-z]:|[/\\])")
+# A drive-relative prefix is special on Windows, but a normal filename on
+# POSIX (for example a:notes.txt). Still reject Windows absolute paths on both.
+_DRIVE_OR_ABSOLUTE = re.compile(
+    r"^(?:[A-Za-z]:|[/\\])" if os.name == "nt" else r"^(?:[A-Za-z]:[/\\]|[/\\])"
+)
 
 
 class ServeDenied(Exception):
