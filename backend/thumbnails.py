@@ -106,12 +106,13 @@ def remove_legacy_thumbnail_cache(source_path: str, content_md5: str | None = No
 def _video_frame(source_path: Path) -> Image.Image:
     executable: str | None = None
     if getattr(sys, "frozen", False):
-        bundled = Path(sys.executable).resolve().parent / "ffmpeg.exe"
+        tool_name = "ffmpeg.exe" if sys.platform == "win32" else "ffmpeg"
+        bundled = Path(sys.executable).resolve().parent / tool_name
         if bundled.is_file():
             executable = str(bundled)
         else:
             raise RuntimeError(
-                f"Portable video thumbnails require ffmpeg.exe beside Keivotos.exe: {bundled}"
+                f"Portable video thumbnails require {tool_name} beside the application: {bundled}"
             )
     executable = executable or shutil.which("ffmpeg")
     if executable is None:

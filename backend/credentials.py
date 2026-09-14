@@ -121,7 +121,8 @@ def _uses_linux_vault() -> bool:
 def _vault(operation: str, reference: str, secret: str | None = None) -> str | None:
     try:
         result = subprocess.run(
-            [sys.executable, "-c", _VAULT_WORKER],
+            ([sys.executable, "--credential-worker"] if getattr(sys, "frozen", False)
+             else [sys.executable, "-c", _VAULT_WORKER]),
             input=json.dumps({"operation": operation, "reference": reference, "secret": secret}),
             capture_output=True, text=True, timeout=10,
         )

@@ -13,11 +13,15 @@ DISTRIBUTIONS = ("aiosqlite", "fastapi", "gallery-dl", "imageio-ffmpeg", "pillow
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("output", type=Path)
+    parser.add_argument("--all-installed", action="store_true",
+                        help="Include transitive and platform-specific dependency licenses")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
 
     missing: list[str] = []
-    for name in DISTRIBUTIONS:
+    names = (sorted({dist.metadata["Name"] for dist in metadata.distributions()})
+             if args.all_installed else DISTRIBUTIONS)
+    for name in names:
         distribution = metadata.distribution(name)
         candidates = [
             Path(distribution.locate_file(item))

@@ -178,7 +178,8 @@ def _portable_check(configuration) -> int:
     tools_ok = True
     if getattr(sys, "frozen", False):
         executable_dir = Path(sys.executable).resolve().parent
-        for tool_name in ("gallery-dl.exe", "ffmpeg.exe"):
+        suffix = ".exe" if sys.platform == "win32" else ""
+        for tool_name in (f"gallery-dl{suffix}", f"ffmpeg{suffix}"):
             tool_path = executable_dir / tool_name
             present = tool_path.is_file()
             tools_ok = tools_ok and present
@@ -233,6 +234,11 @@ def _discover_lan_ipv4() -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments == ["--credential-worker"]:
+        from credentials import _VAULT_WORKER
+
+        exec(_VAULT_WORKER, {"__name__": "__main__"})
+        return 0
     if arguments[:1] == ["--pipeline"]:
         _load_configuration(migrate_legacy_home=True)
         return _run_helper("danbooru_gallery_dl.py", arguments[1:])

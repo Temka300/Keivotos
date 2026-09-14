@@ -1,7 +1,9 @@
 [CmdletBinding()]
 param(
     [string]$Version = "",
-    [string]$OutputDirectory = "artifacts"
+    [string]$OutputDirectory = "artifacts",
+    [ValidateSet("windows", "linux", "both")]
+    [string]$Target = "windows"
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,6 +22,28 @@ elseif ($Version -cne $ProductVersion) {
 }
 if ($Version -notmatch '^[0-9]+(?:\.[0-9]+){2}[A-Za-z0-9._-]*$') {
     throw "Version contains unsafe path characters: $Version"
+}
+
+# Linux builds run with Linux dependencies, including when invoked from Windows.
+if ($Target -in @("linux", "both")) {
+    $LinuxArguments = @("--version", $Version, "--output-directory", $OutputDirectory)
+    if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+        $LinuxRoot = (& wsl.exe --exec wslpath -u $Root)
+        if ($LASTEXITCODE -ne 0) { throw "Could not resolve repository in the default WSL distribution" }
+        & wsl.exe --cd $LinuxRoot --exec bash scripts/release/build_linux.sh @LinuxArguments
+    }
+    else {
+        & bash (Join-Path $Root "scripts/release/build_linux.sh") @LinuxArguments
+    }
+    if ($LASTEXITCODE -ne 0) { throw "Linux portable build failed with exit code $LASTEXITCODE" }
+    if ($Target -eq "linux") { return }
+}
+if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
+    throw "Windows artifacts must be built from Windows PowerShell; use -Target linux here"
+}
+
+if (Test-Path -LiteralPath (Join-Path $Root ".venv/bin/python")) {
+    throw "This checkout has a Linux virtual environment. Build Windows from a separate Windows checkout to preserve it."
 }
 
 $UvCommand = Get-Command uv -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -153,25 +177,32 @@ try {
     Push-Location (Join-Path $Root "frontend")
     try {
         npm.cmd ci
+        if ($LASTEXITCODE -ne 0) { throw "npm.cmd ci failed" }
         npm.cmd run check
+        if ($LASTEXITCODE -ne 0) { throw "npm.cmd run check failed" }
         npm.cmd run build
+        if ($LASTEXITCODE -ne 0) { throw "npm.cmd run build failed" }
     }
     finally {
         Pop-Location
     }
 
     .\.venv\Scripts\python.exe .\scripts\release\generate_brand_assets.py
+    if ($LASTEXITCODE -ne 0) { throw "Brand generation failed" }
     .\.venv\Scripts\pyinstaller.exe --noconfirm --clean `
         --distpath $DistRoot --workpath $WorkRoot `
         .\packaging\windows\Keivotos.spec
+    if ($LASTEXITCODE -ne 0) { throw "Application build failed" }
     .\.venv\Scripts\pyinstaller.exe --noconfirm --clean --onefile --console `
         --name gallery-dl --distpath $DistRoot --workpath (Join-Path $WorkRoot "gallery-dl") `
         .\packaging\windows\gallery_dl_entry.py
+    if ($LASTEXITCODE -ne 0) { throw "gallery-dl build failed" }
 
     New-Item -ItemType Directory -Path $ArtifactRoot -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $DistRoot "Keivotos") -Destination $StageRoot -Recurse
     Copy-Item -LiteralPath (Join-Path $DistRoot "gallery-dl.exe") -Destination (Join-Path $StageRoot "gallery-dl.exe")
     $FfmpegPath = (& .\.venv\Scripts\python.exe -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())").Trim()
+    if ($LASTEXITCODE -ne 0) { throw "FFmpeg discovery failed" }
     Copy-Item -LiteralPath $FfmpegPath -Destination (Join-Path $StageRoot "ffmpeg.exe")
     foreach ($File in @("README.md", "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md")) {
         Copy-Item -LiteralPath (Join-Path $Root $File) -Destination (Join-Path $StageRoot $File)
@@ -180,9 +211,11 @@ try {
     New-Item -ItemType Directory -Path (Join-Path $StageRoot "docs") -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $Root "docs\user") -Destination (Join-Path $StageRoot "docs\user") -Recurse
     .\.venv\Scripts\python.exe .\scripts\release\collect_licenses.py (Join-Path $StageRoot "licenses")
+    if ($LASTEXITCODE -ne 0) { throw "License collection failed" }
     $FfmpegLicenseDirectory = Join-Path $StageRoot "licenses\FFmpeg-7.1"
     New-Item -ItemType Directory -Path $FfmpegLicenseDirectory -Force | Out-Null
     & $FfmpegPath -L | Set-Content -LiteralPath (Join-Path $FfmpegLicenseDirectory "LICENSE.txt") -Encoding utf8
+    if ($LASTEXITCODE -ne 0) { throw "FFmpeg license check failed" }
     Copy-Item -LiteralPath (Join-Path $Root "packaging\windows\FFMPEG_SOURCE.md") -Destination $FfmpegLicenseDirectory
 
     $SmokeHome = Join-Path $WorkRoot "portable-smoke-home"
