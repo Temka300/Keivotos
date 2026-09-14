@@ -61,6 +61,16 @@ selects subfolders inside folders already registered with Files.
 
 Reconnect the drive, then use Settings → Library → the root's menu → **Relocate…** and choose its new folder. Keivotos preserves the stable root ID and sidecars, updates indexed/user references, and runs an incremental scan. It does not move original images.
 
+## Linux credential vault is unavailable or locked
+
+Start and unlock a Secret Service vault in the same session as Keivotos;
+see [Linux/WSL credential setup](../build/source.md#saved-danbooru-credentials-on-linuxwsl).
+Then retry saving in Settings → Danbooru → Account, or reopen Settings to reload
+status. Keivotos does not fall back to plaintext storage. If the vault item is
+missing, enter the key again. Windows-encrypted keys cannot be decrypted on Linux.
+A complete `DANBOORU_USERNAME` / `DANBOORU_API_KEY` environment override works
+without an unlocked vault. Do not paste keys into bug reports or command history.
+
 ## Report a problem
 
 Include the Keivotos version, Windows version, exact action, first relevant console error, and whether the issue occurs with an isolated `KEIVOTOS_HOME`. The exact dated runtime and HTTP access log paths are shown in Settings → Library. Use the runtime file for startup, background work, mutations, warnings, and errors; use the access file for request methods, paths, and status codes. Remove personal paths, credentials, API keys, and media before attaching logs.

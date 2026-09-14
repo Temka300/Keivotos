@@ -24,6 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
+    parser.add_argument('--script', choices=('directory_picker', 'credentials'), default='directory_picker')
     args = parser.parse_args()
     if sys.platform == 'win32':
         parser.error('Run these Linux folder-picker checks inside Linux or WSL')
@@ -63,7 +64,7 @@ def main() -> int:
                 else:
                     raise RuntimeError('Isolated server startup timed out')
                 result = subprocess.run(
-                    [args.node, str(ROOT / 'tests' / 'browser_directory_picker.cjs'), str(context)],
+                    [args.node, str(ROOT / 'tests' / f'browser_{args.script}.cjs'), str(context)],
                     cwd=ROOT, env=env, timeout=180,
                 )
                 return result.returncode

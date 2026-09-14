@@ -29,7 +29,7 @@ Install [uv](https://docs.astral.sh/uv/). Node.js 24 is needed only if the front
 uv run --locked run.py
 ```
 
-Windows also supports double-clicking `run.bat`; Linux/WSL can use `sh run.sh`. The shared launcher sets up the locked Python environment through uv, builds the frontend only when missing, and starts the server. Linux/WSL uses an in-app picker for adding folders, choosing attachment storage, and relocating module folders. Saved credentials and desktop integration still have platform limitations. Manual commands and dev mode are in [docs/build/source.md](docs/build/source.md).
+Windows also supports double-clicking `run.bat`; Linux/WSL can use `sh run.sh`. The shared launcher sets up the locked Python environment through uv, builds the frontend only when missing, and starts the server. Linux/WSL uses an in-app picker for adding folders, choosing attachment storage, and relocating module folders. Saved keys use Windows DPAPI or an unlocked Linux Secret Service vault; see the setup notes below. Desktop integration still has platform limitations. Manual commands and dev mode are in [docs/build/source.md](docs/build/source.md).
 
 ## Features
 

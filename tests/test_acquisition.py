@@ -116,6 +116,7 @@ class AcquisitionTests(unittest.TestCase):
 
         with (
             patch.object(credentials, "CREDENTIALS_PATH", credential_path),
+            patch.object(credentials, "_uses_linux_vault", return_value=False),
             patch.object(credentials, "_protect", protect),
             patch.object(credentials, "_unprotect", unprotect),
             patch.dict("os.environ", {"DANBOORU_USERNAME": "", "DANBOORU_API_KEY": ""}),

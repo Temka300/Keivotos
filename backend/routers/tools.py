@@ -221,7 +221,10 @@ def cancel_import():
 
 @router.get("/api/danbooru/credentials", response_model=DanbooruCredentialStatus)
 def get_danbooru_credentials():
-    return credentials_status()
+    try:
+        return credentials_status()
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.put("/api/danbooru/credentials", response_model=DanbooruCredentialStatus)
@@ -234,7 +237,10 @@ def update_danbooru_credentials(update: DanbooruCredentialsUpdate):
 
 @router.delete("/api/danbooru/credentials", response_model=DanbooruCredentialStatus)
 def delete_danbooru_credentials():
-    return clear_credentials()
+    try:
+        return clear_credentials()
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/api/danbooru/credentials/check")

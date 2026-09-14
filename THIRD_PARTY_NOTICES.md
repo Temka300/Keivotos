@@ -4,6 +4,18 @@ Keivotos source code is licensed under Apache-2.0. It depends on open-source Pyt
 
 Every *imported* Python library is permissively licensed so it can be linked into the Apache-2.0 application; GPL tools are used only as separately-invoked subprocesses (below), never imported. Notable imported libraries include Pillow (HPND), FastAPI (MIT), uvicorn (BSD), and **tinytag 2.3.0 (MIT)** — added for embedded audio cover-art extraction. `mutagen` was deliberately not adopted for that purpose because it is GPL-2.0-or-later.
 
+## Linux credential storage
+
+Linux source runs additionally use **keyring 25.7.0 (MIT)** with its explicit
+Secret Service backend, **SecretStorage (BSD-3-Clause)**, and **Jeepney (MIT)**.
+Their cryptography dependency is dual Apache-2.0/BSD-3-Clause. Exact transitive
+versions are recorded in `uv.lock`; these dependencies are Linux-only.
+Sources: [keyring](https://github.com/jaraco/keyring),
+[SecretStorage](https://github.com/mitya57/secretstorage),
+[Jeepney](https://gitlab.com/takluyver/jeepney).
+The operating-system Secret Service provider (for example GNOME Keyring) is
+installed separately by the user and is not bundled or imported by Keivotos.
+
 ## Separately invoked tools
 
 The portable folder keeps the following command-line tools separate from `Keivotos.exe` and invokes them as child processes:

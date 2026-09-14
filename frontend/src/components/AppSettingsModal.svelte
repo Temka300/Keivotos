@@ -253,9 +253,10 @@
         credentials = value;
         credentialUsername = value.username ?? '';
       })
-      .catch(() => {
+      .catch(error => {
         credentials = null;
         credentialUsername = '';
+        credentialError = error instanceof Error ? error.message : String(error);
       })
       .finally(() => {
         credentialsLoaded = true;
@@ -267,8 +268,8 @@
   async function ensureSectionData(section: string): Promise<void> {
     if (section === 'library') {
       await Promise.all([loadFolders(), loadTools()]);
-    } else if (section === 'metadata') {
-      await Promise.all([loadFolders(), loadTools(), loadCredentials()]);
+    } else if (section === 'account') {
+      await loadCredentials();
     } else if (section === 'maintenance') {
       await Promise.all([loadTools(), loadFolders()]);
     } else if (section === 'roots') {
@@ -504,7 +505,7 @@
       credentials = await api.saveDanbooruCredentials(credentialUsername.trim(), credentialApiKey.trim() || undefined);
       credentialUsername = credentials.username ?? '';
       credentialApiKey = '';
-      credentialMessage = 'Credentials saved securely for this Windows user.';
+      credentialMessage = 'Credentials saved securely for this operating-system user.';
     } catch (error) {
       credentialError = error instanceof Error ? error.message : String(error);
     } finally {

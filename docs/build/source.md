@@ -30,7 +30,7 @@ Arguments pass through unchanged, for example `uv run --locked run.py --no-brows
 
 Use a separate checkout and dependency environment for each operating system. A Windows `.venv` or `frontend/node_modules` must not be reused by Linux, or vice versa. In WSL, install and run Linux uv and Node tools inside the distribution. Keep the WSL checkout in its Linux filesystem; run the Windows shortcut from a Windows checkout.
 
-Files Add folder and Settings attachment/relocation selection use the native Windows dialog when available, otherwise a shared in-app directory picker. Canceling the native dialog does not open the fallback. The Manage folders picker remains restricted to subfolders of registered roots. Saved-key encryption remains Windows-specific. Linux Danbooru credentials can come from environment variables; browser opening and external open/reveal depend on desktop integration. These need separate compatibility work.
+Files Add folder and Settings attachment/relocation selection use the native Windows dialog when available, otherwise a shared in-app directory picker. Canceling the native dialog does not open the fallback. The Manage folders picker remains restricted to subfolders of registered roots. Saved keys use Windows DPAPI or Linux Secret Service (setup below). Browser opening and external open/reveal still depend on desktop integration and need separate compatibility work.
 
 Do not point a new WSL run at the Windows application-data directory as a migration shortcut. Existing Windows library paths and sidecar identities need a separately verified migration. A fresh Linux run uses its own application-data defaults.
 
@@ -114,3 +114,64 @@ attachment drafts, and relocation path forwarding. Native dialog responses and
 the relocation mutation are intercepted; the test does not open an OS dialog,
 relocate live data, or run Danbooru acquisition. Run on a Linux filesystem that
 distinguishes `Upper` and `upper`.
+
+## Saved Danbooru credentials on Linux/WSL
+
+Settings → Danbooru → Account saves API keys through Python keyring's explicit
+Secret Service backend. Windows continues to use DPAPI. Linux metadata stores
+only the username and an opaque vault reference; the secret stays in the OS
+vault. Saving or removing a key preserves the other platform's stored fields.
+Credentials remain excluded from backups and are never returned by the API.
+Moving metadata between systems does not transfer a usable key; enter it again
+on the destination system. Environment variables `DANBOORU_USERNAME` and
+`DANBOORU_API_KEY` still override saved values independently.
+
+An unlocked, password-protected Secret Service vault with a default collection
+must be available in the same D-Bus session as Keivotos. Many Linux desktops
+provide this at login. WSL commonly needs setup. On Ubuntu, install the OS
+provider with `sudo apt install gnome-keyring dbus`. Keivotos installs its locked
+Python dependency through uv, but does not install or unlock your OS vault.
+It never falls back to a plaintext key file or launches unlock prompts from
+background jobs. Each vault request has a ten-second timeout.
+
+For a terminal-only WSL session, start a private session shell:
+
+```sh
+dbus-run-session -- bash
+```
+
+Inside that shell, unlock the keyring, then start Keivotos:
+
+```bash
+read -r -s -p 'Keyring password: ' keivotos_vault_password
+printf '\n'
+printf '%s' "$keivotos_vault_password" | gnome-keyring-daemon --unlock
+unset keivotos_vault_password
+uv run --locked run.py
+```
+
+Use a nonempty keyring password (the existing vault password if one already
+exists). The hidden input above avoids putting it in shell history or process
+arguments. Repeat the unlock when starting a new session. These steps follow
+[keyring's Linux headless guidance](https://keyring.readthedocs.io/en/latest/).
+
+To verify the integration without touching your own vault:
+
+```sh
+uv run --locked tests/run_linux_vault_check.py
+```
+
+This opt-in test creates its own bus and temporary password-protected keyring,
+checks saving, replacement, client and daemon restart, locking, and removal,
+then removes only its disposable test files. It makes no Danbooru requests.
+
+The existing disposable browser runner also checks credential Settings with
+intercepted responses (it never accesses your OS vault):
+
+```sh
+uv run --locked tests/run_directory_picker_browser.py --script credentials
+```
+
+It uses the same external Node/Playwright setup described above. It covers
+status/save/remove errors, retry, successful input clearing, and confirms that
+no connection check is triggered automatically.

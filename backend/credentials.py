@@ -1,10 +1,16 @@
-"""Local Danbooru credentials with Windows DPAPI protection."""
+"""Local Danbooru credentials: Windows DPAPI and Linux Secret Service."""
 from __future__ import annotations
 
 import base64
 import ctypes
 import json
+import logging
 import os
+import subprocess
+import sys
+import tempfile
+import threading
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -59,6 +65,77 @@ def _unprotect(value: str) -> str:
         kernel32.LocalFree(output.pbData)
 
 
+# Keep all key material on stdin/stdout, never on a command line. A subprocess
+# bounds D-Bus failures without leaving blocked request/background threads.
+_VAULT_WORKER = r"""
+import json, sys
+try:
+    import secretstorage
+    from keyring.backends.SecretService import Keyring
+    class UnlockedKeyring(Keyring):
+        def get_preferred_collection(self):
+            connection = secretstorage.dbus_init()
+            try:
+                collection = secretstorage.Collection(connection, '/org/freedesktop/secrets/aliases/default')
+                if collection.is_locked():
+                    raise RuntimeError('locked')
+                return collection
+            except Exception:
+                connection.close()
+                raise
+        def unlock(self, item):
+            if item.is_locked():
+                raise RuntimeError('locked')
+    request = json.load(sys.stdin)
+    vault = UnlockedKeyring()
+    service, reference = 'Keivotos Danbooru', request['reference']
+    operation = request['operation']
+    value = None
+    if operation == 'get':
+        value = vault.get_password(service, reference)
+    elif operation == 'set':
+        vault.set_password(service, reference, request['secret'])
+    elif operation == 'delete':
+        if vault.get_password(service, reference) is not None:
+            vault.delete_password(service, reference)
+    else:
+        raise ValueError('invalid operation')
+    print(json.dumps({'value': value}))
+except Exception:
+    # Exceptions from providers are not trusted to omit key material.
+    print(json.dumps({'error': True}))
+"""
+_VAULT_ERROR = (
+    "Linux credential vault is unavailable, locked, or did not respond. "
+    "Start and unlock a Secret Service vault (such as GNOME Keyring) in the "
+    "same desktop/D-Bus session, or use DANBOORU_USERNAME and DANBOORU_API_KEY."
+)
+_credential_lock = threading.RLock()
+_logger = logging.getLogger(__name__)
+
+
+def _uses_linux_vault() -> bool:
+    return sys.platform == "linux"
+
+
+def _vault(operation: str, reference: str, secret: str | None = None) -> str | None:
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", _VAULT_WORKER],
+            input=json.dumps({"operation": operation, "reference": reference, "secret": secret}),
+            capture_output=True, text=True, timeout=10,
+        )
+        payload = json.loads(result.stdout)
+        if (
+            result.returncode or payload.get("error") or "value" not in payload
+            or not isinstance(payload["value"], (str, type(None)))
+        ):
+            raise ValueError("vault failed")
+        return payload.get("value")
+    except (OSError, subprocess.TimeoutExpired, ValueError, AttributeError):
+        raise RuntimeError(_VAULT_ERROR) from None
+
+
 def _saved_payload() -> dict[str, Any]:
     if not CREDENTIALS_PATH.exists():
         return {}
@@ -69,8 +146,21 @@ def _saved_payload() -> dict[str, Any]:
         return {}
 
 
-def saved_credentials() -> tuple[str | None, str | None]:
+def saved_credentials(*, strict: bool = False) -> tuple[str | None, str | None]:
     payload = _saved_payload()
+    if _uses_linux_vault() and isinstance(payload.get("linux_secret_service"), dict):
+        linux = payload["linux_secret_service"]
+        username = str(linux.get("username") or "").strip() or None
+        reference = str(linux.get("reference") or "")
+        try:
+            secret = _vault("get", reference)
+            if not secret:
+                raise RuntimeError("Saved Linux credential is missing from the vault; enter the API key again.")
+            return username, secret
+        except RuntimeError:
+            if strict:
+                raise
+            return username, None
     username = str(payload.get("username") or "").strip() or None
     protected = str(payload.get("api_key_dpapi") or "").strip()
     if not protected:
@@ -81,8 +171,8 @@ def saved_credentials() -> tuple[str | None, str | None]:
         return username, None
 
 
-def effective_credentials() -> tuple[str | None, str | None, str]:
-    saved_username, saved_api_key = saved_credentials()
+def _effective(saved: tuple[str | None, str | None]) -> tuple[str | None, str | None, str]:
+    saved_username, saved_api_key = saved
     env_username = os.environ.get("DANBOORU_USERNAME", "").strip()
     env_api_key = os.environ.get("DANBOORU_API_KEY", "").strip()
     username = env_username or saved_username
@@ -91,9 +181,26 @@ def effective_credentials() -> tuple[str | None, str | None, str]:
     return username, api_key, source
 
 
+def effective_credentials() -> tuple[str | None, str | None, str]:
+    # A complete environment override works even when a vault is locked/offline.
+    if os.environ.get("DANBOORU_USERNAME", "").strip() and os.environ.get("DANBOORU_API_KEY", "").strip():
+        return _effective((None, None))
+    return _effective(saved_credentials())
+
+
 def credentials_status() -> dict[str, Any]:
-    username, api_key, source = effective_credentials()
-    saved_username, saved_api_key = saved_credentials()
+    with _credential_lock:
+        complete_override = bool(os.environ.get("DANBOORU_USERNAME", "").strip() and os.environ.get("DANBOORU_API_KEY", "").strip())
+        saved = saved_credentials(strict=not complete_override)
+        username, api_key, source = _effective(saved)
+        return _status(username, api_key, source, saved)
+
+
+def _status(
+    username: str | None, api_key: str | None, source: str,
+    saved: tuple[str | None, str | None],
+) -> dict[str, Any]:
+    saved_username, saved_api_key = saved
     return {
         "username": username,
         "has_api_key": bool(api_key),
@@ -104,33 +211,91 @@ def credentials_status() -> dict[str, Any]:
     }
 
 
-def save_credentials(username: str, api_key: str | None = None) -> dict[str, Any]:
-    username = username.strip()
-    _, saved_api_key = saved_credentials()
-    api_key = api_key.strip() if api_key is not None else saved_api_key
-    if not username:
-        raise ValueError("Danbooru username is required")
-    if not api_key:
-        raise ValueError("Danbooru API key is required")
+def _write_payload(payload: dict[str, Any]) -> None:
+    if not payload:
+        CREDENTIALS_PATH.unlink(missing_ok=True)
+        return
     CREDENTIALS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "username": username,
-        "api_key_dpapi": _protect(api_key),
-        "saved_at": datetime.now().astimezone().isoformat(),
-    }
-    temporary = CREDENTIALS_PATH.with_suffix(".tmp")
-    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    temporary = None
     try:
-        temporary.chmod(0o600)
-    except OSError:
-        pass
-    temporary.replace(CREDENTIALS_PATH)
-    return credentials_status()
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=CREDENTIALS_PATH.parent,
+                                         prefix=".danbooru_credentials-", suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(json.dumps(payload, indent=2) + "\n")
+        temporary.replace(CREDENTIALS_PATH)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def save_credentials(username: str, api_key: str | None = None) -> dict[str, Any]:
+    with _credential_lock:
+        username = username.strip()
+        if not username:
+            raise ValueError("Danbooru username is required")
+        api_key = api_key.strip() if api_key is not None else saved_credentials(strict=True)[1]
+        if not api_key:
+            raise ValueError("Danbooru API key is required")
+        payload = _saved_payload()
+        if _uses_linux_vault():
+            previous = payload.get("linux_secret_service", {})
+            reference = uuid.uuid4().hex
+            try:
+                _vault("set", reference, api_key)
+                if _vault("get", reference) != api_key:
+                    raise RuntimeError("Linux credential vault could not verify the saved API key.")
+                payload["linux_secret_service"] = {
+                    "username": username, "reference": reference,
+                    "saved_at": datetime.now().astimezone().isoformat(),
+                }
+                _write_payload(payload)
+            except (RuntimeError, OSError):
+                try:
+                    _vault("delete", reference)
+                except RuntimeError:
+                    pass
+                raise RuntimeError("Could not save Linux credentials. Existing saved credentials were preserved. " + _VAULT_ERROR) from None
+            if isinstance(previous, dict) and previous.get("reference"):
+                try:
+                    _vault("delete", str(previous["reference"]))
+                except RuntimeError:
+                    _logger.warning("Credentials saved, but a superseded Linux vault item could not be removed.")
+        else:
+            payload.update({
+                "username": username, "api_key_dpapi": _protect(api_key),
+                "saved_at": datetime.now().astimezone().isoformat(),
+            })
+            _write_payload(payload)
+        # The new key was verified already; do not turn a successful save into
+        # an error if the vault becomes unavailable immediately afterwards.
+        saved = (username, api_key)
+        return _status(*_effective(saved), saved)
 
 
 def clear_credentials() -> dict[str, Any]:
-    CREDENTIALS_PATH.unlink(missing_ok=True)
-    return credentials_status()
+    with _credential_lock:
+        payload = _saved_payload()
+        if _uses_linux_vault():
+            linux = payload.get("linux_secret_service")
+            if isinstance(linux, dict) and linux.get("reference"):
+                reference = str(linux["reference"])
+                secret = _vault("get", reference)
+                _vault("delete", reference)
+                del payload["linux_secret_service"]
+                try:
+                    _write_payload(payload)
+                except OSError:
+                    if secret:
+                        _vault("set", reference, secret)
+                    raise RuntimeError("Could not update the credential file; retry clearing credentials.") from None
+            # Preserve Windows DPAPI fields on Linux, even when no vault entry
+            # exists. Switching platforms must not erase the other OS's key.
+        else:
+            for field in ("username", "api_key_dpapi", "saved_at"):
+                payload.pop(field, None)
+            _write_payload(payload)
+        saved = saved_credentials()
+        return _status(*_effective(saved), saved)
 
 
 def credential_environment() -> dict[str, str]:
