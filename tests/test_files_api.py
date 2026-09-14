@@ -195,6 +195,54 @@ class FilesApiRouteTests(unittest.TestCase):
         # Forgetting a source is covered in test_folder_roles, against the batch
         # apply path the app actually uses.
 
+    def test_filesystem_browse_keeps_empty_folders_selectable(self) -> None:
+        result = self.files.browse_filesystem(str(self.library / "sub"))
+        self.assertEqual(result.path, str((self.library / "sub").resolve()))
+        self.assertEqual(result.entries, [])  # Files are not directory entries.
+        self.assertEqual(result.parent, str(self.library.resolve()))
+        self.assertTrue(self.files.browse_filesystem("").is_root)
+
+    def test_filesystem_browse_rejects_missing_folder(self) -> None:
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as caught:
+            self.files.browse_filesystem(str(self.library / "missing"))
+        self.assertEqual(caught.exception.status_code, 404)
+        self.assertEqual(caught.exception.detail, "Folder not found")
+
+    def test_filesystem_browse_rejects_regular_file(self) -> None:
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as caught:
+            self.files.browse_filesystem(str(self.library / "notes.txt"))
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertEqual(caught.exception.detail, "Choose a folder, not a file")
+
+    def test_filesystem_browse_reports_permission_failure(self) -> None:
+        from fastapi import HTTPException
+
+        with patch.object(Path, "iterdir", side_effect=PermissionError("denied")):
+            with self.assertRaises(HTTPException) as caught:
+                self.files.browse_filesystem(str(self.library))
+        self.assertEqual(caught.exception.status_code, 403)
+        self.assertEqual(caught.exception.detail, "Cannot read that folder: permission denied")
+
+    def test_filesystem_browse_reports_other_io_failures(self) -> None:
+        from fastapi import HTTPException
+
+        with patch.object(Path, "iterdir", side_effect=OSError("device unavailable")):
+            with self.assertRaises(HTTPException) as caught:
+                self.files.browse_filesystem(str(self.library))
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertEqual(caught.exception.detail, "Cannot browse that folder")
+
+    def test_filesystem_browse_rejects_invalid_path(self) -> None:
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as caught:
+            self.files.browse_filesystem("invalid\0path")
+        self.assertEqual(caught.exception.status_code, 400)
+
     def test_register_rejects_fenced_path(self) -> None:
         from fastapi import HTTPException
 

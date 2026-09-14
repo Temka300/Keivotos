@@ -303,7 +303,16 @@ def _scan_registered_source(
 @router.get("/api/files/fs", response_model=FsListing)
 def browse_filesystem(path: str = Query("")) -> FsListing:
     """List sub-directories so the UI can pick a folder to register."""
-    return FsListing(**filesystem.list_directories(path))
+    try:
+        return FsListing(**filesystem.list_directories(path))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Folder not found") from exc
+    except NotADirectoryError as exc:
+        raise HTTPException(status_code=400, detail="Choose a folder, not a file") from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="Cannot read that folder: permission denied") from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Cannot browse that folder") from exc
 
 
 @router.get("/api/files/sources", response_model=list[SourceInfo])

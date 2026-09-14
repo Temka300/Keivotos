@@ -13,12 +13,18 @@ assert.ok(['localhost', '127.0.0.1'].includes(new URL(config.url).hostname));
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
   page.setDefaultTimeout(10000);
   const errors = [];
+  const expectedHttpErrors = new Set();
   page.on('pageerror', e => errors.push(e.message));
-  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  page.on('console', message => {
+    if (message.type() !== 'error') return;
+    if (expectedHttpErrors.has(message.location().url) && message.text().startsWith('Failed to load resource:')) return;
+    errors.push(message.text());
+  });
   const picker = page.getByRole('dialog', { name: 'Choose a folder', exact: true });
   const field = picker.getByRole('textbox', { name: 'Folder path' });
   const select = picker.getByRole('button', { name: 'Choose this folder' });
   const sources = () => page.evaluate(async () => (await fetch('/api/files/sources')).json());
+  const unreadable = config.fixture + '/Unreadable folder';
   async function visit(path) {
     await field.fill(path);
     assert.equal(await select.isDisabled(), true, 'Edited path must be browsed before selection');
@@ -38,6 +44,29 @@ assert.ok(['localhost', '127.0.0.1'].includes(new URL(config.url).hostname));
     await page.getByRole('button', { name: 'Add folder', exact: true }).click();
     await picker.waitFor();
     await visit(config.fixture);
+    fs.mkdirSync(unreadable, { mode: 0o700 });
+    fs.chmodSync(unreadable, 0o000);
+    for (const [path, status, message] of [
+      [config.fixture + '/Missing folder', 404, 'Folder not found'],
+      [config.fixture + '/Upper/note.txt', 400, 'Choose a folder, not a file'],
+      [unreadable, 403, 'Cannot read that folder: permission denied'],
+    ]) {
+      await field.fill(path);
+      const responsePromise = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return url.pathname === '/api/files/fs' && url.searchParams.get('path') === path;
+      });
+      expectedHttpErrors.add(config.url + '/api/files/fs?' + new URLSearchParams({ path }));
+      await picker.getByRole('button', { name: 'Go', exact: true }).click();
+      assert.equal((await responsePromise).status(), status);
+      await picker.getByRole('alert').filter({ hasText: message }).waitFor();
+      assert.equal(await select.isDisabled(), true, 'Invalid folders cannot be selected');
+      assert.deepEqual(await sources(), [], 'Failed browsing must not register anything');
+      await visit(config.fixture);
+      assert.equal(await picker.getByRole('alert').count(), 0, 'A valid retry clears the error');
+    }
+    fs.chmodSync(unreadable, 0o700);
+    console.log('PASS: missing/file/permission errors prevent selection; valid retry recovers without registration');
     await picker.getByRole('button', { name: 'Upper', exact: true }).click();
     await page.waitForFunction(p => document.querySelector('dialog[open] input')?.value === p, config.fixture + '/Upper');
     await picker.getByRole('button', { name: '↑ Up' }).click();
@@ -154,6 +183,7 @@ assert.ok(['localhost', '127.0.0.1'].includes(new URL(config.url).hostname));
     assert.deepEqual(errors, [], 'Browser errors');
     console.log('PASS: no browser errors');
   } finally {
+    if (fs.existsSync(unreadable)) fs.chmodSync(unreadable, 0o700);
     await browser.close();
   }
 })().catch(error => { console.error(error); process.exitCode = 1; });

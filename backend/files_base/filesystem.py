@@ -49,21 +49,18 @@ def _drives() -> list[dict[str, str]]:
 
 
 def list_directories(path: str) -> dict[str, object]:
-    """List the sub-directories of ``path`` (or the drive/root list if empty)."""
+    """List sub-directories (or locations if empty); propagate unreadable paths."""
     if not path:
         return {"path": "", "parent": None, "is_root": True, "entries": _drives()}
 
     current = Path(path).expanduser().resolve(strict=False)
     entries: list[dict[str, str]] = []
-    try:
-        for child in sorted(current.iterdir(), key=lambda item: item.name.casefold()):
-            try:
-                if child.is_dir() and not child.name.startswith("."):
-                    entries.append({"name": child.name, "path": str(child)})
-            except OSError:
-                continue
-    except OSError:
-        entries = []
+    for child in sorted(current.iterdir(), key=lambda item: item.name.casefold()):
+        try:
+            if child.is_dir() and not child.name.startswith("."):
+                entries.append({"name": child.name, "path": str(child)})
+        except OSError:
+            continue
 
     # A drive/filesystem root's parent is itself; expose "" so the UI can step up
     # to the drive list.
