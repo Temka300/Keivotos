@@ -6,7 +6,7 @@ import os
 import re
 import sqlite3
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +72,22 @@ def local_recovery_status() -> dict[str, Any]:
     }
 
 
+def _next_checkpoint_stamp() -> str:
+    """Keep filenames unique and ordered even within one filesystem clock tick."""
+    current = datetime.now(timezone.utc)
+    for path in _checkpoints():
+        match = re.match(r"user_(\d{8}_\d{6}_\d{6})_", path.name)
+        if match is None:
+            continue
+        try:
+            previous = datetime.strptime(match.group(1), "%Y%m%d_%H%M%S_%f").replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+        if previous >= current:
+            current = previous + timedelta(microseconds=1)
+    return current.strftime("%Y%m%d_%H%M%S_%f")
+
+
 def create_local_recovery_checkpoint(reason: str = "manual") -> dict[str, Any]:
     """Create a verified snapshot unless the newest checkpoint is identical."""
     with _checkpoint_lock:
@@ -79,7 +95,7 @@ def create_local_recovery_checkpoint(reason: str = "manual") -> dict[str, Any]:
             raise FileNotFoundError(f"User database does not exist: {USER_DB_PATH}")
         _check_sqlite(USER_DB_PATH)
         CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        stamp = _next_checkpoint_stamp()
         safe_reason = re.sub(r"[^a-z0-9_-]+", "-", reason.strip().lower()).strip("-") or "manual"
         temporary = CHECKPOINT_DIR / f".{stamp}_{safe_reason}.partial"
         final = CHECKPOINT_DIR / f"user_{stamp}_{safe_reason}.sqlite"

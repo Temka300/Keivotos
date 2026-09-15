@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import shutil
+import os
+from datetime import datetime, timezone
+from unittest.mock import patch
 import sqlite3
 import sys
 import unittest
@@ -43,6 +46,40 @@ class LocalRecoveryTests(unittest.TestCase):
         connection.execute("INSERT INTO notes(value) VALUES (?)", (value,))
         connection.commit()
         connection.close()
+
+    def test_same_clock_tick_preserves_distinct_checkpoints_and_rotation(self) -> None:
+        class FrozenDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(2026, 9, 15, 12, 0, tzinfo=timezone.utc)
+
+        snapshot = local_recovery._snapshot
+
+        def snapshot_with_coarse_mtime(source, destination):
+            snapshot(source, destination)
+            os.utime(destination, ns=(1_800_000_000_000_000_000,) * 2)
+
+        with patch.object(local_recovery, "datetime", FrozenDateTime), patch.object(
+            local_recovery, "_snapshot", side_effect=snapshot_with_coarse_mtime
+        ):
+            first = local_recovery.create_local_recovery_checkpoint("sync")
+            first_path = Path(first["latest_path"])
+            first_bytes = first_path.read_bytes()
+            self.change_database("second")
+            second = local_recovery.create_local_recovery_checkpoint("sync")
+            self.assertEqual(second["count"], 2)
+            self.assertNotEqual(second["latest_path"], first["latest_path"])
+            self.assertEqual(first_path.read_bytes(), first_bytes)
+            for number in range(6):
+                self.change_database(f"next-{number}")
+                result = local_recovery.create_local_recovery_checkpoint("sync")
+            self.assertEqual(result["count"], 5)
+            with sqlite3.connect(result["latest_path"]) as connection:
+                self.assertEqual(connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0], 8)
+            unchanged = local_recovery.create_local_recovery_checkpoint("sync")
+            self.assertFalse(unchanged["created"])
+            self.assertEqual(unchanged["latest_path"], result["latest_path"])
+            self.assertFalse(list(self.checkpoints.glob("*.partial")))
 
     def test_checkpoint_is_verified_deduplicated_and_rotated(self) -> None:
         created = local_recovery.create_local_recovery_checkpoint("startup")
