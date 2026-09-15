@@ -4,6 +4,7 @@ import shutil
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -61,6 +62,30 @@ class FilesBaseIndexTests(unittest.TestCase):
             index.scan_source(connection, "src-1", self.library)
             hits = index.search_by_name(connection, "report")
             self.assertEqual([entry.name for entry in hits], ["Report.DOCX"])
+
+    def test_scan_availability_does_not_depend_on_clock_progress(self) -> None:
+        for next_time in ("2026-09-15T12:00:00+00:00", "2026-09-15T11:00:00+00:00"):
+            with self.subTest(next_time=next_time):
+                missing = self.library / "a.png"
+                missing.write_bytes(b"png-bytes")
+                with index.open_index(self.db_path) as connection:
+                    with patch.object(index, "_now", return_value="2026-09-15T12:00:00+00:00"):
+                        index.scan_source(connection, "src-1", self.library)
+                    before = connection.execute("SELECT id, indexed_at, seen_at FROM files_index WHERE path = ?", (str(missing),)).fetchone()
+                    missing.unlink()
+                    with patch.object(index, "_now", return_value=next_time):
+                        summary = index.scan_source(connection, "src-1", self.library)
+                    self.assertEqual(summary["unavailable"], 1)
+                    after = connection.execute("SELECT id, indexed_at, seen_at, available FROM files_index WHERE path = ?", (str(missing),)).fetchone()
+                    self.assertEqual(tuple(after)[:3], tuple(before))
+                    self.assertEqual(after["available"], 0)
+                    self.assertEqual(len(index.list_directory(connection, "src-1", "")), 3)
+                    missing.write_bytes(b"png-bytes")
+                    with patch.object(index, "_now", return_value=next_time):
+                        self.assertEqual(index.scan_source(connection, "src-1", self.library)["unavailable"], 0)
+                    restored = connection.execute("SELECT id, available FROM files_index WHERE path = ?", (str(missing),)).fetchone()
+                    self.assertEqual(restored["id"], before["id"])
+                    self.assertEqual(restored["available"], 1)
 
     def test_missing_file_is_marked_unavailable_not_deleted(self) -> None:
         with index.open_index(self.db_path) as connection:

@@ -109,6 +109,12 @@ def scan_source(
         for path in excluded_roots
         if Path(path).expanduser().resolve(strict=False) != root
     }
+    # Reset availability inside the scan transaction, then mark observed rows.
+    # Wall clocks can repeat or move backwards, so timestamps cannot identify
+    # which rows this scan visited. Keep their last-seen timestamps intact.
+    connection.execute(
+        "UPDATE files_index SET available = 0 WHERE source_id = ?", (source_id,)
+    )
     scan_token = _now()
     added = updated = directories = files = 0
 
@@ -172,10 +178,9 @@ def scan_source(
                 upsert(current / file_name, is_dir=False)
 
     unavailable = connection.execute(
-        "UPDATE files_index SET available = 0 "
-        "WHERE source_id = ? AND (seen_at IS NULL OR seen_at < ?)",
-        (source_id, scan_token),
-    ).rowcount
+        "SELECT COUNT(*) FROM files_index WHERE source_id = ? AND available = 0",
+        (source_id,),
+    ).fetchone()[0]
     connection.commit()
     return {
         "added": added,
