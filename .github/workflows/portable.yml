@@ -1,0 +1,83 @@
+name: Portable builds
+run-name: portable-${{ inputs.commit }}-${{ inputs.target }}-${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full pushed commit SHA to build
+        required: true
+        type: string
+      target:
+        description: Platforms to build
+        type: choice
+        options: [both, linux, windows]
+        default: both
+      request_id:
+        description: Optional identifier supplied by the download helper
+        type: string
+        default: manual
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(inputs.target == 'both' && '["linux","windows"]' || inputs.target == 'linux' && '["linux"]' || '["windows"]') }}
+    runs-on: ${{ matrix.target == 'linux' && 'ubuntu-22.04' || 'windows-2022' }}
+    timeout-minutes: 45
+    env:
+      BUILD_COMMIT: ${{ inputs.commit }}
+      BUILD_TARGET: ${{ matrix.target }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.11'
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Prepare locked test environment
+        run: uv sync --locked --group dev --group build
+      - name: Verify selected commit
+        run: |
+          uv run --locked python -c 'import os,re,subprocess; sha=os.environ["BUILD_COMMIT"]; assert re.fullmatch("[0-9a-f]{40}",sha), "Use a full commit SHA"; assert subprocess.check_output(["git","rev-parse","HEAD"],text=True).strip()==sha'
+      - name: Compile and test
+        env:
+          KEIVOTOS_HOME: ${{ runner.temp }}/keivotos-test-home
+        run: |
+          uv run --locked python -m compileall -q backend scripts app.py
+          uv run --locked python -m pytest -q
+      - name: Build Linux and check packaged startup
+        if: matrix.target == 'linux'
+        run: bash scripts/release/build_linux.sh --target linux
+      - name: Build Windows and check packaged startup
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: ./scripts/release/build_windows.ps1 -Target windows
+      - name: Record artifact provenance
+        run: |
+          uv run --locked python -c 'import json,os; from pathlib import Path; from backend.product import VERSION; Path("artifacts/build-manifest.json").write_text(json.dumps(dict(commit=os.environ["BUILD_COMMIT"],target=os.environ["BUILD_TARGET"],version=VERSION)))'
+      - name: Upload verified portable files
+        uses: actions/upload-artifact@v4
+        with:
+          name: keivotos-${{ matrix.target }}
+          path: |
+            artifacts/*.zip
+            artifacts/*.zip.sha256
+            artifacts/build-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

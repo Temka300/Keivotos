@@ -1,5 +1,9 @@
 # Building the Windows portable distribution
 
+For both platforms from native Ubuntu or Windows, use the
+[GitHub build-and-download workflow](remote.md). The commands below are local
+build options.
+
 Keivotos uses a PyInstaller one-folder build.
 
 ## Build
