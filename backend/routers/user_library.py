@@ -25,7 +25,7 @@ from services.query_helpers import (
     user_file_lookup_sql,
     user_file_match,
 )
-from services.user_library import (
+from modules.danbooru.user_library import (
     _combo_from_row,
     _combo_key,
     _combo_name,
