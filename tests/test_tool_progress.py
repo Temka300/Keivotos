@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from modules.danbooru import tools  # noqa: E402
-from routers import tools as tool_routes  # noqa: E402
+from modules.danbooru.routers import tools as tool_routes  # noqa: E402
 
 
 class ToolProgressTests(unittest.TestCase):

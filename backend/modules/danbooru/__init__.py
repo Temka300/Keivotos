@@ -59,10 +59,10 @@ def _routers() -> list:
     """Danbooru's HTTP surface, imported lazily at app-composition time.
 
     Module routers live under ``modules/danbooru/routers`` with unchanged URLs.
-    The mixed tools router remains at suite level until its endpoints are split.
+    Suite maintenance endpoints are mounted independently by the shell.
     """
     from modules.danbooru.routers import artists, collections, discovery, folders, images_media, stats, tags, user_library
-    from routers import tools
+    from modules.danbooru.routers import tools
 
     return [
         images_media.router,

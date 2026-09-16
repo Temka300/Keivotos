@@ -3,63 +3,22 @@ from __future__ import annotations
 import base64
 import json
 import os
-import sqlite3
 import urllib.error
 import urllib.parse
 import urllib.request
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 from fastapi import APIRouter, HTTPException, Query
 from modules.danbooru.automation import automation_status, set_automation_enabled
-from backup_bundle import (
-    backup_configuration,
-    backup_estimate,
-    create_backup_bundle,
-    inspect_backup_bundle,
-    restore_backup_bundle,
-    update_backup_configuration,
-)
-from config import (
-    DATA_DB_PATH,
-    DATA_ROOT,
-    GALLERY_DL_DIR,
-    METADATA_DIR,
-    SCAN_FOLDERS,
-    get_backup_config,
-    public_storage_config,
-    save_config,
-)
-from credentials import (
-    clear_credentials,
-    credential_environment,
-    credentials_status,
-    effective_credentials,
-    save_credentials,
-)
+from config import DATA_DB_PATH, DATA_ROOT, GALLERY_DL_DIR, METADATA_DIR, SCAN_FOLDERS
+from credentials import clear_credentials, credential_environment, credentials_status, effective_credentials, save_credentials
 from database import get_data_db
-from local_recovery import create_local_recovery_checkpoint, local_recovery_status
 from modules.danbooru.client import USER_AGENT
 from modules.danbooru.folder_registry import registered_folder_rows
-from modules.danbooru.tools import (
-    _cancel_tool,
-    _extra_root_args,
-    _import_discover_command,
-    _import_enrich_command,
-    _import_finalize_command,
-    _launch_tool,
-    _sync_command,
-    _sync_scan_paths,
-    _tool_base_command,
-    exclusive_tool_operation,
-    tool_task_snapshot,
-)
+from modules.danbooru.tools import _cancel_tool, _extra_root_args, _import_discover_command, _import_enrich_command, _import_finalize_command, _launch_tool, _sync_command, _sync_scan_paths, _tool_base_command, tool_task_snapshot
 from modules.danbooru.models import AutomationStatus, AutomationUpdate, ImportRunRequest, ToolStatusInfo
-from models import BackupConfigurationUpdate, BackupCreateRequest, BackupRestoreRequest, ThumbnailCacheLimitUpdate
 from modules.danbooru.models import BackfillToolRequest, DanbooruCredentialsUpdate, DanbooruCredentialStatus, ToolFolderInfo, ToolInfo, ToolRunResult
-from thumbnails import cleanup_thumbnail_cache, clear_thumbnail_cache, prune_thumbnail_cache, thumbnail_cache_status, thumbnail_cache_token
 from modules.danbooru.tag_history import record_removed_tags_from_archive
 
 router = APIRouter()
@@ -123,11 +82,6 @@ def get_automation():
 @router.put("/api/automation", response_model=AutomationStatus)
 def update_automation(update: AutomationUpdate):
     return set_automation_enabled(update.enabled, update.interval_minutes)
-
-
-@router.get("/api/storage")
-def storage_configuration():
-    return public_storage_config()
 
 
 def _import_phase_counts() -> dict[str, int]:
@@ -319,99 +273,6 @@ def run_backfill_tool(request: BackfillToolRequest):
         environment=credential_environment(),
         stage_names=["Find Danbooru posts by image MD5 and write sidecars"],
     )
-
-
-@router.get("/api/backups")
-def get_backup_configuration():
-    return backup_configuration()
-
-
-@router.get("/api/local-recovery")
-def get_local_recovery():
-    return local_recovery_status()
-
-
-@router.post("/api/local-recovery/checkpoint")
-def create_recovery_checkpoint():
-    try:
-        return create_local_recovery_checkpoint("manual")
-    except (FileNotFoundError, OSError, RuntimeError, sqlite3.DatabaseError) as exc:
-        raise HTTPException(409, str(exc)) from exc
-
-
-@router.put("/api/backups")
-def configure_backups(update: BackupConfigurationUpdate):
-    try:
-        return update_backup_configuration(update.components)
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.post("/api/backups/estimate")
-def estimate_backup(request: BackupCreateRequest):
-    return backup_estimate(request.components)
-
-
-@router.post("/api/backups/create")
-def create_metadata_backup(request: BackupCreateRequest):
-    try:
-        with exclusive_tool_operation("backing up"):
-            return create_backup_bundle(request.components)
-    except (ValueError, FileNotFoundError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(409, str(exc)) from exc
-
-
-@router.get("/api/backups/{backup_name}/inspect")
-def inspect_metadata_backup(backup_name: str):
-    destination = Path(get_backup_config()["destination"]).expanduser()
-    try:
-        return inspect_backup_bundle(destination / Path(backup_name).name)
-    except (ValueError, FileNotFoundError, KeyError, json.JSONDecodeError, zipfile.BadZipFile, RuntimeError) as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.post("/api/backups/restore")
-def restore_metadata_backup(request: BackupRestoreRequest):
-    try:
-        with exclusive_tool_operation("restoring"):
-            return restore_backup_bundle(request.name)
-    except (ValueError, FileNotFoundError, KeyError, json.JSONDecodeError, zipfile.BadZipFile) as exc:
-        raise HTTPException(400, str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(409, str(exc)) from exc
-
-
-def _valid_thumbnail_keys() -> set[str]:
-    with get_data_db() as connection:
-        rows = connection.execute("SELECT path, local_md5 FROM files").fetchall()
-    return {
-        (str(row["local_md5"]).lower() if row["local_md5"] and len(str(row["local_md5"])) == 32 else thumbnail_cache_token(row["path"]))
-        for row in rows
-    }
-
-
-@router.get("/api/thumbnails/cache")
-def get_thumbnail_cache():
-    return thumbnail_cache_status()
-
-
-@router.post("/api/thumbnails/cache/cleanup")
-def cleanup_thumbnails():
-    return cleanup_thumbnail_cache(_valid_thumbnail_keys())
-
-
-@router.post("/api/thumbnails/cache/clear")
-def clear_thumbnails():
-    removed = clear_thumbnail_cache()
-    return {**thumbnail_cache_status(), "removed": removed}
-
-
-@router.put("/api/thumbnails/cache/limit")
-def update_thumbnail_limit(update: ThumbnailCacheLimitUpdate):
-    save_config({"thumbnail_cache_limit_gb": update.limit_gb})
-    return prune_thumbnail_cache(update.limit_gb * 1024 * 1024 * 1024)
 
 
 @router.post("/api/tools/{tool_id}/run", response_model=ToolRunResult)

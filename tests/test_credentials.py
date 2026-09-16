@@ -203,7 +203,7 @@ def test_worker_failures_are_bounded_and_sanitized(monkeypatch, failure):
 
 def test_routes_expose_actionable_vault_errors(vault, monkeypatch):
     from fastapi import HTTPException
-    from routers import tools
+    from modules.danbooru.routers import tools
     for operation, route in [('credentials_status', tools.get_danbooru_credentials),
                              ('clear_credentials', tools.delete_danbooru_credentials)]:
         with patch.object(tools, operation, side_effect=RuntimeError(credentials._VAULT_ERROR)):

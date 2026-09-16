@@ -46,5 +46,4 @@ class DanbooruApiOwnershipTests(unittest.TestCase):
                 self.assertNotIn(key, seen)
                 seen.add(key)
                 self.assertIn(method.lower(), schema["paths"][route.path_format])
-        self.assertTrue(all(route.endpoint.__module__.startswith("modules.danbooru.routers.")
-                            or route.endpoint.__module__ == "routers.tools" for route in routes))
+        self.assertTrue(all(route.endpoint.__module__.startswith("modules.danbooru.routers.") for route in routes))

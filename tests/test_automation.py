@@ -20,7 +20,7 @@ from modules.danbooru.automation import find_changed_media_candidates  # noqa: E
 class AutomationCandidateTests(unittest.TestCase):
     def test_router_and_lifecycle_share_watcher_objects(self) -> None:
         from modules.danbooru import lifecycle
-        from routers import tools
+        from modules.danbooru.routers import tools
 
         self.assertIs(lifecycle.automation_loop, automation.automation_loop)
         self.assertIs(tools.automation_status, automation.automation_status)

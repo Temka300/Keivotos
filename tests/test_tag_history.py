@@ -18,7 +18,7 @@ from modules.danbooru import tag_history  # noqa: E402
 class TagHistoryTests(unittest.TestCase):
     def test_callers_share_history_functions(self) -> None:
         from modules.danbooru.routers import images_media
-        from routers import tools
+        from modules.danbooru.routers import tools
 
         self.assertIs(images_media.removed_tags_for_file, tag_history.removed_tags_for_file)
         self.assertIs(tools.record_removed_tags_from_archive, tag_history.record_removed_tags_from_archive)
