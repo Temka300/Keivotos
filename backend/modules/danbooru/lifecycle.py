@@ -6,9 +6,7 @@ hook, and only when Danbooru is enabled. Moving it here from the suite
 enforced base/suite core (no ``modules.*`` import) — the boundary the
 ``test_module_boundaries`` tripwire protects.
 
-``automation`` still lives at the backend top level (it is imported by
-``routers/tools.py`` too); relocating it under this module is v1.1.6 Danbooru
-modularization, not this framework slice.
+The local-only watcher is owned by this module as well.
 """
 from __future__ import annotations
 
@@ -17,7 +15,7 @@ import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from automation import automation_loop
+from modules.danbooru.automation import automation_loop
 from config import DATA_ROOT, SIDECAR_DIR
 from database import get_data_db
 from modules.danbooru.folder_registry import library_roots

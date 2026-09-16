@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from automation import automation_status, set_automation_enabled
+from modules.danbooru.automation import automation_status, set_automation_enabled
 from backup_bundle import (
     backup_configuration,
     backup_estimate,

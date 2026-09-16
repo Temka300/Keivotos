@@ -15,17 +15,14 @@ Two rules are enforced:
 2. **No cross-module imports.** A file under ``modules/<x>/`` may import its own
    package but never ``modules/<y>`` for another module ``y``.
 
+The local watcher and its lifecycle hook live in Danbooru. The suite
+``lifecycle.py`` is enforced as core below.
+
 Deliberately *outside* the enforced core, for now:
 
 - ``module_registry.py`` is the composition root — the one place allowed to
   import every module's descriptor factory. That is the registration boundary,
   not a leak.
-- ``automation.py`` (Danbooru's auto-ingest watcher) still lives at the backend
-  top level and imports ``modules.danbooru.tools`` by nature — it is Danbooru
-  code. Relocating it under ``modules/danbooru/`` is v1.1.6 Danbooru
-  modularization; until then it stays out of the core set. ``lifecycle.py`` was
-  in this list too until the descriptor-driven-startup slice made it
-  module-agnostic; it is now enforced as core (below).
 - Danbooru's grandfathered unprefixed routers (``routers/images_media.py`` etc.)
   are Danbooru's HTTP surface living in ``routers/`` for historical reasons
   (contract §8). They legitimately import ``modules.danbooru`` and are not part

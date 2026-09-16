@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import shutil
 import sys
@@ -7,17 +8,29 @@ import types
 import unittest
 from contextlib import nullcontext
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-import automation  # noqa: E402
-from automation import find_changed_media_candidates  # noqa: E402
+from modules.danbooru import automation  # noqa: E402
+from modules.danbooru.automation import find_changed_media_candidates  # noqa: E402
 
 
 class AutomationCandidateTests(unittest.TestCase):
+    def test_router_and_lifecycle_share_watcher_objects(self) -> None:
+        from modules.danbooru import lifecycle
+        from routers import tools
+
+        self.assertIs(lifecycle.automation_loop, automation.automation_loop)
+        self.assertIs(tools.automation_status, automation.automation_status)
+        self.assertIs(tools.set_automation_enabled, automation.set_automation_enabled)
+
     def setUp(self) -> None:
+        for name, value in (("_candidate_count", 0), ("_last_run_at", None)):
+            override = patch.object(automation, name, value)
+            override.start()
+            self.addCleanup(override.stop)
         self.temp = ROOT / "tests" / ".tmp-automation"
         shutil.rmtree(self.temp, ignore_errors=True)
         self.temp.mkdir(parents=True)
@@ -48,6 +61,62 @@ class AutomationCandidateTests(unittest.TestCase):
 
     def test_unavailable_roots_are_ignored(self) -> None:
         self.assertEqual(find_changed_media_candidates([self.temp / "missing"], {}), [])
+
+    def test_disabled_or_unconfirmed_watcher_does_not_scan(self) -> None:
+        for enabled, enabled_at in ((False, "previous"), (True, None)):
+            with self.subTest(enabled=enabled), patch.object(
+                automation, "get_automation_config",
+                return_value={"enabled": enabled, "enabled_at": enabled_at, "interval_minutes": 15},
+            ), patch.object(automation, "_sync_scan_paths") as scan:
+                self.assertEqual(automation.run_automation_tick()["candidate_count"], 0)
+                scan.assert_not_called()
+
+    def test_busy_tool_preserves_last_status_without_scanning(self) -> None:
+        with patch.object(automation, "get_automation_config", return_value={
+            "enabled": True, "enabled_at": "previous", "interval_minutes": 15,
+        }), patch.object(automation, "exclusive_tool_operation", side_effect=RuntimeError("busy")), patch.object(
+            automation, "_sync_scan_paths",
+        ) as scan, patch.object(automation, "_candidate_count", 3):
+            self.assertEqual(automation.run_automation_tick()["candidate_count"], 3)
+            scan.assert_not_called()
+
+    def test_toggle_clamps_interval_and_retains_enable_timestamp(self) -> None:
+        config = {"enabled": False, "enabled_at": None, "interval_minutes": 15}
+
+        def save(updates):
+            config.update({key.removeprefix("automation_"): value for key, value in updates.items()})
+
+        with patch.object(automation, "get_automation_config", side_effect=lambda: dict(config)), patch.object(
+            automation, "save_config", side_effect=save,
+        ):
+            first = automation.set_automation_enabled(True, 1)
+            self.assertTrue(first["enabled_at"])
+            self.assertEqual(first["interval_minutes"], 5)
+            second = automation.set_automation_enabled(True, 9999)
+            self.assertEqual(second["enabled_at"], first["enabled_at"])
+            self.assertEqual(second["interval_minutes"], 1440)
+            automation._candidate_count = 4
+            stopped = automation.set_automation_enabled(False)
+            self.assertEqual(stopped["candidate_count"], 0)
+            self.assertEqual(stopped["enabled_at"], first["enabled_at"])
+
+    def test_loop_retries_tick_errors_and_propagates_cancellation(self) -> None:
+        async def exercise():
+            with patch.object(automation.asyncio, "to_thread", new_callable=AsyncMock) as tick, patch.object(
+                automation.asyncio, "sleep", new_callable=AsyncMock,
+            ) as sleep, patch.object(automation, "get_automation_config", return_value={"interval_minutes": 7}), patch.object(
+                automation.logger, "exception",
+            ) as logged:
+                tick.side_effect = [ValueError("fixture failure"), None]
+                sleep.side_effect = [None, asyncio.CancelledError()]
+                with self.assertRaises(asyncio.CancelledError):
+                    await automation.automation_loop()
+                self.assertEqual(tick.await_count, 2)
+                tick.assert_awaited_with(automation.run_automation_tick)
+                self.assertEqual([call.args for call in sleep.await_args_list], [(420,), (420,)])
+                logged.assert_called_once_with("Automatic library ingest tick failed")
+
+        asyncio.run(exercise())
 
     def test_watcher_always_uses_the_incremental_sync_path(self) -> None:
         launched: dict[str, object] = {}
