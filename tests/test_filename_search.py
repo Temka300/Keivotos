@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from modules.danbooru import search  # noqa: E402
-from services import home  # noqa: E402
+from modules.danbooru import home  # noqa: E402
 
 
 class FilenameSearchTests(unittest.TestCase):

@@ -19,7 +19,7 @@ from models import (
     TagInfo,
 )
 from modules.danbooru.image_queries import get_file_identity
-from services.home import clear_home_caches
+from modules.danbooru.home import clear_home_caches
 from services.query_helpers import (
     user_file_lookup_params,
     user_file_lookup_sql,

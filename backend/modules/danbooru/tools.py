@@ -35,7 +35,7 @@ from config import (
 from credentials import credential_environment
 from local_recovery import create_local_recovery_checkpoint
 from modules.danbooru.folder_registry import registered_folder_rows
-from services.home import clear_home_caches
+from modules.danbooru.home import clear_home_caches
 
 
 # Resolved against the code root rather than this file's location: the old

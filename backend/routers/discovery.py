@@ -39,7 +39,7 @@ from modules.danbooru.challenges import (
     daily_challenge_seed,
     daily_challenge_tag_count,
 )
-from services.home import (
+from modules.danbooru.home import (
     HOME_IMAGE_RAILS_CACHE,
     HOME_IMAGE_RAIL_CATEGORIES,
     HOME_TAGS_CACHE,
