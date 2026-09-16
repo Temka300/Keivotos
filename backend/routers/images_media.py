@@ -94,7 +94,7 @@ from thumbnails import (
     thumbnail_cache_token,
 )
 from typing import Any
-from tag_history import removed_tags_for_file
+from modules.danbooru.tag_history import removed_tags_for_file
 
 router = APIRouter()
 

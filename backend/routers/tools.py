@@ -75,7 +75,7 @@ from models import (
     ToolRunResult,
 )
 from thumbnails import cleanup_thumbnail_cache, clear_thumbnail_cache, prune_thumbnail_cache, thumbnail_cache_status, thumbnail_cache_token
-from tag_history import record_removed_tags_from_archive
+from modules.danbooru.tag_history import record_removed_tags_from_archive
 
 router = APIRouter()
 
