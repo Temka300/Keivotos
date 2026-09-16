@@ -58,6 +58,7 @@ CORE_FILES = (
     "lifecycle.py",
     "routers/files.py",
     "routers/suite.py",
+    "routers/user_settings.py",
 )
 
 

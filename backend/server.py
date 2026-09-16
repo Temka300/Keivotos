@@ -3,11 +3,11 @@
 from config import CODE_ROOT, MODULE_REGISTRY
 from fastapi.responses import FileResponse
 from app_factory import app
-from routers import stats, suite
+from routers import suite, user_settings
 
 # Suite-shell routers: the module registry itself and suite-level user settings.
 # They belong to no module and are always mounted.
-for shell_router in (suite.router, stats.router):
+for shell_router in (suite.router, user_settings.router):
     app.include_router(shell_router)
 
 # Every registered surface contributes its own routers — the Files base and each

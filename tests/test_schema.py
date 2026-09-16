@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 import database  # noqa: E402
 from models import UserSettingUpdate  # noqa: E402
-from routers import stats  # noqa: E402
+from routers import user_settings  # noqa: E402
 from schema import ensure_data_schema  # noqa: E402
 
 
@@ -61,14 +61,14 @@ class SharedSchemaTests(unittest.TestCase):
                     )
                 }
             self.assertIn("user_settings", tables)
-            self.assertEqual(stats.get_user_setting("profile_name").value, "Keivotos")
-            saved = stats.put_user_setting(
+            self.assertEqual(user_settings.get_user_setting("profile_name").value, "Keivotos")
+            saved = user_settings.put_user_setting(
                 "profile_name",
                 UserSettingUpdate(value="  Local Curator  "),
             )
             self.assertEqual(saved.value, "Local Curator")
-            self.assertEqual(stats.get_user_setting("profile_name").value, "Local Curator")
-            reset = stats.put_user_setting("profile_name", UserSettingUpdate(value="   "))
+            self.assertEqual(user_settings.get_user_setting("profile_name").value, "Local Curator")
+            reset = user_settings.put_user_setting("profile_name", UserSettingUpdate(value="   "))
             self.assertEqual(reset.value, "Keivotos")
 
 

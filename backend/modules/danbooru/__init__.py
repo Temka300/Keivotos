@@ -60,8 +60,7 @@ def _routers() -> list:
 
     These routes are still unprefixed and physically live under ``routers/``
     (grandfathered, SUITE_MODULE_CONTRACT §8). Declaring them here makes the
-    module own its surface without moving files; the relocation behind
-    ``/api/danbooru`` is the v1.1.6 modularization work.
+    module own its surface without changing the existing public URLs.
     """
     from routers import (
         artists,
@@ -69,6 +68,7 @@ def _routers() -> list:
         discovery,
         folders,
         images_media,
+        stats,
         tags,
         tools,
         user_library,
@@ -83,6 +83,7 @@ def _routers() -> list:
         user_library.router,
         collections.router,
         tools.router,
+        stats.router,
     ]
 
 
