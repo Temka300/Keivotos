@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from models import HomeCoverCandidate, HomeImageRail, HomeImageRailItem, HomeImageRails, HomeTagInfo, HomeTags
+from modules.danbooru.models import HomeCoverCandidate, HomeImageRail, HomeImageRailItem, HomeImageRails, HomeTagInfo, HomeTags
 from thumbnails import thumbnail_cache_token
 
 from modules.danbooru.query_helpers import normalize_rating_values, user_file_match

@@ -28,7 +28,7 @@ from PIL import Image
 
 from config import ARTIST_PROFILE_ARCHIVE_DIR, CODE_ROOT
 from database import get_user_db
-from models import ArtistProfileArchiveResult, ArtistProfileAsset
+from modules.danbooru.models import ArtistProfileArchiveResult, ArtistProfileAsset
 from modules.danbooru.client import USER_AGENT
 from modules.danbooru.tag_names import normalize_search_tag
 

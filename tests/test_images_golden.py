@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 import database  # noqa: E402
 from modules.danbooru import image_queries  # noqa: E402
-from routers import images_media  # noqa: E402
+from modules.danbooru.routers import images_media  # noqa: E402
 
 
 DATA_SCHEMA = """

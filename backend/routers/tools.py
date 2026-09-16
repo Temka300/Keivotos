@@ -56,24 +56,9 @@ from modules.danbooru.tools import (
     exclusive_tool_operation,
     tool_task_snapshot,
 )
-from models import (
-    AutomationStatus,
-    AutomationUpdate,
-    BackupConfigurationUpdate,
-    BackupCreateRequest,
-    BackupRestoreRequest,
-    ImportRunRequest,
-    ThumbnailCacheLimitUpdate,
-    ToolStatusInfo,
-)
-from models import (
-    BackfillToolRequest,
-    DanbooruCredentialsUpdate,
-    DanbooruCredentialStatus,
-    ToolFolderInfo,
-    ToolInfo,
-    ToolRunResult,
-)
+from modules.danbooru.models import AutomationStatus, AutomationUpdate, ImportRunRequest, ToolStatusInfo
+from models import BackupConfigurationUpdate, BackupCreateRequest, BackupRestoreRequest, ThumbnailCacheLimitUpdate
+from modules.danbooru.models import BackfillToolRequest, DanbooruCredentialsUpdate, DanbooruCredentialStatus, ToolFolderInfo, ToolInfo, ToolRunResult
 from thumbnails import cleanup_thumbnail_cache, clear_thumbnail_cache, prune_thumbnail_cache, thumbnail_cache_status, thumbnail_cache_token
 from modules.danbooru.tag_history import record_removed_tags_from_archive
 

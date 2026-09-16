@@ -17,15 +17,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from database import get_data_db
-from models import (
-    ArtistUrl,
-    RelatedImageInfo,
-    TagWikiExample,
-    TagWikiInfo,
-    TagWikiSection,
-    TagWikiTextLine,
-    TagWikiTextPart,
-)
+from modules.danbooru.models import ArtistUrl, RelatedImageInfo, TagWikiExample, TagWikiInfo, TagWikiSection, TagWikiTextLine, TagWikiTextPart
 from modules.danbooru.client import DANBOORU_POST_URL_PREFIX, danbooru_json
 from modules.danbooru.relations import related_infos_for_danbooru_ids
 from modules.danbooru.tag_names import normalize_search_tag

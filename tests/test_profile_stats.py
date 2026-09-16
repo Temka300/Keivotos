@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 import database
 from fastapi import HTTPException
 from models import UserSettingUpdate
-from routers import stats
+from modules.danbooru.routers import stats
 from routers import user_settings as settings
 from modules.danbooru import profile
 

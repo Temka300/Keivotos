@@ -4,7 +4,7 @@ import hashlib
 import re
 from typing import Any
 
-from models import DailyChallengeClues, DailyChallengeImage, DailyChallengeOption
+from modules.danbooru.models import DailyChallengeClues, DailyChallengeImage, DailyChallengeOption
 from thumbnails import thumbnail_cache_token
 
 from modules.danbooru.home import home_rating_clause

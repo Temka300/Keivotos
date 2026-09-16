@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from database import get_data_db, get_user_db
-from models import PaginatedTags, TagInfo, TagWikiInfo
+from modules.danbooru.models import PaginatedTags, TagInfo, TagWikiInfo
 from modules.danbooru.tag_wiki import (
     fetch_tag_wiki_values,
     save_tag_wiki_cache,

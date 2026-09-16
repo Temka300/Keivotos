@@ -4,13 +4,7 @@ from fastapi import APIRouter
 from config import DATA_DB_PATH
 from database import get_user_db
 from fastapi import HTTPException
-from models import (
-    CollectionCreate,
-    CollectionInfo,
-    CollectionItemsUpdate,
-    CollectionMembershipRequest,
-    CollectionUpdate,
-)
+from modules.danbooru.models import CollectionCreate, CollectionInfo, CollectionItemsUpdate, CollectionMembershipRequest, CollectionUpdate
 from modules.danbooru.image_queries import get_file_identity
 from modules.danbooru.collections import (
     collection_preview_items_from_rows,

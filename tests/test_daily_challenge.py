@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from fastapi import HTTPException
-from routers import discovery
+from modules.danbooru.routers import discovery
 from schema import ensure_data_schema
 from modules.danbooru import challenges
 

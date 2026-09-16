@@ -29,8 +29,8 @@ class DanbooruQueryHelperTests(unittest.TestCase):
                     self.assertIs(getattr(caller, name.asname or name.name),
                                   getattr(owners[node.module], name.name))
         self.assertEqual(callers, {
-            "routers.collections", "routers.artists", "routers.tags",
-            "routers.images_media", "routers.stats", "routers.discovery", "routers.user_library",
+            "modules.danbooru.routers.collections", "modules.danbooru.routers.artists", "modules.danbooru.routers.tags",
+            "modules.danbooru.routers.images_media", "modules.danbooru.routers.stats", "modules.danbooru.routers.discovery", "modules.danbooru.routers.user_library",
             "modules.danbooru.collections", "modules.danbooru.tags", "modules.danbooru.home",
             "modules.danbooru.image_activity", "modules.danbooru.search",
             "modules.danbooru.image_queries", "modules.danbooru.artist_profiles",

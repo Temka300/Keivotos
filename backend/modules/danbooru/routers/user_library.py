@@ -12,12 +12,7 @@ from fastapi import (
     HTTPException,
     Query,
 )
-from models import (
-    FavoriteBatchUpdate,
-    FavoriteTagComboCreate,
-    FavoriteTagComboInfo,
-    TagInfo,
-)
+from modules.danbooru.models import FavoriteBatchUpdate, FavoriteTagComboCreate, FavoriteTagComboInfo, TagInfo
 from modules.danbooru.image_queries import get_file_identity
 from modules.danbooru.home import clear_home_caches
 from modules.danbooru.query_helpers import (

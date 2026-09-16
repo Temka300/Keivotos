@@ -10,7 +10,7 @@ from typing import Any
 
 from config import USER_DB_PATH
 from database import get_data_db
-from models import PaginatedTags, TagInfo
+from modules.danbooru.models import PaginatedTags, TagInfo
 from modules.danbooru.query_helpers import user_file_match
 from modules.danbooru.tag_names import normalize_user_tag_category
 

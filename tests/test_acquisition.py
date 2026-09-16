@@ -19,7 +19,7 @@ import credentials  # noqa: E402
 import danbooru_gallery_dl as gallery  # noqa: E402
 from modules.danbooru import artist_profiles  # noqa: E402
 from routers import tools as tool_routes  # noqa: E402
-from routers import images_media as image_routes  # noqa: E402
+from modules.danbooru.routers import images_media as image_routes  # noqa: E402
 
 
 class AcquisitionTests(unittest.TestCase):

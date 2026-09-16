@@ -122,7 +122,7 @@ class HomeDiscoveryTests(unittest.TestCase):
 
     def test_all_consumers_share_cache_instances_and_invalidation(self) -> None:
         from modules.danbooru import challenges, tools
-        from routers import discovery, user_library
+        from modules.danbooru.routers import discovery, user_library
 
         self.assertIs(discovery.HOME_TAGS_CACHE, home.HOME_TAGS_CACHE)
         self.assertIs(discovery.HOME_IMAGE_RAILS_CACHE, home.HOME_IMAGE_RAILS_CACHE)

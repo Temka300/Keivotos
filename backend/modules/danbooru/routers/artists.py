@@ -8,14 +8,7 @@ from fastapi.responses import FileResponse
 
 from config import ARTIST_PROFILE_ARCHIVE_DIR
 from database import get_data_db, get_user_db
-from models import (
-    ArtistFollowCheckResult,
-    ArtistFollowInfo,
-    ArtistProfileArchiveResult,
-    ArtistProfileAsset,
-    ArtistProfileBulkArchiveResult,
-    TagInfo,
-)
+from modules.danbooru.models import ArtistFollowCheckResult, ArtistFollowInfo, ArtistProfileArchiveResult, ArtistProfileAsset, ArtistProfileBulkArchiveResult, TagInfo
 from modules.danbooru.artist_follows import (
     artist_follow_info_from_row,
     fetch_artist_danbooru_post_ids,

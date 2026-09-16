@@ -25,9 +25,9 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
 import app as launcher  # noqa: E402
-from models import CollectionCreate, CollectionItemsUpdate  # noqa: E402
+from modules.danbooru.models import CollectionCreate, CollectionItemsUpdate  # noqa: E402
 from modules.danbooru import relations  # noqa: E402
-from routers import collections  # noqa: E402
+from modules.danbooru.routers import collections  # noqa: E402
 
 
 def _row_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:

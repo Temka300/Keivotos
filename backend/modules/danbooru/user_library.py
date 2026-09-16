@@ -14,7 +14,7 @@ import json
 import re
 from typing import Any
 
-from models import FavoriteTagComboInfo
+from modules.danbooru.models import FavoriteTagComboInfo
 
 
 def normalize_tag_name(tag_name: str) -> str:

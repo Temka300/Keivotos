@@ -6,7 +6,7 @@ The collection router imports these helpers directly.
 """
 from __future__ import annotations
 
-from models import CollectionInfo, CollectionPreviewItem
+from modules.danbooru.models import CollectionInfo, CollectionPreviewItem
 from modules.danbooru.query_helpers import user_file_match
 from thumbnails import thumbnail_cache_token
 

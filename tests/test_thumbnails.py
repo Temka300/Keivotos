@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 import thumbnails  # noqa: E402
 import database  # noqa: E402
 import config  # noqa: E402
-from routers import images_media  # noqa: E402
+from modules.danbooru.routers import images_media  # noqa: E402
 
 
 class ThumbnailTests(unittest.TestCase):

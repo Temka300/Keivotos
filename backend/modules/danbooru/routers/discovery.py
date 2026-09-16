@@ -12,17 +12,7 @@ from fastapi import (
     HTTPException,
     Query,
 )
-from models import (
-    DailyChallenge,
-    DailyChallengeOption,
-    HomeImageRail,
-    HomeImageRailItem,
-    HomeImageRails,
-    HomeTagInfo,
-    HomeTags,
-    PopularityPeriod,
-    TagInfo,
-)
+from modules.danbooru.models import DailyChallenge, DailyChallengeOption, HomeImageRail, HomeImageRailItem, HomeImageRails, HomeTagInfo, HomeTags, PopularityPeriod, TagInfo
 from modules.danbooru.search import (
     add_where_clause,
     build_where,

@@ -214,7 +214,7 @@ class ReleaseLayoutTests(unittest.TestCase):
             code = (
                 "import json, sys; from pathlib import Path; "
                 f"sys.path.insert(0, {str(ROOT / 'backend')!r}); "
-                "import config; from routers.folders import _is_generated_folder, _unsafe_library_root_reason; "
+                "import config; from modules.danbooru.routers.folders import _is_generated_folder, _unsafe_library_root_reason; "
                 "p=config.MODULE_HOME; "
                 "print(json.dumps({"
                 "'root': _is_generated_folder(p), "

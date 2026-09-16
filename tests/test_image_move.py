@@ -12,8 +12,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from models import ImageMoveFolder  # noqa: E402
-from routers import images_media  # noqa: E402
+from modules.danbooru.models import ImageMoveFolder  # noqa: E402
+from modules.danbooru.routers import images_media  # noqa: E402
 from storage_layout import SIDECAR_SUFFIXES  # noqa: E402
 
 

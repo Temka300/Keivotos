@@ -23,10 +23,9 @@ Deliberately *outside* the enforced core, for now:
 - ``module_registry.py`` is the composition root — the one place allowed to
   import every module's descriptor factory. That is the registration boundary,
   not a leak.
-- Danbooru's grandfathered unprefixed routers (``routers/images_media.py`` etc.)
-  are Danbooru's HTTP surface living in ``routers/`` for historical reasons
-  (contract §8). They legitimately import ``modules.danbooru`` and are not part
-  of the base core.
+- ``routers/tools.py`` still mixes Danbooru operations with suite backup,
+  recovery and cache endpoints. Its separation is the next slice; it is not
+  enforced as suite core yet. Other Danbooru routers now live in the module.
 """
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from models import ImageRelations, RelatedImageInfo
+from modules.danbooru.models import ImageRelations, RelatedImageInfo
 from modules.danbooru.client import (
     DANBOORU_POST_URL_PREFIX,
     danbooru_json,

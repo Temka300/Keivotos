@@ -22,15 +22,7 @@ from fastapi.responses import (
     Response,
     StreamingResponse,
 )
-from models import (
-    CollectionInfo,
-    ImageBatchMove,
-    ImageDetail,
-    ImageMoveFolder,
-    PaginatedImages,
-    TimelapseFrames,
-    UserImageTagCreate,
-)
+from modules.danbooru.models import CollectionInfo, ImageBatchMove, ImageDetail, ImageMoveFolder, PaginatedImages, TimelapseFrames, UserImageTagCreate
 from modules.danbooru.duplicate_review import (
     duplicate_filename_key,
     duplicate_filter_sql,

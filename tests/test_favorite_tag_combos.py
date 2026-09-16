@@ -10,8 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
 from fastapi import HTTPException
-from models import FavoriteTagComboCreate
-from routers import user_library as router
+from modules.danbooru.models import FavoriteTagComboCreate
+from modules.danbooru.routers import user_library as router
 from modules.danbooru import user_library as helpers
 
 

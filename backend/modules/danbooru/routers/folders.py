@@ -26,14 +26,7 @@ from database import get_data_db, get_user_db
 from modules.danbooru.folder_registry import registered_folder_rows
 from modules.danbooru.paths import registered_folder_path
 from modules.danbooru.tools import _start_folder_import, active_tool_id
-from models import (
-    FolderCreate,
-    FolderInfo,
-    FolderRelocate,
-    FolderRelocateResult,
-    FolderRemovalPreview,
-    FolderRemovalResult,
-)
+from modules.danbooru.models import FolderCreate, FolderInfo, FolderRelocate, FolderRelocateResult, FolderRemovalPreview, FolderRemovalResult
 from storage_layout import LibraryRoot, current_sidecar_files_for_root, new_root_id
 from files_base import sources  # publish Danbooru folders into the shared browse-list
 

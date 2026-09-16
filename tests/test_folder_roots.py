@@ -12,8 +12,8 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from models import FolderCreate, FolderRelocate  # noqa: E402
-from routers import folders  # noqa: E402
+from modules.danbooru.models import FolderCreate, FolderRelocate  # noqa: E402
+from modules.danbooru.routers import folders  # noqa: E402
 from schema import ensure_data_schema  # noqa: E402
 
 

@@ -13,7 +13,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from database import get_data_db
-from models import ArtistFollowInfo, TagWikiExample
+from modules.danbooru.models import ArtistFollowInfo, TagWikiExample
 from modules.danbooru.client import danbooru_json
 from modules.danbooru.relations import (
     related_info_from_row,
