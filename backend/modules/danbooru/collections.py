@@ -1,15 +1,13 @@
 """Collection queries and preview construction.
 
-Extracted verbatim from ``core.py``'s Collections section. This module has no
-inbound dependency on ``core``: every helper it needs already has a real owner
-(``models``, ``services.query_helpers``, ``thumbnails``), so it imports them
-directly. ``core`` imports these names back and re-exports them, which keeps the
-routers that still wildcard-import it working unchanged.
+Originally extracted from ``core.py``'s Collections section. Models and
+thumbnails are shared; identity queries belong to ``modules.danbooru``.
+The collection router imports these helpers directly.
 """
 from __future__ import annotations
 
 from models import CollectionInfo, CollectionPreviewItem
-from services.query_helpers import user_file_match
+from modules.danbooru.query_helpers import user_file_match
 from thumbnails import thumbnail_cache_token
 
 

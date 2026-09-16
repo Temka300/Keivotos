@@ -15,7 +15,7 @@ from modules.danbooru.tag_wiki import (
     tag_wiki_info_from_cache_row,
 )
 from modules.danbooru.tags import list_user_tags
-from services.tag_names import normalize_search_tag
+from modules.danbooru.tag_names import normalize_search_tag
 
 router = APIRouter()
 

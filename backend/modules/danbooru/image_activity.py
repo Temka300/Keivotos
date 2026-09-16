@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.query_helpers import user_file_lookup_params, user_file_lookup_sql
-from services.tag_names import normalize_user_tag_category
+from modules.danbooru.query_helpers import user_file_lookup_params, user_file_lookup_sql
+from modules.danbooru.tag_names import normalize_user_tag_category
 
 
 def user_image_tags_for_file(conn, file_row: dict[str, Any]) -> dict[str, list[str]]:

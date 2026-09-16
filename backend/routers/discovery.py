@@ -52,11 +52,11 @@ from modules.danbooru.home import (
     home_tag_infos_with_covers,
     top_tag_rows,
 )
-from services.query_helpers import (
+from modules.danbooru.query_helpers import (
     RATING_QUERY_PATTERN,
     user_file_match,
 )
-from services.tag_names import normalize_search_tag
+from modules.danbooru.tag_names import normalize_search_tag
 from typing import Any
 
 router = APIRouter()

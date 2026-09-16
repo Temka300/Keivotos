@@ -13,7 +13,7 @@ from fastapi import HTTPException
 from config import USER_DB_PATH
 from database import get_data_db
 from models import ImageSummary
-from services.query_helpers import user_file_match
+from modules.danbooru.query_helpers import user_file_match
 from thumbnails import thumbnail_cache_token
 
 

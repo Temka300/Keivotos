@@ -26,7 +26,7 @@ from modules.danbooru.artist_profiles import (
     archive_artist_profile_media,
     list_artist_profile_assets_from_conn,
 )
-from services.tag_names import normalize_search_tag, normalize_user_tag_category
+from modules.danbooru.tag_names import normalize_search_tag, normalize_user_tag_category
 from services.value_helpers import int_or_none
 
 router = APIRouter()

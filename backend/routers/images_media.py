@@ -73,12 +73,12 @@ from modules.danbooru.search import (
     search_requires_user_db,
 )
 from pathlib import Path
-from services.query_helpers import (
+from modules.danbooru.query_helpers import (
     user_file_lookup_params,
     user_file_lookup_sql,
     user_file_match,
 )
-from services.tag_names import (
+from modules.danbooru.tag_names import (
     normalize_search_tag,
     normalize_user_tag,
     normalize_user_tag_category,

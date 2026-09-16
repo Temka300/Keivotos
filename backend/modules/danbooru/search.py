@@ -21,8 +21,8 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
-from services.query_helpers import normalize_rating_values, user_file_match
-from services.tag_names import TAG_CATEGORIES, normalize_search_tag, normalize_user_tag
+from modules.danbooru.query_helpers import normalize_rating_values, user_file_match
+from modules.danbooru.tag_names import TAG_CATEGORIES, normalize_search_tag, normalize_user_tag
 
 
 # TAG_CATEGORIES moved to services/tag_names.py; imported at the top.

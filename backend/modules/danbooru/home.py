@@ -7,7 +7,7 @@ from typing import Any
 from models import HomeCoverCandidate, HomeImageRail, HomeImageRailItem, HomeImageRails, HomeTagInfo, HomeTags
 from thumbnails import thumbnail_cache_token
 
-from services.query_helpers import normalize_rating_values, user_file_match
+from modules.danbooru.query_helpers import normalize_rating_values, user_file_match
 
 __all__ = [
     "HOME_TAG_CATEGORIES",

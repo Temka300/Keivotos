@@ -16,7 +16,7 @@ from modules.danbooru.collections import (
     collection_preview_items_from_rows,
     load_collection_info,
 )
-from services.query_helpers import (
+from modules.danbooru.query_helpers import (
     user_file_lookup_params,
     user_file_lookup_sql,
     user_file_match,
