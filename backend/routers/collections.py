@@ -12,7 +12,7 @@ from models import (
     CollectionUpdate,
 )
 from modules.danbooru.image_queries import get_file_identity
-from services.collections import (
+from modules.danbooru.collections import (
     collection_preview_items_from_rows,
     load_collection_info,
 )
