@@ -7,7 +7,7 @@ from typing import Any
 from models import DailyChallengeClues, DailyChallengeImage, DailyChallengeOption
 from thumbnails import thumbnail_cache_token
 
-from .home import home_rating_clause
+from services.home import home_rating_clause
 
 __all__ = [
     "LOW_VALUE_CHALLENGE_GENERAL_TAGS",

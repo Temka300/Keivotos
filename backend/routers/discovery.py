@@ -30,7 +30,7 @@ from modules.danbooru.search import (
     parse_search_terms,
     search_requires_user_db,
 )
-from services.challenges import (
+from modules.danbooru.challenges import (
     challenge_loose_key,
     daily_challenge_candidate,
     daily_challenge_clues,
