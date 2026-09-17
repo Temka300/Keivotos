@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Generator
 
-from config import DATA_DB_PATH, DATA_ROOT, USER_DB_PATH
-from schema import ensure_data_schema
+from config import DATA_DB_PATH, DATA_ROOT, USER_DB_PATH, MODULE_REGISTRY
 from storage_layout import deterministic_root_id
 from database_connections import (
     _DatabaseAccessGate, _database_access_gate, _row_factory,
@@ -44,46 +42,12 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
-def local_downloaded_at(path_value: str | Path) -> str | None:
-    path = Path(path_value)
-    try:
-        stat = path.stat()
-    except OSError:
-        return None
-    timestamp = getattr(stat, "st_birthtime", None) or getattr(stat, "st_ctime", None) or stat.st_mtime
-    return datetime.fromtimestamp(timestamp).isoformat()
-
-
 def init_data_db() -> None:
-    DATA_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with get_data_db() as conn:
-        ensure_data_schema(conn)
-        _ensure_column(conn, "files", "downloaded_at", "TEXT")
-        _ensure_column(conn, "posts", "parent_id", "INTEGER")
-        _ensure_column(conn, "posts", "has_children", "INTEGER")
-        _ensure_column(conn, "posts", "child_ids_json", "TEXT")
-        conn.execute("UPDATE posts SET rating='u' WHERE rating IS NULL OR rating=''")
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_files_downloaded_at ON files(downloaded_at)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_posts_parent_id ON posts(parent_id)"
-        )
-        rows = conn.execute(
-            """SELECT id, path FROM files
-               WHERE downloaded_at IS NULL
-                  OR downloaded_at = ''
-                  OR downloaded_at LIKE '%+00:00'
-                  OR downloaded_at LIKE '%Z'"""
-        ).fetchall()
-        for row in rows:
-            downloaded_at = local_downloaded_at(row["path"])
-            if downloaded_at:
-                conn.execute(
-                    "UPDATE files SET downloaded_at=? WHERE id=?",
-                    (downloaded_at, row["id"]),
-                )
-        conn.commit()
+    """Compatibility entry point; preserve startup order until conditional init."""
+    initializer = MODULE_REGISTRY.require("danbooru").index_initializer
+    if initializer is None:
+        raise RuntimeError("Danbooru index initializer is not registered")
+    initializer(DATA_DB_PATH, get_data_db)
 
 
 def _upgrade_user_identity_storage(conn: sqlite3.Connection) -> None:

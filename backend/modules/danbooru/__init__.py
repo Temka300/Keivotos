@@ -84,6 +84,12 @@ def _background_tasks() -> list:
     return background_tasks()
 
 
+def _initialize_index(database_path, connection_factory) -> None:
+    from modules.danbooru.index_migrations import initialize_index
+
+    initialize_index(database_path, connection_factory)
+
+
 def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
     home = suite_home / "modules" / "danbooru"
     return ModuleDescriptor(
@@ -106,4 +112,5 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         relocate_hook=relocate_source,
         router_provider=_routers,
         background_tasks_hook=_background_tasks,
+        index_initializer=_initialize_index,
     )

@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from modules.danbooru.models import FolderCreate, FolderRelocate  # noqa: E402
 from modules.danbooru.routers import folders  # noqa: E402
-from schema import ensure_data_schema  # noqa: E402
+from modules.danbooru.schema import ensure_data_schema  # noqa: E402
 
 
 def _row_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:

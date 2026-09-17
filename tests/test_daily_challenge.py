@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 
 from fastapi import HTTPException
 from modules.danbooru.routers import discovery
-from schema import ensure_data_schema
+from modules.danbooru.schema import ensure_data_schema
 from modules.danbooru import challenges
 
 

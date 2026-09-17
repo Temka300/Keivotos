@@ -44,7 +44,6 @@ CORE_FILES = (
     "database_connections.py",
     "maintenance.py",
     "routers/backups.py",
-    "schema.py",
     "storage_layout.py",
     "models.py",
     "product.py",

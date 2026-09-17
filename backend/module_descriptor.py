@@ -5,7 +5,7 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, ContextManager
 
 
 PublishHook = Callable[[sqlite3.Connection], None]
@@ -20,6 +20,7 @@ RelocateHook = Callable[[str, str], dict[str, Any]]
 RouterProvider = Callable[[], "list[Any]"]
 # Synchronous once-at-startup work for an active module (e.g. a schema/migration).
 StartupHook = Callable[[], None]
+IndexInitializer = Callable[[Path, Callable[[], ContextManager[sqlite3.Connection]]], None]
 # Returns ``(name, coroutine)`` pairs the suite lifespan runs as background tasks
 # for the module's lifetime. Typed loosely to keep asyncio out of this boundary.
 BackgroundTasksHook = Callable[[], "list[Any]"]
@@ -54,6 +55,8 @@ class ModuleDescriptor:
     router_provider: RouterProvider | None = None
     startup_hook: StartupHook | None = None
     background_tasks_hook: BackgroundTasksHook | None = None
+
+    index_initializer: IndexInitializer | None = None
 
     def run_startup(self) -> None:
         """Synchronous once-at-startup work, run only when the module is active."""

@@ -14,7 +14,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 import database  # noqa: E402
 from models import UserSettingUpdate  # noqa: E402
 from routers import user_settings  # noqa: E402
-from schema import ensure_data_schema  # noqa: E402
+from modules.danbooru.schema import ensure_data_schema  # noqa: E402
 
 
 class SharedSchemaTests(unittest.TestCase):

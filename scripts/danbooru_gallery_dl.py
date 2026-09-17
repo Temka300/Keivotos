@@ -25,7 +25,7 @@ BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
-from schema import create_data_indexes, ensure_data_schema  # noqa: E402
+from modules.danbooru.schema import create_data_indexes, ensure_data_schema  # noqa: E402
 from storage_layout import (  # noqa: E402
     LibraryRoot,
     canonical_sidecar_path,

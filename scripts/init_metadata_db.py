@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "backend"))
 import config  # noqa: E402
-from schema import ensure_data_schema  # noqa: E402
+from modules.danbooru.schema import ensure_data_schema  # noqa: E402
 
 
 def main() -> None:
