@@ -20,7 +20,8 @@ class SuiteMaintenanceRouteTests(unittest.TestCase):
         from modules.danbooru import tools
 
         self.assertIs(backups.exclusive_tool_operation, tools.exclusive_tool_operation)
-        with patch.object(tools, "_active_tool_id", "sync"), patch.object(backups, "create_backup_bundle") as create:
+        import maintenance
+        with patch.object(maintenance, "_active_tool_id", "sync"), patch.object(backups, "create_backup_bundle") as create:
             with self.assertRaises(HTTPException) as caught:
                 backups.create_metadata_backup(BackupCreateRequest())
             self.assertEqual(caught.exception.status_code, 409)

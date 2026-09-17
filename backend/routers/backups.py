@@ -6,8 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from backup_bundle import backup_configuration, backup_estimate, create_backup_bundle, inspect_backup_bundle, restore_backup_bundle, update_backup_configuration
 from config import get_backup_config
-# Preserve the existing tool exclusion window until shared locking is extracted.
-from modules.danbooru.tools import exclusive_tool_operation
+from maintenance import exclusive_tool_operation
 from models import BackupConfigurationUpdate, BackupCreateRequest, BackupRestoreRequest
 
 router = APIRouter()

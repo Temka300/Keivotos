@@ -14,8 +14,8 @@ from modules.danbooru.tools import (
     _launch_tool,
     _sync_command,
     _sync_scan_paths,
-    exclusive_tool_operation,
 )
+from maintenance import exclusive_tool_operation
 from thumbnails import SUPPORTED_IMAGES, SUPPORTED_VIDEOS
 
 MEDIA_EXTENSIONS = SUPPORTED_IMAGES | SUPPORTED_VIDEOS

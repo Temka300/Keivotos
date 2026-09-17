@@ -23,10 +23,8 @@ Deliberately *outside* the enforced core, for now:
 - ``module_registry.py`` is the composition root — the one place allowed to
   import every module's descriptor factory. That is the registration boundary,
   not a leak.
-- ``routers/backups.py`` temporarily imports Danbooru's existing exclusive-tool
-  guard to preserve restore/backup safety. Shared locking is the next slice;
-  this router is not yet enforced as core. All Danbooru endpoints are now in
-  the module. Cache cleanup still queries the old index through database.py.
+All suite routers are enforced below. Cache cleanup still queries the old
+Danbooru index through database.py; removing data-path assumptions is later work.
 """
 from __future__ import annotations
 
@@ -43,6 +41,9 @@ CORE_DIRS = ("files_base", "services")
 CORE_FILES = (
     "config.py",
     "database.py",
+    "database_connections.py",
+    "maintenance.py",
+    "routers/backups.py",
     "schema.py",
     "storage_layout.py",
     "models.py",

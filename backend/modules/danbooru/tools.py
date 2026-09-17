@@ -1,14 +1,9 @@
 """Running the gallery-dl pipeline as a subprocess: commands, state, progress.
 
-Moved verbatim from ``core.py`` apart from one deliberate fix noted at
-``SCRIPT_PATH``. Owns the one-tool-at-a-time gate, the in-memory task registry
-consumed by Settings polling, the structured STAGE/PROGRESS/FILE_STATUS protocol,
-cancellation, and the post-success recovery checkpoint.
-
-The task state below is module-level and mutable by design; ``core`` imports the
-same objects back, so existing readers observe the same registry.
-
-No ``core`` import.
+Originally extracted from ``core.py``. Owns subprocess tasks, progress,
+cancellation and post-success recovery. Maintenance reservations and locks are
+shared through ``maintenance`` so suite backup/restore need not import Danbooru.
+The task registry and its lock aliases retain their original object identity.
 """
 from __future__ import annotations
 
@@ -19,7 +14,6 @@ import subprocess
 import sys
 import threading
 from collections import deque
-from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Callable
 
@@ -31,6 +25,10 @@ from config import (
     SCAN_FOLDERS,
     SIDECAR_DIR,
     USER_DB_PATH,
+)
+import maintenance
+from maintenance import (
+    _tool_state_lock, _tool_operation_lock, active_tool_id, exclusive_tool_operation,
 )
 from credentials import credential_environment
 from local_recovery import create_local_recovery_checkpoint
@@ -46,32 +44,11 @@ TOOL_WORKING_DIRECTORY = SCRIPT_PATH.parent.parent
 
 _running_tasks: dict[str, dict[str, Any]] = {}
 _running_processes: dict[str, subprocess.Popen[str]] = {}
-_tool_state_lock = threading.RLock()
-_tool_operation_lock = threading.RLock()
-_active_tool_id: str | None = None
-
-
-def active_tool_id() -> str | None:
-    """Return the live tool owner while holding the shared state lock."""
-    with _tool_state_lock:
-        return _active_tool_id
-
-
 def tool_task_snapshot(tool_id: str) -> dict[str, Any] | None:
     """Return request-safe task state while the worker may still be updating it."""
     with _tool_state_lock:
         task = _running_tasks.get(tool_id)
         return copy.deepcopy(task) if task is not None else None
-
-
-@contextmanager
-def exclusive_tool_operation(operation_name: str):
-    """Prevent a restore/backup window from racing a newly launched tool."""
-    with _tool_operation_lock:
-        with _tool_state_lock:
-            if _active_tool_id:
-                raise RuntimeError(f"Wait for {_active_tool_id} to finish before {operation_name}")
-        yield
 
 
 def _tool_base_command() -> list[str]:
@@ -186,13 +163,12 @@ def _launch_tool(
     stage_names: list[str] | None = None,
     on_success: Callable[[], str | None] | None = None,
 ) -> dict[str, Any]:
-    global _active_tool_id
     with _tool_operation_lock:
         with _tool_state_lock:
-            if _active_tool_id:
-                status = "already_running" if _active_tool_id == tool_id else "busy"
-                return {"status": status, "active_tool_id": _active_tool_id}
-            _active_tool_id = tool_id
+            if maintenance._active_tool_id:
+                status = "already_running" if maintenance._active_tool_id == tool_id else "busy"
+                return {"status": status, "active_tool_id": maintenance._active_tool_id}
+            maintenance._active_tool_id = tool_id
             _running_tasks[tool_id] = {
                 "status": "running",
                 "output": "",
@@ -210,7 +186,6 @@ def _launch_tool(
             }
 
     def _run():
-        global _active_tool_id
         try:
             # Keep only the console tail exposed to Settings. A 40k-file import
             # must not retain every subprocess line for the lifetime of the job.
@@ -336,8 +311,8 @@ def _launch_tool(
         finally:
             with _tool_state_lock:
                 _running_processes.pop(tool_id, None)
-                if _active_tool_id == tool_id:
-                    _active_tool_id = None
+                if maintenance._active_tool_id == tool_id:
+                    maintenance._active_tool_id = None
 
     threading.Thread(target=_run, daemon=True).start()
     return {"status": "started"}
