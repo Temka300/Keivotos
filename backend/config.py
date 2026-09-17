@@ -175,9 +175,6 @@ _defaults: dict[str, Any] = {
     "data_root": str(DEFAULT_LIBRARY_DIR),
     "metadata_dir": str(DEFAULT_METADATA_DIR),
     "gallery_dl_dir": str(DEFAULT_GALLERY_DL_DIR),
-    "automation_enabled": False,
-    "automation_enabled_at": None,
-    "automation_interval_minutes": 15,
     "backup_components": {
         "user_database": True,
         "library_database": True,
@@ -188,6 +185,9 @@ _defaults: dict[str, Any] = {
     },
     "thumbnail_cache_limit_gb": 10,
 }
+# Installed owners contribute defaults; source/runtime overrides still win.
+for _descriptor in _DEFAULT_MODULE_REGISTRY:
+    _defaults.update(_descriptor.config_defaults)
 _external_path_defaults = {
     key: _defaults[key]
     for key in ("data_root", "metadata_dir", "gallery_dl_dir")
@@ -554,14 +554,20 @@ if METADATA_DIR.resolve(strict=False) == LEGACY_DEFAULT_METADATA_DIR.resolve(str
     _cfg["metadata_dir"] = str(DEFAULT_METADATA_DIR)
 GALLERY_DL_DIR = _resolve_path(str(_cfg.get("gallery_dl_dir", DEFAULT_GALLERY_DL_DIR)))
 
-DATA_DB_PATH = METADATA_DIR / "danbooru.sqlite"
+DATA_DB_PATH = METADATA_DIR / (
+    _DEFAULT_DANBOORU_MODULE.database.name if _DEFAULT_DANBOORU_MODULE is not None else "danbooru.sqlite"
+)
 # The shared, irreplaceable user DB lives at suite level (not under a module),
 # so it exists with zero modules enabled. A legacy module-home copy is promoted
 # here on startup via promote_user_database(). See SUITE_MODULE_CONTRACT.md 3.1.
 USER_DB_PATH = SUITE_HOME / "user.sqlite"
 SIDECAR_DIR = METADATA_DIR / "sidecars"
 ARTIST_PROFILE_ARCHIVE_DIR = METADATA_DIR / "artist_profile_archive"
-CREDENTIALS_PATH = METADATA_DIR / "danbooru_credentials.json"
+CREDENTIALS_PATH = METADATA_DIR / (
+    _DEFAULT_DANBOORU_MODULE.credentials.name
+    if _DEFAULT_DANBOORU_MODULE is not None and _DEFAULT_DANBOORU_MODULE.credentials is not None
+    else "danbooru_credentials.json"
+)
 
 # --- Files base (V1.1.0) ---
 # The always-on neutral file layer. Its index is disposable (rebuildable from
@@ -673,14 +679,6 @@ def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
     except (TypeError, ValueError, OverflowError):
         parsed = default
     return max(minimum, min(maximum, parsed))
-
-
-def get_automation_config() -> dict[str, Any]:
-    return {
-        "enabled": bool(_cfg.get("automation_enabled", False)),
-        "enabled_at": _cfg.get("automation_enabled_at"),
-        "interval_minutes": _bounded_int(_cfg.get("automation_interval_minutes"), 15, 5, 1440),
-    }
 
 
 def get_backup_config() -> dict[str, Any]:

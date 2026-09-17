@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ContextManager
 
@@ -56,6 +56,7 @@ class ModuleDescriptor:
     startup_hook: StartupHook | None = None
     background_tasks_hook: BackgroundTasksHook | None = None
 
+    config_defaults: dict[str, Any] = field(default_factory=dict)
     index_initializer: IndexInitializer | None = None
     user_schema_provider: Callable[[], str] | None = None
     user_migrator: Callable[[sqlite3.Connection, Path, Path], None] | None = None

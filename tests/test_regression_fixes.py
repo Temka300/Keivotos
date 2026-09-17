@@ -263,7 +263,7 @@ class RegressionFixTests(unittest.TestCase):
             "import json, sys; "
             f"sys.path.insert(0, {str(ROOT / 'backend')!r}); "
             "import config; "
-            "print(json.dumps([config.get_automation_config()['interval_minutes'], "
+            "from modules.danbooru.configuration import get_automation_config; print(json.dumps([get_automation_config()['interval_minutes'], "
             "config.get_thumbnail_cache_limit_bytes()]))"
         )
         result = subprocess.run(

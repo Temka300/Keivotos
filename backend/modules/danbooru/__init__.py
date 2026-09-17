@@ -6,6 +6,7 @@ from pathlib import Path
 
 from files_base import sources
 from module_descriptor import ModuleDescriptor
+from modules.danbooru.configuration import configuration_defaults
 
 
 def publish_sources(user_connection: sqlite3.Connection) -> None:
@@ -115,6 +116,7 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         user_agent=f"Keivotos/{version} (Danbooru)",
         disableable=True,
         is_base=False,
+        config_defaults=configuration_defaults(home),
         publish_hook=publish_sources,
         adopt_hook=adopt_source,
         release_hook=release_source,

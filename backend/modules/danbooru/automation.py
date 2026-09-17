@@ -8,7 +8,8 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
-from config import get_automation_config, save_config
+from config import save_config
+from modules.danbooru.configuration import get_automation_config
 from database import get_data_db
 from modules.danbooru.tools import (
     _launch_tool,
