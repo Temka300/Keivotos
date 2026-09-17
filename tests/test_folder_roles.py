@@ -5,7 +5,7 @@ import sys
 import unittest
 from dataclasses import replace
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -102,9 +102,10 @@ class FolderRoleServiceTests(unittest.TestCase):
         with database.get_user_db() as connection:
             source = sources.register_source(connection, self.library, "Library", role="danbooru")
         descriptor = config.MODULE_REGISTRY.require("danbooru")
+        update = Mock(side_effect=AssertionError("Disabled hook must not run"))
         registry = config.MODULE_REGISTRY.replacing(replace(
             descriptor,
-            folder_update_hook=lambda source_id: None,
+            folder_update_hook=update,
         ))
         with patch.object(folder_roles, "MODULE_REGISTRY", registry):
             changed = folder_roles.apply_changes([
@@ -118,6 +119,55 @@ class FolderRoleServiceTests(unittest.TestCase):
             ])
         self.assertEqual(changed["sources"][0].display_name, "Hidden module folder")
         self.assertFalse(changed["sources"][0].visible)
+
+    def test_disabled_owner_operations_reject_before_any_batch_mutation(self) -> None:
+        with database.get_user_db() as connection:
+            source = sources.register_source(connection, self.library, "Library", role="danbooru")
+        operations = [
+            lambda: folder_roles.rescan(source.source_id),
+            lambda: folder_roles.relocate(source.source_id, str(self.temp / "moved")),
+            lambda: folder_roles.forget_preview(source.source_id),
+            lambda: folder_roles.apply_changes([
+                folder_roles.FolderChange(source.source_id, source.path, "Changed", "files")]),
+            lambda: folder_roles.apply_changes([
+                folder_roles.FolderChange(source.source_id, source.path, "Changed", "danbooru", forget=True)]),
+        ]
+        for operation in operations:
+            with self.subTest(operation=operation), self.assertRaises(folder_roles.FolderRegistryError) as caught:
+                operation()
+            self.assertEqual(caught.exception.status_code, 409)
+            with database.get_user_db() as connection:
+                unchanged = sources.get_source(connection, source.source_id)
+                self.assertEqual(unchanged.display_name, "Library")
+                self.assertEqual(unchanged.role, "danbooru")
+        self.assertFalse(self.files_db.exists())
+        self.assertTrue((self.library / "one.txt").exists())
+
+    def test_absent_owner_presentation_is_shared_but_operations_are_rejected(self) -> None:
+        from module_registry import ModuleRegistry
+        with database.get_user_db() as connection:
+            source = sources.register_source(connection, self.library, "Library", role="danbooru")
+        registry = ModuleRegistry((config.MODULE_REGISTRY.require("files"),))
+        with patch.object(folder_roles, "MODULE_REGISTRY", registry), patch.object(suite_modules, "MODULE_REGISTRY", registry):
+            changed = folder_roles.apply_changes([
+                folder_roles.FolderChange(source.source_id, source.path, "Kept", "danbooru", visible=False)])
+            self.assertEqual(changed["sources"][0].display_name, "Kept")
+            with self.assertRaises(folder_roles.FolderRegistryError) as caught:
+                folder_roles.rescan(source.source_id)
+            self.assertEqual(caught.exception.status_code, 409)
+
+    def test_republication_keeps_shared_label_and_synchronizes_owner_label(self) -> None:
+        from modules.danbooru import publish_sources
+        with database.get_user_db() as connection:
+            connection.execute("CREATE TABLE registered_folders(path TEXT, display_name TEXT)")
+            connection.execute("INSERT INTO registered_folders VALUES (?, ?)", (str(self.library), "Old"))
+            source = sources.register_source(connection, self.library, "Shared label", role="danbooru")
+            sources.update_source(connection, source.source_id, visible=False)
+            publish_sources(connection)
+            self.assertEqual(connection.execute("SELECT display_name FROM registered_folders").fetchone()["display_name"], "Shared label")
+            shared = sources.get_source(connection, source.source_id)
+            self.assertEqual(shared.display_name, "Shared label")
+            self.assertFalse(shared.visible)
 
     def test_role_changes_dispatch_through_descriptor_hooks(self) -> None:
         events: list[tuple[str, str]] = []
@@ -229,6 +279,8 @@ class FolderRoleServiceTests(unittest.TestCase):
 
     def test_relocate_dispatches_to_module_and_reindexes_at_new_path(self) -> None:
         with database.get_user_db() as connection:
+            suite_modules.set_enabled(connection, "danbooru", True)
+        with database.get_user_db() as connection:
             source = sources.register_source(connection, self.library, "Library", role="danbooru")
         with index.open_index(self.files_db) as index_connection:
             index.scan_source(index_connection, source.source_id, self.library, excluded_roots=[])
@@ -262,6 +314,8 @@ class FolderRoleServiceTests(unittest.TestCase):
             self.assertEqual(index.source_entry_count(index_connection, new_id), 1)
 
     def test_rescan_dispatches_to_the_owning_module_hook(self) -> None:
+        with database.get_user_db() as connection:
+            suite_modules.set_enabled(connection, "danbooru", True)
         calls: list[str] = []
         with database.get_user_db() as connection:
             source = sources.register_source(connection, self.library, "Library", role="danbooru")

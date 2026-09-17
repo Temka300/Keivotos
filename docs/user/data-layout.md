@@ -47,3 +47,9 @@ metadata, folder assignments, or saved automation settings. Re-enabling it start
 its workers again without restarting Keivotos. If an import, scan, backup, or
 restore is busy, let it finish and retry. Disable waits for running background
 thread work to finish before confirming the change.
+
+While Danbooru is disabled, its operations and module-specific folder actions
+require re-enabling it. Files can still browse the preserved folders and change
+their shared names or visibility. Folder release, forget, relocation and Danbooru
+rescan require Danbooru to be enabled. A disable request may ask you to retry
+while a module request is still in progress.

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ import suite_modules
 from config import FILES_DB_PATH, MODULE_REGISTRY, SUITE_HOME
 from database import get_user_db
 from files_base import index, sources
+from maintenance import module_operation
 
 
 class FolderRegistryError(RuntimeError):
@@ -27,6 +29,31 @@ class FolderChange:
     role: str
     visible: bool = True
     forget: bool = False
+
+
+@contextmanager
+def _folder_work(source_ids: list[str], roles: tuple[str, ...] | list[str] = ()):
+    with get_user_db() as connection:
+        sources.ensure_sources_schema(connection)
+        owners = {sources.canonical_role(role) for role in roles}
+        for source_id in source_ids:
+            source = sources.get_source(connection, source_id)
+            if source is not None:
+                owners.add(sources.canonical_role(source.role))
+    guard = module_operation() if owners - {"files"} else nullcontext()
+    try:
+        with guard:
+            yield
+    except RuntimeError as exc:
+        if isinstance(exc, FolderRegistryError):
+            raise
+        raise FolderRegistryError(409, str(exc)) from exc
+
+
+def _require_owner(role: str):
+    canonical = sources.canonical_role(role)
+    suite_modules.require_enabled(canonical)
+    return MODULE_REGISTRY.require(canonical)
 
 
 def _normalized_path(path: str | Path) -> str:
@@ -67,11 +94,11 @@ def _validate_changes(changes: list[FolderChange]) -> tuple[list[tuple[FolderCha
                 raise FolderRegistryError(404, f"Unknown folder source: {change.source_id}")
             requested_role = sources.canonical_role(change.role)
             current_role = sources.canonical_role(source.role)
-            # A disabled module cannot receive a new assignment. Its existing
-            # folders can still be renamed, hidden, released, or forgotten.
+            # Shared presentation remains editable while the owner is disabled.
+            # Releasing or forgetting invokes that owner and requires enablement.
+            if change.forget or requested_role != current_role:
+                _require_owner(current_role)
             role = requested_role if requested_role == current_role else _validate_role(requested_role, enabled)
-            if MODULE_REGISTRY.get(role) is None:
-                raise FolderRegistryError(400, f"Unknown folder role: {change.role}")
             if change.path and _normalized_path(change.path) != _normalized_path(source.path):
                 raise FolderRegistryError(400, "A registered folder path cannot be changed by rename")
             existing_changes.append((change, source, role))
@@ -111,6 +138,11 @@ def _scan_registered_source(
 
 
 def apply_changes(changes: list[FolderChange]) -> dict[str, Any]:
+    with _folder_work([c.source_id for c in changes if c.source_id], [c.role for c in changes]):
+        return _apply_changes(changes)
+
+
+def _apply_changes(changes: list[FolderChange]) -> dict[str, Any]:
     """Validate the full draft, then apply it when the user presses Save."""
     existing_changes, additions = _validate_changes(changes)
     adopted: list[str] = []
@@ -136,7 +168,7 @@ def apply_changes(changes: list[FolderChange]) -> dict[str, Any]:
 
     for change, source, target_role in existing_changes:
         current_role = sources.canonical_role(source.role)
-        current_descriptor = MODULE_REGISTRY.require(current_role)
+        current_descriptor = MODULE_REGISTRY.get(current_role)
         if change.forget:
             forgotten_paths.append(source.path)
             preview = forget_preview(source.source_id)
@@ -152,7 +184,7 @@ def apply_changes(changes: list[FolderChange]) -> dict[str, Any]:
             scans.append({**preview, "base_files_unindexed": base_removed})
             continue
 
-        target_descriptor = MODULE_REGISTRY.require(target_role)
+        target_descriptor = MODULE_REGISTRY.get(target_role)
         if current_role != target_role:
             if not current_descriptor.is_base:
                 current_descriptor.release(source.source_id, False)
@@ -165,7 +197,10 @@ def apply_changes(changes: list[FolderChange]) -> dict[str, Any]:
                     sources.ensure_sources_schema(connection)
                     sources.update_source(connection, source.source_id, role=target_descriptor.slug)
         else:
-            current_descriptor.update_folder(source.source_id)
+            with get_user_db() as connection:
+                enabled = suite_modules.enabled_ids(connection)
+            if current_descriptor is not None and (current_descriptor.is_base or current_role in enabled):
+                current_descriptor.update_folder(source.source_id)
 
     for change, path, target_role in additions:
         with get_user_db() as connection:
@@ -203,6 +238,11 @@ def apply_changes(changes: list[FolderChange]) -> dict[str, Any]:
 
 
 def rescan(source_id: str) -> dict[str, Any]:
+    with _folder_work([source_id]):
+        return _rescan(source_id)
+
+
+def _rescan(source_id: str) -> dict[str, Any]:
     """Re-index one folder through its owning module.
 
     The base always refreshes its own filesystem index (browse/thumbnails); a
@@ -216,14 +256,19 @@ def rescan(source_id: str) -> dict[str, Any]:
         all_sources = sources.list_sources(connection)
     if source is None:
         raise FolderRegistryError(404, "Unknown folder source")
+    descriptor = _require_owner(source.role)
     with index.open_index(FILES_DB_PATH) as index_connection:
         base = _scan_registered_source(index_connection, source, all_sources)
-    descriptor = MODULE_REGISTRY.require(sources.canonical_role(source.role))
     module = {} if descriptor.is_base else descriptor.rescan(source_id)
     return {"source_id": source_id, "base": base, "module": module}
 
 
 def relocate(source_id: str, new_path: str) -> dict[str, Any]:
+    with _folder_work([source_id]):
+        return _relocate(source_id, new_path)
+
+
+def _relocate(source_id: str, new_path: str) -> dict[str, Any]:
     """Point a moved folder at its new location through its owning module.
 
     Files folders take their identity from their path, so relocating one is just
@@ -237,7 +282,7 @@ def relocate(source_id: str, new_path: str) -> dict[str, Any]:
         source = sources.get_source(connection, source_id)
     if source is None:
         raise FolderRegistryError(404, "Unknown folder source")
-    descriptor = MODULE_REGISTRY.require(sources.canonical_role(source.role))
+    descriptor = _require_owner(source.role)
     if descriptor.is_base:
         raise FolderRegistryError(
             400,
@@ -263,14 +308,19 @@ def relocate(source_id: str, new_path: str) -> dict[str, Any]:
 
 
 def forget_preview(source_id: str) -> dict[str, Any]:
+    with _folder_work([source_id]):
+        return _forget_preview(source_id)
+
+
+def _forget_preview(source_id: str) -> dict[str, Any]:
     with get_user_db() as connection:
         sources.ensure_sources_schema(connection)
         source = sources.get_source(connection, source_id)
     if source is None:
         raise FolderRegistryError(404, "Unknown folder source")
+    descriptor = _require_owner(source.role)
     with index.open_index(FILES_DB_PATH) as index_connection:
         base_files = index.source_entry_count(index_connection, source_id)
-    descriptor = MODULE_REGISTRY.require(sources.canonical_role(source.role))
     module = descriptor.folder_preview(source_id)
     return {
         "source_id": source_id,

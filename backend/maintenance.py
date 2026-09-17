@@ -12,6 +12,7 @@ _tool_state_lock = threading.RLock()
 _tool_operation_lock = threading.RLock()
 _active_tool_id: str | None = None
 _module_transition = False
+_module_operations = 0
 
 
 def active_tool_id() -> str | None:
@@ -41,6 +42,8 @@ def module_transition():
     try:
         if _module_transition:
             raise RuntimeError("Wait for the module transition to finish")
+        if _module_operations:
+            raise RuntimeError("Wait for module operations to finish before changing modules")
         with _tool_state_lock:
             if _active_tool_id:
                 raise RuntimeError(f"Wait for {_active_tool_id} to finish before changing modules")
@@ -52,3 +55,18 @@ def module_transition():
     finally:
         with _tool_operation_lock:
             _module_transition = False
+
+
+@contextmanager
+def module_operation():
+    """Keep a live transition from racing an admitted module request."""
+    global _module_operations
+    with _tool_operation_lock:
+        if _module_transition:
+            raise RuntimeError("Wait for the module transition to finish")
+        _module_operations += 1
+    try:
+        yield
+    finally:
+        with _tool_operation_lock:
+            _module_operations -= 1

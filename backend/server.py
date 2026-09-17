@@ -2,6 +2,9 @@
 
 from config import CODE_ROOT, MODULE_REGISTRY
 from fastapi.responses import FileResponse
+from fastapi import Depends, HTTPException
+import suite_modules
+from maintenance import module_operation
 from app_factory import app
 from routers import backups, cache, recovery, storage, suite, user_settings
 
@@ -13,9 +16,25 @@ for shell_router in (suite.router, user_settings.router, backups.router, recover
 # Every registered surface contributes its own routers — the Files base and each
 # optional module. Adding a module is a descriptor field, never an edit here.
 # Routers stay always-mounted (contract §8); endpoints gate on enabled state.
+def module_guard(module_id: str):
+    def guarded():
+        from contextlib import ExitStack
+        # The lease lasts through the response, including streamed media.
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(module_operation())
+                suite_modules.require_enabled(module_id)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            yield
+
+    return guarded
+
+
 for descriptor in MODULE_REGISTRY:
+    dependencies = [] if descriptor.is_base else [Depends(module_guard(descriptor.slug))]
     for module_router in descriptor.routers():
-        app.include_router(module_router)
+        app.include_router(module_router, dependencies=dependencies)
 
 FRONTEND_DIST = CODE_ROOT / 'frontend' / 'dist'
 

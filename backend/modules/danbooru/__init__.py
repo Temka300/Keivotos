@@ -17,6 +17,14 @@ def publish_sources(user_connection: sqlite3.Connection) -> None:
     ).fetchall()
     folders = [(str(row["path"]), row["display_name"]) for row in rows]
     sources.reconcile_module_sources(user_connection, "danbooru", folders)
+    for path, _name in folders:
+        source = sources.get_source(user_connection, sources.deterministic_source_id(path))
+        if source is not None:
+            user_connection.execute(
+                "UPDATE registered_folders SET display_name=? WHERE path=?",
+                (source.display_name, path),
+            )
+    user_connection.commit()
 
 
 def adopt_source(source_id: str) -> dict[str, object]:
