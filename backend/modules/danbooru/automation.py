@@ -16,6 +16,7 @@ from modules.danbooru.tools import (
     _sync_command,
     _sync_scan_paths,
 )
+import maintenance
 from maintenance import exclusive_tool_operation
 from thumbnails import SUPPORTED_IMAGES, SUPPORTED_VIDEOS
 
@@ -129,11 +130,26 @@ def run_automation_tick() -> dict:
     return automation_status()
 
 
+async def drainable_thread_call(function) -> None:
+    """Cancellation waits for an already-running thread; it cannot kill it."""
+    work = asyncio.create_task(asyncio.to_thread(function))
+    try:
+        await asyncio.shield(work)
+    except asyncio.CancelledError:
+        try:
+            await work
+        finally:
+            raise
+
+
 async def automation_loop() -> None:
     """Run once on startup, then reconcile at the user-selected interval."""
     while True:
+        # Live enable finishes persisting state before the first scan starts.
+        while maintenance._module_transition:
+            await asyncio.sleep(0.05)
         try:
-            await asyncio.to_thread(run_automation_tick)
+            await drainable_thread_call(run_automation_tick)
         except Exception:  # noqa: BLE001 - the next tick must remain available.
             logger.exception("Automatic library ingest tick failed")
         interval = get_automation_config()["interval_minutes"]

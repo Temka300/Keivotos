@@ -164,6 +164,8 @@ def _launch_tool(
     on_success: Callable[[], str | None] | None = None,
 ) -> dict[str, Any]:
     with _tool_operation_lock:
+        if maintenance._module_transition:
+            return {"status": "busy", "active_tool_id": "module-transition"}
         with _tool_state_lock:
             if maintenance._active_tool_id:
                 status = "already_running" if maintenance._active_tool_id == tool_id else "busy"

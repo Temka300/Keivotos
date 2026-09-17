@@ -10,12 +10,11 @@ The local-only watcher is owned by this module as well.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
-from modules.danbooru.automation import automation_loop
+from modules.danbooru.automation import automation_loop, drainable_thread_call
 from config import DATA_ROOT, SIDECAR_DIR
 from database import get_data_db
 from modules.danbooru.folder_registry import library_roots
@@ -64,6 +63,6 @@ def background_tasks() -> list[tuple[str, object]]:
     the auto-ingest watcher. Coroutines are constructed here (only when the
     module is active) and spawned as tasks by the suite lifespan."""
     return [
-        ("danbooru-sidecar-migration", asyncio.to_thread(run_sidecar_layout_migration)),
+        ("danbooru-sidecar-migration", drainable_thread_call(run_sidecar_layout_migration)),
         ("danbooru-auto-ingest", automation_loop()),
     ]

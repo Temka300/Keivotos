@@ -39,3 +39,11 @@ Using one of the `%LOCALAPPDATA%` and `data\` will not interfere each other and 
 
 Manual `backup_<Unix timestamp>.keivotosbk` bundles may contain the selected SQLite databases and sidecar/profile archives.
 
+
+## Disabling a module
+
+Disabling Danbooru stops its background workers without deleting its index,
+metadata, folder assignments, or saved automation settings. Re-enabling it starts
+its workers again without restarting Keivotos. If an import, scan, backup, or
+restore is busy, let it finish and retry. Disable waits for running background
+thread work to finish before confirming the change.

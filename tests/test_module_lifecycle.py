@@ -139,5 +139,108 @@ class ModuleLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("fixture checkpoint failure" in message for message in logs.output))
 
 
+class LiveModuleRuntimeTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_is_idempotent_stop_drains_and_reenable_creates_new_worker(self):
+        events = []
+
+        async def worker():
+            events.append('start')
+            try:
+                await asyncio.Event().wait()
+            finally:
+                events.append('stop')
+
+        owner = descriptor('optional', background_tasks_hook=lambda: [('live-worker', worker())])
+        runtime = lifecycle.ModuleRuntime()
+        with patch.object(lifecycle, 'get_user_db', side_effect=lambda: nullcontext(object())):
+            runtime.start(owner)
+            runtime.start(owner)
+            await asyncio.sleep(0)
+            self.assertEqual(events, ['start'])
+            await runtime.stop(owner.slug)
+            self.assertEqual(events, ['start', 'stop'])
+            runtime.start(owner)
+            await asyncio.sleep(0)
+            await runtime.stop(owner.slug)
+        self.assertEqual(events, ['start', 'stop', 'start', 'stop'])
+        self.assertEqual(runtime.tasks, {})
+
+    async def test_cancel_waits_for_thread_to_finish(self):
+        import threading
+        from modules.danbooru.automation import drainable_thread_call
+
+        started, release, finished = threading.Event(), threading.Event(), threading.Event()
+
+        def work():
+            started.set()
+            release.wait(5)
+            finished.set()
+
+        task = asyncio.create_task(drainable_thread_call(work))
+        try:
+            self.assertTrue(await asyncio.to_thread(started.wait, 2))
+            task.cancel()
+            await asyncio.sleep(0.02)
+            self.assertFalse(task.done())
+            release.set()
+            with self.assertRaises(asyncio.CancelledError):
+                await task
+            self.assertTrue(finished.is_set())
+        finally:
+            release.set()
+            await asyncio.gather(task, return_exceptions=True)
+
+    async def test_live_routes_serialize_and_stop_before_persisting_disable(self):
+        from routers import suite
+        events = []
+        enabled = set()
+        runtime = lifecycle.ModuleRuntime()
+
+        async def worker():
+            events.append('start')
+            try:
+                await asyncio.Event().wait()
+            finally:
+                events.append('stop')
+
+        owner = descriptor('optional', background_tasks_hook=lambda: [('toggle-worker', worker())])
+
+        def persist(connection, slug, value):
+            events.append('enabled' if value else 'disabled')
+            if value:
+                enabled.add(slug)
+            else:
+                self.assertNotIn(slug, runtime.tasks)
+                enabled.discard(slug)
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(suite.suite_modules, 'MODULE_REGISTRY', ModuleRegistry((descriptor("files", base=True), owner))))
+            stack.enter_context(patch.object(suite, 'get_user_db', side_effect=lambda: nullcontext(object())))
+            stack.enter_context(patch.object(lifecycle, 'get_user_db', side_effect=lambda: nullcontext(object())))
+            stack.enter_context(patch.object(lifecycle, 'module_runtime', runtime))
+            stack.enter_context(patch.object(suite.suite_modules, 'ensure_schema'))
+            stack.enter_context(patch.object(suite.suite_modules, 'enabled_ids', side_effect=lambda conn: set(enabled)))
+            stack.enter_context(patch.object(suite.suite_modules, 'set_enabled', side_effect=persist))
+            initialize = stack.enter_context(patch.object(suite, 'init_data_db'))
+            stack.enter_context(patch.object(suite, 'init_user_db'))
+            try:
+                await asyncio.gather(*(asyncio.to_thread(suite.enable_module, 'optional') for _ in range(3)))
+                self.assertEqual(events.count('start'), 1)
+                initialize.assert_called_once()
+                await asyncio.to_thread(suite.disable_module, 'optional')
+                self.assertLess(events.index('stop'), events.index('disabled'))
+                await asyncio.to_thread(suite.enable_module, 'optional')
+                self.assertEqual(events.count('start'), 2)
+                with patch.object(suite.suite_modules, 'set_enabled', side_effect=RuntimeError('fixture write failure')):
+                    from fastapi import HTTPException
+                    with self.assertRaises(HTTPException):
+                        await asyncio.to_thread(suite.disable_module, 'optional')
+                self.assertIn('optional', enabled)
+                self.assertIn('optional', runtime.tasks)
+                self.assertEqual(events.count('start'), 3)
+            finally:
+                await runtime.stop('optional')
+
+
 if __name__ == "__main__":
     unittest.main()

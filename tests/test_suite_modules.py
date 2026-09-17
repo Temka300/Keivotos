@@ -140,5 +140,48 @@ class SuiteApiRouteTests(unittest.TestCase):
         self.assertTrue(result.sources[0].visible)
 
 
+class ModuleTransitionReservationTests(unittest.TestCase):
+    def test_transition_excludes_tools_and_maintenance(self):
+        import maintenance
+        from modules.danbooru.tools import _launch_tool
+
+        with maintenance.module_transition():
+            self.assertEqual(_launch_tool('fixture', [])['status'], 'busy')
+            with self.assertRaises(RuntimeError):
+                with maintenance.exclusive_tool_operation('fixture backup'):
+                    self.fail('Maintenance must not overlap a transition')
+        with maintenance.exclusive_tool_operation('fixture backup'):
+            pass
+
+    def test_active_tool_rejects_transition_and_preserves_reservation(self):
+        import maintenance
+
+        with patch.object(maintenance, '_active_tool_id', 'fixture-import'):
+            with self.assertRaisesRegex(RuntimeError, 'fixture-import'):
+                with maintenance.module_transition():
+                    self.fail('Active tools must finish first')
+        self.assertFalse(maintenance._module_transition)
+
+    def test_other_thread_maintenance_rejects_transition_without_waiting(self):
+        import maintenance
+        import threading
+
+        entered, release = threading.Event(), threading.Event()
+        def backup():
+            with maintenance.exclusive_tool_operation('fixture backup'):
+                entered.set()
+                release.wait(5)
+        thread = threading.Thread(target=backup)
+        thread.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            with self.assertRaisesRegex(RuntimeError, 'maintenance'):
+                with maintenance.module_transition():
+                    self.fail('Busy backup must reject disable')
+        finally:
+            release.set()
+            thread.join(2)
+
+
 if __name__ == "__main__":
     unittest.main()

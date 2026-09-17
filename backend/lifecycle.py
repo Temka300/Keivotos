@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from contextlib import asynccontextmanager, suppress
 from typing import AsyncGenerator
 
@@ -113,6 +114,42 @@ def _bring_module_online(descriptor: ModuleDescriptor, background_tasks: list) -
         background_tasks.append(asyncio.create_task(coro, name=name))
 
 
+class ModuleRuntime:
+    """Own each module's tasks on the application's event loop."""
+
+    def __init__(self):
+        self.loop = asyncio.get_running_loop()
+        self.tasks: dict[str, list[asyncio.Task]] = {}
+
+    def start(self, descriptor: ModuleDescriptor) -> None:
+        if descriptor.slug not in self.tasks:
+            tasks = []
+            _bring_module_online(descriptor, tasks)
+            self.tasks[descriptor.slug] = tasks
+
+    async def stop(self, slug: str) -> None:
+        tasks = self.tasks.get(slug, [])
+        for task in tasks:
+            task.cancel()
+        # Await every worker, including thread-draining cancellation handlers.
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self.tasks.pop(slug, None)
+
+    async def change(self, descriptor: ModuleDescriptor, enabled: bool) -> None:
+        if enabled:
+            self.start(descriptor)
+        else:
+            await self.stop(descriptor.slug)
+
+    def change_from_request(self, descriptor: ModuleDescriptor, enabled: bool) -> None:
+        # Suite mutation routes are synchronous FastAPI worker-thread handlers.
+        asyncio.run_coroutine_threadsafe(self.change(descriptor, enabled), self.loop).result()
+
+
+module_change_lock = threading.Lock()
+module_runtime: ModuleRuntime | None = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Suite-level startup — always runs, independent of any module.
@@ -150,7 +187,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         asyncio.to_thread(run_user_recovery_checkpoint),
         name="suite-recovery-checkpoint",
     )
-    background_tasks = [checkpoint_task]
+    global module_runtime
+    runtime = ModuleRuntime()
+    module_runtime = runtime
 
     # Bring each active surface online — generic over the registry. A disabled
     # module contributes nothing and its background work never starts.
@@ -158,13 +197,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         if not (descriptor.is_base or active is None or descriptor.slug in active):
             logger.info("Module '%s' is disabled; skipping its startup and background work", descriptor.slug)
             continue
-        _bring_module_online(descriptor, background_tasks)
+        runtime.start(descriptor)
 
     try:
         yield
     finally:
-        for task in background_tasks:
-            task.cancel()
-        for task in background_tasks:
-            with suppress(asyncio.CancelledError):
-                await task
+        module_runtime = None
+        for slug in list(runtime.tasks):
+            await runtime.stop(slug)
+        checkpoint_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await checkpoint_task
