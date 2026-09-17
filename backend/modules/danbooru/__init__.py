@@ -90,6 +90,18 @@ def _initialize_index(database_path, connection_factory) -> None:
     initialize_index(database_path, connection_factory)
 
 
+def _user_schema() -> str:
+    from modules.danbooru.user_schema import USER_SCHEMA
+
+    return USER_SCHEMA
+
+
+def _migrate_user_tables(connection, database_path: Path, media_root: Path) -> None:
+    from modules.danbooru.user_schema import migrate_user_tables
+
+    migrate_user_tables(connection, database_path, media_root)
+
+
 def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
     home = suite_home / "modules" / "danbooru"
     return ModuleDescriptor(
@@ -113,4 +125,6 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         router_provider=_routers,
         background_tasks_hook=_background_tasks,
         index_initializer=_initialize_index,
+        user_schema_provider=_user_schema,
+        user_migrator=_migrate_user_tables,
     )

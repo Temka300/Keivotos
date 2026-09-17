@@ -57,6 +57,8 @@ class ModuleDescriptor:
     background_tasks_hook: BackgroundTasksHook | None = None
 
     index_initializer: IndexInitializer | None = None
+    user_schema_provider: Callable[[], str] | None = None
+    user_migrator: Callable[[sqlite3.Connection, Path, Path], None] | None = None
 
     def run_startup(self) -> None:
         """Synchronous once-at-startup work, run only when the module is active."""

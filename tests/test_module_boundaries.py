@@ -41,6 +41,7 @@ CORE_DIRS = ("files_base", "services")
 CORE_FILES = (
     "config.py",
     "database.py",
+    "user_schema.py",
     "database_connections.py",
     "maintenance.py",
     "routers/backups.py",
