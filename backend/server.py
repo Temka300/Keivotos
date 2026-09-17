@@ -4,6 +4,7 @@ from config import CODE_ROOT, MODULE_REGISTRY
 from fastapi.responses import FileResponse
 from fastapi import Depends, HTTPException
 import suite_modules
+import lifecycle
 from maintenance import module_operation
 from app_factory import app
 from routers import backups, cache, recovery, storage, suite, user_settings
@@ -24,6 +25,8 @@ def module_guard(module_id: str):
             try:
                 stack.enter_context(module_operation())
                 suite_modules.require_enabled(module_id)
+            except lifecycle.ModuleStartError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
             except RuntimeError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             yield

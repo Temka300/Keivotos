@@ -5,8 +5,8 @@ migrations, suite schema initialization, and the recovery checkpoint. Module
 storage migration and schema initialization run only for active owners. Then each
 **active** surface (the base plus every enabled module) is brought online
 generically through its descriptor: its folders are published, its startup hook
-runs, and its background tasks are spawned inside catch boundaries. Storage
-initialization errors still propagate; broader failure isolation is separate work.
+runs, and its background tasks are supervised. Optional-owner initialization
+and worker failures are recorded without taking down the suite or Files.
 
 This module names no module. A module's own startup/background code lives under
 ``modules/<slug>/`` and is reached only through the descriptor, which is what
@@ -77,73 +77,119 @@ def install_first_run_default_library() -> None:
 def _active_module_slugs() -> set[str] | None:
     """Enabled optional-module slugs, or ``None`` when they cannot be read.
 
-    ``None`` is fail-open: on a read error every module is treated as active, so
-    a transient fault never hides an existing library's background work (matching
-    the prior Danbooru-specific fail-safe).
+    ``None`` fails closed for optional owners; Files still starts. A failed
+    enablement lookup must not silently activate an optional module.
     """
     try:
         with get_user_db() as connection:
             suite_modules.ensure_schema(connection)
             return set(suite_modules.enabled_ids(connection))
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Could not read enabled modules; treating all as active: %s", exc)
+        logger.warning("Could not read enabled modules; optional modules will not start: %s", exc)
         return None
 
 
-def _bring_module_online(descriptor: ModuleDescriptor, background_tasks: list) -> None:
-    """Publish, start, and spawn one active surface's work.
-
-    Every step has its own catch boundary (contract §7). The base has no
-    publish/startup/background hooks, so this is a no-op for it.
-    """
-    try:
-        with get_user_db() as connection:
-            descriptor.publish(connection)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Module '%s': folder publish failed: %s", descriptor.slug, exc)
-    try:
-        descriptor.run_startup()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Module '%s': startup hook failed: %s", descriptor.slug, exc)
-    try:
-        tasks = descriptor.background_tasks()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Module '%s': could not build background tasks: %s", descriptor.slug, exc)
-        tasks = []
-    for name, coro in tasks:
-        background_tasks.append(asyncio.create_task(coro, name=name))
+class ModuleStartError(RuntimeError):
+    """A recorded module failure, distinct from a busy maintenance reservation."""
 
 
 class ModuleRuntime:
-    """Own each module's tasks on the application's event loop."""
+    """Own module tasks and failure state on the application's event loop."""
 
     def __init__(self):
         self.loop = asyncio.get_running_loop()
         self.tasks: dict[str, list[asyncio.Task]] = {}
+        self._states: dict[str, dict] = {}
+        self._state_lock = threading.Lock()
 
-    def start(self, descriptor: ModuleDescriptor) -> None:
-        if descriptor.slug not in self.tasks:
-            tasks = []
-            _bring_module_online(descriptor, tasks)
-            self.tasks[descriptor.slug] = tasks
+    def status(self, slug: str) -> dict:
+        with self._state_lock:
+            return dict(self._states.get(slug, {"state": "disabled", "error": None}))
+
+    def _set_state(self, slug: str, state: str, error: str | None = None) -> None:
+        with self._state_lock:
+            self._states[slug] = {"state": state, "error": error}
+
+    def fail(self, slug: str, stage: str, exc: Exception) -> None:
+        message = f"{stage} failed; see the runtime log"
+        self._set_state(slug, "failed", message)
+        logger.error("Module '%s': %s: %s", slug, stage, exc,
+                     exc_info=(type(exc), exc, exc.__traceback__))
+
+    def start(self, descriptor: ModuleDescriptor) -> bool:
+        if descriptor.slug in self.tasks:
+            return self.status(descriptor.slug)["state"] == "running"
+        self._set_state(descriptor.slug, "starting")
+        tasks = self.tasks[descriptor.slug] = []
+        pending = []
+        try:
+            with get_user_db() as connection:
+                descriptor.publish(connection)
+            descriptor.run_startup()
+            pending = descriptor.background_tasks()
+            for name, coroutine in pending:
+                # Schedule the original coroutine so pre-start cancellation also
+                # closes it correctly; the callback observes escaped failures.
+                task = asyncio.create_task(coroutine, name=name)
+                tasks.append(task)
+                task.add_done_callback(lambda done, slug=descriptor.slug: self._worker_done(slug, done))
+        except Exception as exc:
+            self.fail(descriptor.slug, "Startup hooks", exc)
+            for task in tasks:
+                task.cancel()
+            for _name, coroutine in pending[len(tasks):]:
+                if hasattr(coroutine, "close"):
+                    coroutine.close()
+            return False
+        self._set_state(descriptor.slug, "running")
+        return True
+
+    def _worker_done(self, slug: str, task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exception = task.exception()
+        if task not in self.tasks.get(slug, []):
+            return
+        if exception is None:
+            return  # One-shot maintenance completes normally.
+        if self.status(slug)["state"] in {"stopping", "disabled"}:
+            logger.error("Module '%s': worker cleanup failed", slug,
+                         exc_info=(type(exception), exception, exception.__traceback__))
+            return
+        self.fail(slug, f"Worker {task.get_name()}", exception)
+        for sibling in self.tasks.get(slug, []):
+            if sibling is not task and not sibling.done() and not sibling.cancelling():
+                sibling.cancel()
 
     async def stop(self, slug: str) -> None:
+        self._set_state(slug, "stopping")
         tasks = self.tasks.get(slug, [])
         for task in tasks:
-            task.cancel()
-        # Await every worker, including thread-draining cancellation handlers.
+            if not task.done() and not task.cancelling():
+                task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         self.tasks.pop(slug, None)
+        self._set_state(slug, "disabled")
 
     async def change(self, descriptor: ModuleDescriptor, enabled: bool) -> None:
         if enabled:
-            self.start(descriptor)
+            if not self.start(descriptor):
+                message = self.status(descriptor.slug)["error"]
+                await self.stop(descriptor.slug)
+                self._set_state(descriptor.slug, "failed", message)
+                raise ModuleStartError(message)
         else:
             await self.stop(descriptor.slug)
 
     def change_from_request(self, descriptor: ModuleDescriptor, enabled: bool) -> None:
-        # Suite mutation routes are synchronous FastAPI worker-thread handlers.
         asyncio.run_coroutine_threadsafe(self.change(descriptor, enabled), self.loop).result()
+
+
+def initialize_module_storage(descriptor: ModuleDescriptor) -> None:
+    if descriptor.storage_migration_hook is not None:
+        descriptor.storage_migration_hook()
+    init_data_db({descriptor.slug})
+    init_user_db({descriptor.slug})
 
 
 module_change_lock = threading.Lock()
@@ -171,12 +217,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Only suite-owned tables are needed to read the module enablement state.
     init_user_db(set())
     active = _active_module_slugs()
-    for descriptor in MODULE_REGISTRY:
-        if descriptor.is_base or active is None or descriptor.slug in active:
-            if descriptor.storage_migration_hook is not None:
-                descriptor.storage_migration_hook()
-    init_data_db(active)
-    init_user_db(active)
 
     # A brand-new install gets a ready-to-use Library folder beside the program.
     # Suite-level and once-only; never touches an existing library.
@@ -194,10 +234,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Bring each active surface online — generic over the registry. A disabled
     # module contributes nothing and its background work never starts.
     for descriptor in MODULE_REGISTRY:
-        if not (descriptor.is_base or active is None or descriptor.slug in active):
+        if active is None and not descriptor.is_base:
+            runtime.fail(descriptor.slug, "Enablement lookup", RuntimeError("Enabled modules could not be read"))
+            continue
+        if not (descriptor.is_base or descriptor.slug in active):
             logger.info("Module '%s' is disabled; skipping its startup and background work", descriptor.slug)
             continue
-        runtime.start(descriptor)
+        try:
+            if not descriptor.is_base:
+                runtime._set_state(descriptor.slug, "starting")
+                initialize_module_storage(descriptor)
+            runtime.start(descriptor)
+        except Exception as exc:
+            if descriptor.is_base:
+                raise
+            runtime.fail(descriptor.slug, "Storage initialization", exc)
 
     try:
         yield

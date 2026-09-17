@@ -104,7 +104,7 @@ class SuiteApiRouteTests(unittest.TestCase):
         with patch.object(self.suite, "init_data_db", side_effect=RuntimeError("fixture busy")):
             with self.assertRaises(HTTPException) as caught:
                 self.suite.enable_module("danbooru")
-            self.assertEqual(caught.exception.status_code, 409)
+            self.assertEqual(caught.exception.status_code, 503)
         self.assertFalse(next(module for module in self.suite.list_modules() if module.id == "danbooru").enabled)
 
     def test_unknown_module_is_404(self) -> None:

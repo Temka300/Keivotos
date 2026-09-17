@@ -122,6 +122,31 @@ class ModuleLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(any("broken" in message and "fixture failure" in message
                                     for message in logs.output))
 
+    async def test_storage_failure_keeps_files_and_other_modules_running(self) -> None:
+        files, healthy = Mock(), Mock()
+        self.registry(
+            descriptor("files", base=True, startup_hook=files),
+            descriptor("broken", storage_migration_hook=Mock(side_effect=OSError("fixture storage"))),
+            descriptor("healthy", startup_hook=healthy),
+            enabled={"broken", "healthy"},
+        )
+        with self.assertLogs("lifecycle", level="ERROR"):
+            async with lifecycle.lifespan(None):
+                files.assert_called_once()
+                healthy.assert_called_once()
+                self.assertEqual(lifecycle.module_runtime.status("broken")["state"], "failed")
+                self.assertEqual(lifecycle.module_runtime.status("healthy")["state"], "running")
+                self.assertNotIn("broken", lifecycle.module_runtime.tasks)
+
+    async def test_unreadable_enablement_does_not_activate_optional_module(self) -> None:
+        optional = Mock()
+        self.registry(descriptor("files", base=True), descriptor("optional", startup_hook=optional), enabled=None)
+        with self.assertLogs("lifecycle", level="ERROR"):
+            async with lifecycle.lifespan(None):
+                optional.assert_not_called()
+                self.assertEqual(lifecycle.module_runtime.status("files")["state"], "running")
+                self.assertEqual(lifecycle.module_runtime.status("optional")["state"], "failed")
+
     async def test_recovery_runs_with_no_optional_module_enabled(self) -> None:
         self.registry(descriptor("files", base=True), enabled=set())
         async with lifecycle.lifespan(None):
@@ -189,6 +214,73 @@ class LiveModuleRuntimeTests(unittest.IsolatedAsyncioTestCase):
         finally:
             release.set()
             await asyncio.gather(task, return_exceptions=True)
+
+    async def test_worker_failure_cancels_siblings_and_retry_starts_one_set(self):
+        crash, stopped = asyncio.Event(), asyncio.Event()
+        runtime = lifecycle.ModuleRuntime()
+
+        async def broken():
+            await crash.wait()
+            raise RuntimeError("fixture worker crash")
+
+        async def sibling():
+            try:
+                await asyncio.Event().wait()
+            finally:
+                stopped.set()
+
+        owner = descriptor("optional", background_tasks_hook=lambda: [
+            ("broken-worker", broken()), ("sibling-worker", sibling())])
+        with patch.object(lifecycle, 'get_user_db', side_effect=lambda: nullcontext(object())):
+            with self.assertLogs("lifecycle", level="ERROR"):
+                runtime.start(owner)
+                await asyncio.sleep(0)
+                crash.set()
+                await asyncio.wait_for(stopped.wait(), 2)
+                self.assertEqual(runtime.status("optional")["state"], "failed")
+            await runtime.stop("optional")
+            crash.clear()
+            runtime.start(owner)
+            runtime.start(owner)
+            self.assertEqual(len(runtime.tasks["optional"]), 2)
+            self.assertEqual(runtime.status("optional")["state"], "running")
+            await runtime.stop("optional")
+            self.assertEqual(runtime.status("optional")["state"], "disabled")
+
+    async def test_multiple_worker_failures_do_not_cancel_thread_cleanup_twice(self):
+        import threading
+        from modules.danbooru.automation import drainable_thread_call
+        started, release = threading.Event(), threading.Event()
+        crash = asyncio.Event()
+        runtime = lifecycle.ModuleRuntime()
+
+        def work():
+            started.set()
+            release.wait(5)
+
+        async def broken():
+            await crash.wait()
+            raise RuntimeError("fixture simultaneous failure")
+
+        owner = descriptor("optional", background_tasks_hook=lambda: [
+            ("broken-one", broken()), ("broken-two", broken()),
+            ("draining-thread", drainable_thread_call(work))])
+        with patch.object(lifecycle, 'get_user_db', side_effect=lambda: nullcontext(object())):
+            try:
+                with self.assertLogs("lifecycle", level="ERROR"):
+                    runtime.start(owner)
+                    self.assertTrue(await asyncio.to_thread(started.wait, 2))
+                    crash.set()
+                    await asyncio.sleep(.02)
+                    self.assertFalse(runtime.tasks["optional"][2].done())
+                    stopping = asyncio.create_task(runtime.stop("optional"))
+                    await asyncio.sleep(.02)
+                    self.assertFalse(stopping.done())
+                    release.set()
+                    await asyncio.wait_for(stopping, 2)
+            finally:
+                release.set()
+                await runtime.stop("optional")
 
     async def test_live_routes_serialize_and_stop_before_persisting_disable(self):
         from routers import suite

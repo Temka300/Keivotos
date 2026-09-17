@@ -2892,6 +2892,43 @@
         "title": "ManagedFolder",
         "type": "object"
       },
+      "ModuleStatus": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "disabled",
+              "starting",
+              "running",
+              "stopping",
+              "failed",
+              "unavailable"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "state"
+        ],
+        "title": "ModuleStatus",
+        "type": "object"
+      },
       "PaginatedImages": {
         "properties": {
           "images": {
@@ -8837,6 +8874,84 @@
           }
         },
         "summary": "Enable Module"
+      }
+    },
+    "/api/suite/modules/{module_id}/retry": {
+      "post": {
+        "operationId": "retry_module_api_suite_modules__module_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry Module"
+      }
+    },
+    "/api/suite/modules/{module_id}/status": {
+      "get": {
+        "operationId": "module_status_api_suite_modules__module_id__status_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "module_id",
+            "required": true,
+            "schema": {
+              "title": "Module Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModuleStatus"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Module Status"
       }
     },
     "/api/tags": {

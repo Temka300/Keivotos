@@ -47,7 +47,8 @@ def _folder_work(source_ids: list[str], roles: tuple[str, ...] | list[str] = ())
     except RuntimeError as exc:
         if isinstance(exc, FolderRegistryError):
             raise
-        raise FolderRegistryError(409, str(exc)) from exc
+        from lifecycle import ModuleStartError
+        raise FolderRegistryError(503 if isinstance(exc, ModuleStartError) else 409, str(exc)) from exc
 
 
 def _require_owner(role: str):
@@ -67,6 +68,7 @@ def _validate_role(role: str, enabled: set[str]) -> str:
         raise FolderRegistryError(400, f"Unknown folder role: {role}")
     if descriptor.disableable and descriptor.slug not in enabled:
         raise FolderRegistryError(409, f"Enable {descriptor.name} before assigning folders to it")
+    suite_modules.require_enabled(descriptor.slug)
     return descriptor.slug
 
 
@@ -197,10 +199,13 @@ def _apply_changes(changes: list[FolderChange]) -> dict[str, Any]:
                     sources.ensure_sources_schema(connection)
                     sources.update_source(connection, source.source_id, role=target_descriptor.slug)
         else:
-            with get_user_db() as connection:
-                enabled = suite_modules.enabled_ids(connection)
-            if current_descriptor is not None and (current_descriptor.is_base or current_role in enabled):
-                current_descriptor.update_folder(source.source_id)
+            if current_descriptor is None:
+                continue
+            try:
+                suite_modules.require_enabled(current_role)
+            except RuntimeError:
+                continue  # Shared presentation remains editable for unavailable owners.
+            current_descriptor.update_folder(source.source_id)
 
     for change, path, target_role in additions:
         with get_user_db() as connection:

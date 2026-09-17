@@ -75,3 +75,8 @@ def require_enabled(module_id: str) -> None:
         enabled = enabled_ids(connection)
     if module_id not in enabled:
         raise RuntimeError(f"Enable {descriptor.name} before using its operations")
+
+    import lifecycle
+    runtime = lifecycle.module_runtime
+    if runtime is not None and runtime.status(module_id)["state"] != "running":
+        raise lifecycle.ModuleStartError(f"{descriptor.name} is not running; check its status and retry")

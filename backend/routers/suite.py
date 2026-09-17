@@ -7,6 +7,7 @@ accessor and the standalone ``suite_modules`` registry.
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
+from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 import suite_modules
@@ -26,6 +27,62 @@ class SuiteModule(BaseModel):
     disableable: bool
     is_base: bool
     api_prefix: str
+
+
+class ModuleStatus(BaseModel):
+    id: str
+    state: Literal["disabled", "starting", "running", "stopping", "failed", "unavailable"]
+    error: str | None = None
+
+
+def _initialize_module(descriptor) -> None:
+    if lifecycle.module_runtime is not None:
+        lifecycle.module_runtime._set_state(descriptor.slug, "starting")
+    try:
+        if descriptor.storage_migration_hook is not None:
+            descriptor.storage_migration_hook()
+        init_data_db({descriptor.slug})
+        init_user_db({descriptor.slug})
+    except Exception as exc:
+        if lifecycle.module_runtime is not None:
+            lifecycle.module_runtime.fail(descriptor.slug, "Storage initialization", exc)
+        raise lifecycle.ModuleStartError("Storage initialization failed; see the runtime log") from exc
+
+
+@router.get("/api/suite/modules/{module_id}/status", response_model=ModuleStatus)
+def module_status(module_id: str) -> ModuleStatus:
+    if not suite_modules.is_known(module_id):
+        raise HTTPException(status_code=404, detail="Unknown module")
+    runtime = lifecycle.module_runtime
+    state = runtime.status(module_id) if runtime is not None else {"state": "unavailable", "error": None}
+    return ModuleStatus(id=module_id, **state)
+
+
+@router.post("/api/suite/modules/{module_id}/retry", response_model=ModuleStatus)
+def retry_module(module_id: str) -> ModuleStatus:
+    if not suite_modules.is_known(module_id):
+        raise HTTPException(status_code=404, detail="Unknown module")
+    descriptor = suite_modules.MODULE_REGISTRY.require(module_id)
+    with lifecycle.module_change_lock:
+        runtime = lifecycle.module_runtime
+        if runtime is None:
+            raise HTTPException(status_code=503, detail="Module runtime is unavailable")
+        with get_user_db() as connection:
+            enabled = module_id in suite_modules.enabled_ids(connection)
+        if descriptor.is_base or not enabled:
+            raise HTTPException(status_code=409, detail="Enable an optional module before retrying it")
+        if runtime.status(module_id)["state"] == "running":
+            return module_status(module_id)
+        try:
+            with module_transition():
+                runtime.change_from_request(descriptor, False)
+                _initialize_module(descriptor)
+                runtime.change_from_request(descriptor, True)
+        except lifecycle.ModuleStartError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return module_status(module_id)
 
 
 class FolderChangePayload(BaseModel):
@@ -116,10 +173,7 @@ def _set_enabled(module_id: str, enabled: bool) -> SuiteModule:
             try:
                 with module_transition():
                     if enabled:
-                        if descriptor.storage_migration_hook is not None:
-                            descriptor.storage_migration_hook()
-                        init_data_db({module_id})
-                        init_user_db({module_id})
+                        _initialize_module(descriptor)
                     runtime = lifecycle.module_runtime
                     if runtime is not None:
                         runtime.change_from_request(descriptor, enabled)
@@ -130,6 +184,8 @@ def _set_enabled(module_id: str, enabled: bool) -> SuiteModule:
                         if runtime is not None:
                             runtime.change_from_request(descriptor, already_enabled)
                         raise
+            except lifecycle.ModuleStartError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
             except RuntimeError as exc:
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
     return SuiteModule(

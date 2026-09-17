@@ -169,6 +169,20 @@ class FolderRoleServiceTests(unittest.TestCase):
             self.assertEqual(shared.display_name, "Shared label")
             self.assertFalse(shared.visible)
 
+    def test_failed_owner_cannot_receive_new_assignment(self) -> None:
+        import lifecycle
+        with database.get_user_db() as connection:
+            suite_modules.set_enabled(connection, "danbooru", True)
+        runtime = Mock()
+        runtime.status.return_value = {"state": "failed", "error": "fixture"}
+        with patch.object(lifecycle, "module_runtime", runtime):
+            with self.assertRaises(folder_roles.FolderRegistryError) as caught:
+                folder_roles.apply_changes([
+                    folder_roles.FolderChange(None, str(self.library), "Library", "danbooru")])
+            self.assertEqual(caught.exception.status_code, 503)
+        with database.get_user_db() as connection:
+            self.assertEqual(sources.list_sources(connection), [])
+
     def test_role_changes_dispatch_through_descriptor_hooks(self) -> None:
         events: list[tuple[str, str]] = []
 

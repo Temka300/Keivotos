@@ -53,3 +53,16 @@ require re-enabling it. Files can still browse the preserved folders and change
 their shared names or visibility. Folder release, forget, relocation and Danbooru
 rescan require Danbooru to be enabled. A disable request may ask you to retry
 while a module request is still in progress.
+
+## Module runtime failures
+
+If Danbooru fails during initialization or a background worker crashes, Files
+remains available. Existing data and the saved enabled choice are preserved;
+Danbooru operations wait until it is running again. Failure details are recorded
+in the runtime log.
+
+The backend exposes `GET /api/suite/modules/danbooru/status` and
+`POST /api/suite/modules/danbooru/retry`. Retry waits for old worker cleanup and
+reinitializes an enabled module without restarting Keivotos. A running module's
+retry does nothing. If the first enable attempt failed, enable it again instead.
+These APIs do not yet have a new status or retry control in the interface.
