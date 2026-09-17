@@ -5,15 +5,19 @@ from collections.abc import Iterator
 from pathlib import Path
 
 from module_descriptor import ModuleDescriptor
-from modules.danbooru import descriptor as danbooru_descriptor
+try:
+    from modules.danbooru import descriptor as danbooru_descriptor
+except ModuleNotFoundError as exc:
+    if exc.name != "modules.danbooru":
+        raise
+    danbooru_descriptor = None
 from modules.files import descriptor as files_descriptor
 
 
 # One import/factory entry is the registration boundary for each module.
 _DESCRIPTOR_FACTORIES = (
     files_descriptor,
-    danbooru_descriptor,
-)
+) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ())
 
 
 class ModuleRegistry:

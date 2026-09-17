@@ -64,8 +64,15 @@ class SuiteApiRouteTests(unittest.TestCase):
         self.suite = suite
         self._patch = patch.object(database, "USER_DB_PATH", self.temp / "user.sqlite")
         self._patch.start()
+        self._data_patch = patch.object(database, "DATA_DB_PATH", self.temp / "index.sqlite")
+        self._data_patch.start()
+        self._migration_patch = patch("config.migrate_legacy_default_metadata", return_value={"migrated": False})
+        self._migration_patch.start()
+
 
     def tearDown(self) -> None:
+        self._migration_patch.stop()
+        self._data_patch.stop()
         self._patch.stop()
         shutil.rmtree(self.temp, ignore_errors=True)
 
@@ -83,6 +90,21 @@ class SuiteApiRouteTests(unittest.TestCase):
         self.assertTrue(next(module for module in self.suite.list_modules() if module.id == "danbooru").enabled)
         disabled = self.suite.disable_module("danbooru")
         self.assertFalse(disabled.enabled)
+        self.assertFalse(next(module for module in self.suite.list_modules() if module.id == "danbooru").enabled)
+
+    def test_repeat_enable_does_not_reinitialize_storage(self) -> None:
+        self.suite.enable_module("danbooru")
+        with patch.object(self.suite, "init_data_db") as initialize:
+            self.suite.enable_module("danbooru")
+            initialize.assert_not_called()
+
+    def test_failed_initialization_does_not_persist_enablement(self) -> None:
+        from fastapi import HTTPException
+
+        with patch.object(self.suite, "init_data_db", side_effect=RuntimeError("fixture busy")):
+            with self.assertRaises(HTTPException) as caught:
+                self.suite.enable_module("danbooru")
+            self.assertEqual(caught.exception.status_code, 409)
         self.assertFalse(next(module for module in self.suite.list_modules() if module.id == "danbooru").enabled)
 
     def test_unknown_module_is_404(self) -> None:

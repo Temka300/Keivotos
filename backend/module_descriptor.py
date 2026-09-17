@@ -56,6 +56,7 @@ class ModuleDescriptor:
     startup_hook: StartupHook | None = None
     background_tasks_hook: BackgroundTasksHook | None = None
 
+    storage_migration_hook: StartupHook | None = None
     config_defaults: dict[str, Any] = field(default_factory=dict)
     index_initializer: IndexInitializer | None = None
     user_schema_provider: Callable[[], str] | None = None

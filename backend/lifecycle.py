@@ -1,12 +1,12 @@
 """Application startup, background work, and shutdown.
 
-Suite-level startup always runs — user-database promotion, legacy layout
-migrations, schema initialization, and the recovery checkpoint. Then each
+Suite-level startup always runs — user-database promotion, shared storage
+migrations, suite schema initialization, and the recovery checkpoint. Module
+storage migration and schema initialization run only for active owners. Then each
 **active** surface (the base plus every enabled module) is brought online
 generically through its descriptor: its folders are published, its startup hook
-runs, and its background tasks are spawned — each inside a catch boundary so one
-module can never take down the suite, the base, or another module
-(SUITE_MODULE_CONTRACT §7).
+runs, and its background tasks are spawned inside catch boundaries. Storage
+initialization errors still propagate; broader failure isolation is separate work.
 
 This module names no module. A module's own startup/background code lives under
 ``modules/<slug>/`` and is reached only through the descriptor, which is what
@@ -27,7 +27,6 @@ import suite_modules
 from config import (
     MODULE_REGISTRY,
     SUITE_HOME,
-    migrate_legacy_default_metadata,
     migrate_legacy_thumbnail_cache,
     promote_legacy_module_backups,
     promote_user_database,
@@ -126,21 +125,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "Copied and verified %s legacy module backups into the suite backup directory; source preserved",
             backup_promotion["files"],
         )
-    migration = migrate_legacy_default_metadata()
-    if migration["migrated"]:
-        logger.info(
-            "Flattened legacy metadata directory: %s moved, %s identical duplicates removed",
-            migration["moved"],
-            migration["deduplicated"],
-        )
     thumbnail_migration = migrate_legacy_thumbnail_cache()
     if thumbnail_migration.get("copied"):
         logger.info(
             "Warmed the thumbnail cache from the pre-v1.1.3 location: %s files copied",
             thumbnail_migration["copied"],
         )
-    init_data_db()
-    init_user_db()
+    # Only suite-owned tables are needed to read the module enablement state.
+    init_user_db(set())
+    active = _active_module_slugs()
+    for descriptor in MODULE_REGISTRY:
+        if descriptor.is_base or active is None or descriptor.slug in active:
+            if descriptor.storage_migration_hook is not None:
+                descriptor.storage_migration_hook()
+    init_data_db(active)
+    init_user_db(active)
 
     # A brand-new install gets a ready-to-use Library folder beside the program.
     # Suite-level and once-only; never touches an existing library.
@@ -155,7 +154,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Bring each active surface online — generic over the registry. A disabled
     # module contributes nothing and its background work never starts.
-    active = _active_module_slugs()
     for descriptor in MODULE_REGISTRY:
         if not (descriptor.is_base or active is None or descriptor.slug in active):
             logger.info("Module '%s' is disabled; skipping its startup and background work", descriptor.slug)

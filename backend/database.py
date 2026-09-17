@@ -42,18 +42,26 @@ def _ensure_column(conn: sqlite3.Connection, table: str, column: str, definition
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
-def init_data_db() -> None:
-    """Compatibility entry point; preserve startup order until conditional init."""
-    initializer = MODULE_REGISTRY.require("danbooru").index_initializer
+def init_data_db(enabled_modules: set[str] | None = None) -> None:
+    """Initialize the installed index owner, optionally restricted to enabled modules."""
+    owner = MODULE_REGISTRY.get("danbooru")
+    if owner is None or (enabled_modules is not None and owner.slug not in enabled_modules):
+        return
+    initializer = owner.index_initializer
     if initializer is None:
         raise RuntimeError("Danbooru index initializer is not registered")
     initializer(DATA_DB_PATH, get_data_db)
 
 
-def init_user_db() -> None:
-    """Preserve legacy creation/migration order through the registered owner."""
+def init_user_db(enabled_modules: set[str] | None = None) -> None:
+    """Initialize suite tables and, when selected, the installed owner's tables."""
     USER_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    owner = MODULE_REGISTRY.require("danbooru")
+    owner = MODULE_REGISTRY.get("danbooru")
+    if owner is None or (enabled_modules is not None and owner.slug not in enabled_modules):
+        with get_user_db() as conn:
+            conn.executescript(SUITE_USER_SCHEMA)
+            conn.commit()
+        return
     if owner.user_schema_provider is None or owner.user_migrator is None:
         raise RuntimeError("Danbooru user-table initialization is not registered")
     with get_user_db() as conn:

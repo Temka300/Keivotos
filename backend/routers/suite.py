@@ -10,8 +10,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
 
 import suite_modules
-from database import get_user_db
+from database import get_user_db, init_data_db, init_user_db
 from services import folder_roles
+from maintenance import exclusive_tool_operation
 
 router = APIRouter()
 
@@ -106,6 +107,20 @@ def _set_enabled(module_id: str, enabled: bool) -> SuiteModule:
     descriptor = suite_modules.MODULE_REGISTRY.require(module_id)
     if not descriptor.disableable and not enabled:
         raise HTTPException(status_code=409, detail=f"{descriptor.name} cannot be disabled")
+    with get_user_db() as user_conn:
+        suite_modules.ensure_schema(user_conn)
+        already_enabled = module_id in suite_modules.enabled_ids(user_conn)
+    if enabled and descriptor.disableable and not already_enabled:
+        # Prepare persisted storage before exposing an enabled module. Worker
+        # lifecycle coordination is separate from this initialization boundary.
+        try:
+            with exclusive_tool_operation("enabling module"):
+                if descriptor.storage_migration_hook is not None:
+                    descriptor.storage_migration_hook()
+                init_data_db({module_id})
+                init_user_db({module_id})
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     with get_user_db() as user_conn:
         suite_modules.ensure_schema(user_conn)
         try:

@@ -523,7 +523,7 @@ def promote_legacy_module_backups(
 _migration_requested = os.environ.pop("KEIVOTOS_MIGRATE_LEGACY_HOME", "") == "1"
 MODULE_HOME_MIGRATION = (
     migrate_previous_module_home()
-    if _migration_requested
+    if _migration_requested and _DEFAULT_DANBOORU_MODULE is not None
     else {"migrated": False, "reason": "not-requested", "files": 0, "bytes": 0}
 )
 

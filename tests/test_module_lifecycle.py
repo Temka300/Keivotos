@@ -38,7 +38,6 @@ class ModuleLifecycleTests(unittest.IsolatedAsyncioTestCase):
         for name, result in (
             ("promote_user_database", {}),
             ("promote_legacy_module_backups", {}),
-            ("migrate_legacy_default_metadata", {"migrated": False}),
             ("migrate_legacy_thumbnail_cache", {}),
             ("init_data_db", None),
             ("init_user_db", None),

@@ -103,6 +103,18 @@ def _migrate_user_tables(connection, database_path: Path, media_root: Path) -> N
     migrate_user_tables(connection, database_path, media_root)
 
 
+def _migrate_storage() -> None:
+    import logging
+    from config import migrate_legacy_default_metadata
+
+    migration = migrate_legacy_default_metadata()
+    if migration["migrated"]:
+        logging.getLogger(__name__).info(
+            "Flattened legacy metadata directory: %s moved, %s identical duplicates removed",
+            migration["moved"], migration["deduplicated"],
+        )
+
+
 def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
     home = suite_home / "modules" / "danbooru"
     return ModuleDescriptor(
@@ -117,6 +129,7 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         disableable=True,
         is_base=False,
         config_defaults=configuration_defaults(home),
+        storage_migration_hook=_migrate_storage,
         publish_hook=publish_sources,
         adopt_hook=adopt_source,
         release_hook=release_source,
