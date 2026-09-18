@@ -561,6 +561,22 @@ DATA_DB_PATH = METADATA_DIR / (
 # so it exists with zero modules enabled. A legacy module-home copy is promoted
 # here on startup via promote_user_database(). See SUITE_MODULE_CONTRACT.md 3.1.
 USER_DB_PATH = SUITE_HOME / "user.sqlite"
+RECOVERY_DIR = SUITE_HOME / "local_recovery"
+USER_CHECKPOINT_DIR = RECOVERY_DIR / "user_database"
+PRESERVED_USER_CHECKPOINT_DIR = RECOVERY_DIR / "preserved_user_database"
+# Read-only compatibility inputs, including custom and pre-flattening layouts.
+LEGACY_USER_CHECKPOINT_DIRS = tuple(dict.fromkeys(
+    directory / "local_recovery" / "user_database"
+    for directory in (METADATA_DIR, DEFAULT_METADATA_DIR, LEGACY_DEFAULT_METADATA_DIR)
+))
+
+
+def check_recovery_path(path: Path) -> None:
+    """Recovery copies must not follow file or directory symbolic links."""
+    if any(candidate.is_symlink() for candidate in (path, *path.parents)):
+        raise RuntimeError(f"Refused symbolic-link recovery path: {path}")
+
+
 SIDECAR_DIR = METADATA_DIR / "sidecars"
 ARTIST_PROFILE_ARCHIVE_DIR = METADATA_DIR / "artist_profile_archive"
 CREDENTIALS_PATH = METADATA_DIR / (
@@ -631,11 +647,14 @@ def migrate_legacy_default_metadata() -> dict[str, Any]:
 
     moved = deduplicated = 0
     for child in sorted(legacy.iterdir(), key=lambda item: item.name.casefold()):
+        if child.name == "local_recovery":
+            continue  # Recovery history is copied separately; originals stay untouched.
         child_moved, child_deduplicated = _merge_legacy_entry(child, DEFAULT_METADATA_DIR / child.name)
         moved += child_moved
         deduplicated += child_deduplicated
-    legacy.rmdir()
-    return {"migrated": True, "moved": moved, "deduplicated": deduplicated}
+    if not any(legacy.iterdir()):
+        legacy.rmdir()
+    return {"migrated": bool(moved or deduplicated), "moved": moved, "deduplicated": deduplicated}
 
 def _string_list(value: Any) -> list[str]:
     if not isinstance(value, list):

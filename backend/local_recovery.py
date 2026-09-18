@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import shutil
+import tempfile
 import os
 import re
 import sqlite3
@@ -10,10 +13,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from config import METADATA_DIR, USER_DB_PATH
+from config import (
+    USER_DB_PATH, USER_CHECKPOINT_DIR, PRESERVED_USER_CHECKPOINT_DIR,
+    LEGACY_USER_CHECKPOINT_DIRS, check_recovery_path,
+)
 
 
-CHECKPOINT_DIR = METADATA_DIR / "local_recovery" / "user_database"
+CHECKPOINT_DIR = USER_CHECKPOINT_DIR
+PRESERVED_CHECKPOINT_DIR = PRESERVED_USER_CHECKPOINT_DIR
+logger = logging.getLogger(__name__)
 CHECKPOINT_RETENTION = 5
 _checkpoint_lock = threading.Lock()
 
@@ -54,6 +62,68 @@ def _checkpoints() -> list[Path]:
     )
 
 
+def preserve_legacy_checkpoints() -> None:
+    """Copy legacy bytes into a non-rotating archive; never alter the originals.
+
+    Content namespaces preserve same-name snapshots with different bytes and
+    make repeated startup resumable. Only verified complete copies are published.
+    A bad legacy source is logged independently of new suite checkpoint creation.
+    Caller holds _checkpoint_lock.
+    """
+    for directory in LEGACY_USER_CHECKPOINT_DIRS:
+        try:
+            check_recovery_path(directory)
+            if not directory.is_dir() or directory.resolve() == CHECKPOINT_DIR.resolve():
+                continue
+            namespace = hashlib.sha256(str(directory.resolve()).encode()).hexdigest()
+            for source in sorted(directory.glob("user_*.sqlite")):
+                temporary = None
+                try:
+                    check_recovery_path(source)
+                    if not source.is_file():
+                        continue
+                    digest = _sha256(source)
+                    destination = PRESERVED_CHECKPOINT_DIR / namespace / digest / source.name
+                    check_recovery_path(destination)
+                    if destination.exists():
+                        if not destination.is_file() or _sha256(destination) != digest:
+                            raise RuntimeError(f"Conflicting preserved checkpoint: {destination}")
+                        continue
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    with tempfile.NamedTemporaryFile(dir=destination.parent, suffix=".partial", delete=False) as handle:
+                        temporary = Path(handle.name)
+                    shutil.copy2(source, temporary)
+                    if _sha256(temporary) != digest or _sha256(source) != digest:
+                        raise RuntimeError(f"Legacy checkpoint changed while copying: {source}")
+                    # Atomic publication without replacing any existing history.
+                    try:
+                        os.link(temporary, destination)
+                    except FileExistsError:
+                        if _sha256(destination) != digest:
+                            raise RuntimeError(f"Conflicting preserved checkpoint: {destination}")
+                except (OSError, RuntimeError) as exc:
+                    logger.warning("Could not preserve legacy checkpoint %s: %s", source, exc)
+                finally:
+                    if temporary is not None:
+                        temporary.unlink(missing_ok=True)
+        except (OSError, RuntimeError) as exc:
+            logger.warning("Could not read legacy recovery directory %s: %s", directory, exc)
+
+
+def _preserved_count() -> int:
+    check_recovery_path(PRESERVED_CHECKPOINT_DIR)
+    count = 0
+    # Explicit levels avoid recursively following directory links.
+    for source_dir in PRESERVED_CHECKPOINT_DIR.glob("*"):
+        if source_dir.is_symlink() or not source_dir.is_dir():
+            continue
+        for digest_dir in source_dir.glob("*"):
+            if digest_dir.is_symlink() or not digest_dir.is_dir():
+                continue
+            count += sum(path.is_file() and not path.is_symlink() for path in digest_dir.glob("user_*.sqlite"))
+    return count
+
+
 def local_recovery_status() -> dict[str, Any]:
     checkpoints = _checkpoints()
     latest = checkpoints[0] if checkpoints else None
@@ -61,6 +131,8 @@ def local_recovery_status() -> dict[str, Any]:
         "enabled": True,
         "directory": str(CHECKPOINT_DIR),
         "retention": CHECKPOINT_RETENTION,
+        "preserved_directory": str(PRESERVED_CHECKPOINT_DIR),
+        "preserved_count": _preserved_count(),
         "count": len(checkpoints),
         "latest_name": latest.name if latest else None,
         "latest_path": str(latest) if latest else None,
@@ -94,6 +166,8 @@ def create_local_recovery_checkpoint(reason: str = "manual") -> dict[str, Any]:
         if not USER_DB_PATH.is_file():
             raise FileNotFoundError(f"User database does not exist: {USER_DB_PATH}")
         _check_sqlite(USER_DB_PATH)
+        check_recovery_path(CHECKPOINT_DIR)
+        preserve_legacy_checkpoints()
         CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
         stamp = _next_checkpoint_stamp()
         safe_reason = re.sub(r"[^a-z0-9_-]+", "-", reason.strip().lower()).strip("-") or "manual"

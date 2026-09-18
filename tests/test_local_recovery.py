@@ -34,6 +34,15 @@ class LocalRecoveryTests(unittest.TestCase):
         local_recovery.USER_DB_PATH = self.user_db
         local_recovery.CHECKPOINT_DIR = self.checkpoints
         local_recovery.CHECKPOINT_RETENTION = 5
+        self.legacy = self.temp / "legacy"
+        self.archive = self.temp / "preserved"
+        self.patches = [
+            patch.object(local_recovery, "LEGACY_USER_CHECKPOINT_DIRS", (self.legacy,)),
+            patch.object(local_recovery, "PRESERVED_CHECKPOINT_DIR", self.archive),
+        ]
+        for patcher in self.patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def tearDown(self) -> None:
         local_recovery.USER_DB_PATH = self.original_user_db
@@ -46,6 +55,96 @@ class LocalRecoveryTests(unittest.TestCase):
         connection.execute("INSERT INTO notes(value) VALUES (?)", (value,))
         connection.commit()
         connection.close()
+
+    def legacy_snapshot(self, directory: Path | None = None) -> Path:
+        directory = directory or self.legacy
+        directory.mkdir(parents=True, exist_ok=True)
+        target = directory / "user_20260101_000000_000000_startup.sqlite"
+        shutil.copy2(self.user_db, target)
+        return target
+
+    def test_legacy_checkpoints_are_verified_preserved_and_not_rotated(self) -> None:
+        original = self.legacy_snapshot()
+        original_bytes = original.read_bytes()
+        original_mtime = original.stat().st_mtime_ns
+        first = local_recovery.create_local_recovery_checkpoint()
+        self.assertEqual(first["preserved_count"], 1)
+        for number in range(7):
+            self.change_database(str(number))
+            status = local_recovery.create_local_recovery_checkpoint()
+        self.assertEqual(status["count"], 5)
+        self.assertEqual(status["preserved_count"], 1)
+        archived = list(self.archive.rglob("user_*.sqlite"))
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(archived[0].read_bytes(), original_bytes)
+        self.assertEqual(original.read_bytes(), original_bytes)
+        self.assertEqual(original.stat().st_mtime_ns, original_mtime)
+
+    def test_same_filename_different_sources_and_changed_bytes_are_preserved(self) -> None:
+        first = self.legacy_snapshot()
+        first_bytes = first.read_bytes()
+        self.change_database("second")
+        other = self.temp / "other"
+        second = self.legacy_snapshot(other)
+        with patch.object(local_recovery, "LEGACY_USER_CHECKPOINT_DIRS", (self.legacy, other)):
+            local_recovery.create_local_recovery_checkpoint()
+            self.assertEqual(local_recovery.local_recovery_status()["preserved_count"], 2)
+            # Simulate a later legacy writer replacing its own file; suite copies stay.
+            shutil.copy2(second, first)
+            local_recovery.create_local_recovery_checkpoint()
+        archived = list(self.archive.rglob("user_*.sqlite"))
+        self.assertEqual(len(archived), 3)
+        self.assertIn(first_bytes, [path.read_bytes() for path in archived])
+
+    def test_conflicting_archive_is_not_overwritten_and_new_recovery_continues(self) -> None:
+        original = self.legacy_snapshot()
+        local_recovery.create_local_recovery_checkpoint()
+        archived = next(self.archive.rglob("user_*.sqlite"))
+        archived.write_bytes(b"fixture conflicting archive")
+        self.change_database("new")
+        with self.assertLogs("local_recovery", level="WARNING"):
+            result = local_recovery.create_local_recovery_checkpoint()
+        self.assertTrue(result["created"])
+        self.assertEqual(archived.read_bytes(), b"fixture conflicting archive")
+        self.assertNotEqual(original.read_bytes(), archived.read_bytes())
+
+    def test_copy_failure_preserves_source_and_cleans_staging(self) -> None:
+        original = self.legacy_snapshot()
+        original_bytes = original.read_bytes()
+        with patch.object(local_recovery.shutil, "copy2", side_effect=OSError("fixture interrupted copy")):
+            with self.assertLogs("local_recovery", level="WARNING"):
+                result = local_recovery.create_local_recovery_checkpoint()
+        self.assertTrue(result["created"])
+        self.assertEqual(result["preserved_count"], 0)
+        self.assertEqual(original.read_bytes(), original_bytes)
+        self.assertFalse(list(self.archive.rglob("*.partial")))
+        self.assertEqual(local_recovery.create_local_recovery_checkpoint()["preserved_count"], 1)
+
+    def test_legacy_links_are_not_followed(self) -> None:
+        self.legacy.mkdir()
+        link = self.legacy / "user_link.sqlite"
+        try:
+            link.symlink_to(self.user_db)
+        except OSError:
+            self.skipTest("Symbolic links are unavailable")
+        with self.assertLogs("local_recovery", level="WARNING"):
+            result = local_recovery.create_local_recovery_checkpoint()
+        self.assertEqual(result["preserved_count"], 0)
+        self.assertTrue(link.is_symlink())
+
+    def test_metadata_flattening_leaves_recovery_originals_in_place(self) -> None:
+        import config
+        target = self.temp / "module"
+        legacy = target / "metadata"
+        original = self.legacy_snapshot(legacy / "local_recovery" / "user_database")
+        original_bytes = original.read_bytes()
+        (legacy / "example.txt").write_text("fixture")
+        with patch.object(config, "METADATA_DIR", target), patch.object(config, "DEFAULT_METADATA_DIR", target), patch.object(config, "LEGACY_DEFAULT_METADATA_DIR", legacy):
+            result = config.migrate_legacy_default_metadata()
+        self.assertTrue(result["migrated"])
+        self.assertTrue((target / "example.txt").exists())
+        self.assertEqual(original.read_bytes(), original_bytes)
+        self.assertFalse((target / "local_recovery").exists())
 
     def test_same_clock_tick_preserves_distinct_checkpoints_and_rotation(self) -> None:
         class FrozenDateTime(datetime):

@@ -9,6 +9,9 @@ Keivotos separates replaceable application files from writable library state.
 ├── base/
 │   └── files.sqlite
 ├── logs/
+├── local_recovery/
+│   ├── user_database/
+│   └── preserved_user_database/
 ├── modules/danbooru/
 │   ├── library/
 │   ├── danbooru.sqlite
@@ -28,6 +31,9 @@ Keivotos separates replaceable application files from writable library state.
 - `thumbnails/` is derived cache and can be cleared.
 - `gallery-dl/` contains acquisition work files and archives.
 - `backups/` is the fixed suite destination for backups you create.
+- `local_recovery/user_database/` holds the five rotating, verified snapshots of the shared user database, even without Danbooru.
+- `local_recovery/preserved_user_database/` holds verified copies of legacy checkpoints. These copies and their originals are excluded from rotation. Namespaces keep differing same-name snapshots separate.
+- A module's old `local_recovery/` remains preserved history; restore rollback directories still use that existing location.
 - `logs/keivotos-runtime-YYYY-MM-DD_HH-MM-SS-pPID.log` records startup, mutations, failed reads, background work, warnings, and errors.
 - `logs/keivotos-access-YYYY-MM-DD_HH-MM-SS-pPID.log` records every local HTTP method, path, and status.
 
