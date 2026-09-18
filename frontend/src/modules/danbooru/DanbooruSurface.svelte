@@ -1,12 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api } from '../../lib/api';
-  import {
-    blacklistedTagNames,
-    selectedArtistProfileAsset,
-    selectedImageId,
-    viewMode,
-  } from '../../lib/stores';
+  import { blacklistedTagNames, selectedArtistProfileAsset, selectedImageId, viewMode } from './stores';
   import CollectionsView from '../../components/CollectionsView.svelte';
   import DailyChallengeView from '../../components/DailyChallengeView.svelte';
   import HomeView from '../../components/HomeView.svelte';

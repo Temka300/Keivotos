@@ -4,7 +4,7 @@
   import './app.css';
   import { SUITE_NAME } from './lib/product';
   import { suiteApi } from './lib/suiteApi';
-  import { activeModule, enabledModules, interfaceScale, motionPreference, startupModule, suiteModules } from './lib/stores';
+  import { activeModule, enabledModules, interfaceScale, motionPreference, startupModule, suiteModules } from './lib/suiteStores';
   import { surfaceComponent } from './modules/surfaces';
 
   $: if (typeof document !== 'undefined') {

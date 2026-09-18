@@ -431,7 +431,7 @@ class ReleaseLayoutTests(unittest.TestCase):
         )
         user_menu = (ROOT / "frontend" / "src" / "components" / "UserMenu.svelte").read_text(encoding="utf-8")
         profile_view = (ROOT / "frontend" / "src" / "components" / "ProfileView.svelte").read_text(encoding="utf-8")
-        stores = (ROOT / "frontend" / "src" / "lib" / "stores.ts").read_text(encoding="utf-8")
+        stores = (ROOT / "frontend" / "src" / "lib" / "suiteStores.ts").read_text(encoding="utf-8")
         frontend_product = (ROOT / "frontend" / "src" / "lib" / "product.ts").read_text(encoding="utf-8")
         module_identity = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "identity.ts").read_text(encoding="utf-8")
         app_drawer = (ROOT / "frontend" / "src" / "components" / "AppDrawer.svelte").read_text(encoding="utf-8")

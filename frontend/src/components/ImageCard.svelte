@@ -2,7 +2,8 @@
   import { createEventDispatcher } from 'svelte';
   import type { ImageSummary } from '../lib/api';
   import { imageFileUrl, thumbnailUrl } from '../lib/api';
-  import { fitMode, imageSize, gridSizeByValue, mediaPlayback } from '../lib/stores';
+  import { fitMode, imageSize, mediaPlayback } from '../modules/danbooru/stores';
+  import { gridSizeByValue } from '../lib/gridPreferences';
 
   export let image: ImageSummary;
   export let selectMode = false;

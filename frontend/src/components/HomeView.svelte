@@ -12,15 +12,7 @@
     type HomeTags,
   } from '../lib/api';
   import { persistentStorageKey } from '../lib/product';
-  import {
-    activeCollectionId,
-    activeFolder,
-    activeRating,
-    browseTagSelection,
-    homeLayout,
-    selectedImageId,
-    viewMode,
-  } from '../lib/stores';
+  import { activeCollectionId, activeFolder, activeRating, browseTagSelection, homeLayout, selectedImageId, viewMode } from '../modules/danbooru/stores';
 
   type StreamItem = HomeImageRailItem & {
     rail_key: string;

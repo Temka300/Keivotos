@@ -12,7 +12,8 @@
     type TagWikiTextLine,
   } from '../lib/api';
   import { cacheView, getCachedView, invalidateViewCache } from '../lib/viewCache';
-  import { activeTags, artistFollowRefreshToken, browseTagSelection, fitMode, imageSize, gridSizeByValue, selectedImageId, tagRefreshToken, viewMode } from '../lib/stores';
+  import { activeTags, artistFollowRefreshToken, browseTagSelection, fitMode, imageSize, selectedImageId, tagRefreshToken, viewMode } from '../modules/danbooru/stores';
+  import { gridSizeByValue } from '../lib/gridPreferences';
   import ImageCard from './ImageCard.svelte';
   import TagBrowseHeader from './TagBrowseHeader.svelte';
 

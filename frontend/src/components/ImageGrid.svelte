@@ -2,30 +2,8 @@
   import { onDestroy } from 'svelte';
   import { api, type CollectionInfo, type FolderInfo, type ImageSummary, type PaginatedImages } from '../lib/api';
   import { cacheView, getCachedView, invalidateViewCache } from '../lib/viewCache';
-  import {
-    searchString,
-    activeTags,
-    sortBy,
-    sortOrder,
-    activeFolder,
-    activeRating,
-    selectedImageId,
-    imageRefreshToken,
-    viewMode,
-    activeCollectionId,
-    collectionRefreshToken,
-    fitMode,
-    imageSize,
-    gridSizeByValue,
-    imagePageSize,
-    blacklistedTagNames,
-    duplicatesOnly,
-    duplicateScope,
-    visibleImageIds,
-    browseTagSelection,
-    type ImagePageSize,
-    type BrowseTagSelection,
-  } from '../lib/stores';
+  import { searchString, activeTags, sortBy, sortOrder, activeFolder, activeRating, selectedImageId, imageRefreshToken, viewMode, activeCollectionId, collectionRefreshToken, fitMode, imageSize, imagePageSize, blacklistedTagNames, duplicatesOnly, duplicateScope, visibleImageIds, browseTagSelection, type ImagePageSize, type BrowseTagSelection } from '../modules/danbooru/stores';
+  import { gridSizeByValue } from '../lib/gridPreferences';
   import ImageCard from './ImageCard.svelte';
   import FilterChips from './FilterChips.svelte';
   import TagBrowseHeader from './TagBrowseHeader.svelte';

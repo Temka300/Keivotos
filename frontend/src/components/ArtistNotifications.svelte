@@ -1,14 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, thumbnailUrl, type ArtistFollowInfo } from '../lib/api';
-  import {
-    activeCollectionId,
-    artistFocusRequest,
-    artistFollowRefreshToken,
-    artistNotificationIntervalMinutes,
-    selectedImageId,
-    viewMode,
-  } from '../lib/stores';
+  import { activeCollectionId, artistFocusRequest, artistFollowRefreshToken, artistNotificationIntervalMinutes, selectedImageId, viewMode } from '../modules/danbooru/stores';
 
   const notificationPostLimit = 12;
 

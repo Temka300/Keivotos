@@ -3,9 +3,10 @@
   import { filesApi, type DuplicateGroup, type FileNode, type SourceInfo } from '../lib/filesApi';
   import { fileGlyph, hasThumbnail, type Subject } from '../lib/filePreview';
   import GridSizeMenu from './GridSizeMenu.svelte';
-  import { filesGridSize, gridSizeByValue, thumbnailTierFor } from '../lib/stores';
+  import { filesGridSize } from '../lib/filesStores';
+  import { gridSizeByValue, thumbnailTierFor } from '../lib/gridPreferences';
   import { SUITE_NAME } from '../lib/product';
-  import { suiteModules } from '../lib/stores';
+  import { suiteModules } from '../lib/suiteStores';
   import {
     displayNameForPath,
     normalizedPath,

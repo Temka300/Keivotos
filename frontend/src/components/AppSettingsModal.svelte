@@ -21,33 +21,12 @@
   import { SUITE_NAME } from '../lib/product';
   import { MODULE_NAME } from '../modules/danbooru/identity';
   import { prepareSettingsPresentation, restoreSettingsPresentation } from '../lib/settingsPresentation';
-  import {
-    activeRating,
-    artistNotificationIntervalMinutes,
-    artistNotificationsEnabled,
-    duplicateScope,
-    duplicatesOnly,
-    enabledModules,
-    fitMode,
-    heartSpamEnabled,
-    homeLayout,
-    imagePageSize,
-    imagePageSizeOptions,
-    imageRefreshToken,
-    imageSize,
-    gridSizeOptions,
-    interfaceScale,
-    mediaPlayback,
-    motionPreference,
-    sidebarOpen,
-    sortBy,
-    sortOrder,
-    startupModule,
-    startupView,
-    suiteModules,
-    tagBannerHeight,
-  } from '../lib/stores';
-  import type { ArtistNotificationIntervalMinutes, DuplicateScope, FitMode, HomeLayout, ImagePageSize, GridSize, InterfaceScale, MediaPlayback, MotionPreference, StartupModule, StartupView } from '../lib/stores';
+  import { activeRating, artistNotificationIntervalMinutes, artistNotificationsEnabled, duplicateScope, duplicatesOnly, fitMode, heartSpamEnabled, homeLayout, imagePageSize, imagePageSizeOptions, imageRefreshToken, imageSize, mediaPlayback, sidebarOpen, sortBy, sortOrder, startupView, tagBannerHeight } from '../modules/danbooru/stores';
+  import { enabledModules, interfaceScale, motionPreference, startupModule, suiteModules } from '../lib/suiteStores';
+  import { gridSizeOptions } from '../lib/gridPreferences';
+  import type { ArtistNotificationIntervalMinutes, DuplicateScope, FitMode, HomeLayout, ImagePageSize, MediaPlayback, StartupView } from '../modules/danbooru/stores';
+  import type { GridSize } from '../lib/gridPreferences';
+  import type { InterfaceScale, MotionPreference, StartupModule } from '../lib/suiteStores';
 
   let directoryPicker: DirectoryPicker;
   const dispatch = createEventDispatcher<{ close: void }>();

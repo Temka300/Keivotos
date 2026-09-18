@@ -1,20 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, type FolderInfo, type TagInfo } from '../lib/api';
-  import {
-    activeFolder,
-    activeFolderLabel,
-    activeTags,
-    activeRating,
-    viewMode,
-    activeCollectionId,
-    blacklistedTagNames,
-    collectionRefreshToken,
-    imageRefreshToken,
-    ratingSelectionValues,
-    tagRefreshToken,
-    toggleRatingSelection,
-  } from '../lib/stores';
+  import { activeFolder, activeFolderLabel, activeTags, activeRating, viewMode, activeCollectionId, blacklistedTagNames, collectionRefreshToken, imageRefreshToken, ratingSelectionValues, tagRefreshToken, toggleRatingSelection } from '../modules/danbooru/stores';
   import type { CollectionInfo } from '../lib/api';
 
   let folders: FolderInfo[] = [];

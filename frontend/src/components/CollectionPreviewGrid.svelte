@@ -1,6 +1,6 @@
 <script lang="ts">
   import { imageFileUrl, thumbnailUrl, type CollectionPreviewItem } from '../lib/api';
-  import { mediaPlayback } from '../lib/stores';
+  import { mediaPlayback } from '../modules/danbooru/stores';
 
   export let items: CollectionPreviewItem[] = [];
   export let previewIds: number[] = [];

@@ -3,7 +3,7 @@
   import { prepareSettingsPresentation } from '../lib/settingsPresentation';
   import { loadSettingsModal, type SettingsModalModule } from '../lib/settingsLoader';
   import { SUITE_NAME, VERSION } from '../lib/product';
-  import { activeModule, enabledModules, suiteModules } from '../lib/stores';
+  import { activeModule, enabledModules, suiteModules } from '../lib/suiteStores';
   import { suiteApi, type SuiteModule } from '../lib/suiteApi';
   import { activateModule, moduleUi } from '../modules/registry';
 

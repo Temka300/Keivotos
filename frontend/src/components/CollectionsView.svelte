@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { api, type CollectionInfo } from '../lib/api';
-  import { viewMode, activeCollectionId, collectionRefreshToken } from '../lib/stores';
+  import { viewMode, activeCollectionId, collectionRefreshToken } from '../modules/danbooru/stores';
   import CollectionPreviewGrid from './CollectionPreviewGrid.svelte';
 
   let collections: CollectionInfo[] = [];

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { activeTags } from '../lib/stores';
+  import { activeTags } from '../modules/danbooru/stores';
   import { api, type TagInfo } from '../lib/api';
 
   let inputValue = '';

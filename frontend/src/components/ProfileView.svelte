@@ -10,18 +10,8 @@
     type TagWikiExample,
   } from '../lib/api';
   import CollectionPreviewGrid from './CollectionPreviewGrid.svelte';
-  import {
-    activeCollectionId,
-    artistFollowRefreshToken,
-    artistFocusRequest,
-    browseTagSelection,
-    collectionRefreshToken,
-    imageRefreshToken,
-    normalizeProfileName,
-    profileName,
-    selectedImageId,
-    viewMode,
-  } from '../lib/stores';
+  import { activeCollectionId, artistFollowRefreshToken, artistFocusRequest, browseTagSelection, collectionRefreshToken, imageRefreshToken, selectedImageId, viewMode } from '../modules/danbooru/stores';
+  import { normalizeProfileName, profileName } from '../lib/suiteStores';
 
   const favoritePreviewLimit = 9;
   const collectionPreviewLimit = 6;

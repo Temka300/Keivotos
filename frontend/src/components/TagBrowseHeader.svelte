@@ -11,8 +11,8 @@
     type TagWikiTextLine,
   } from '../lib/api';
   import { persistentStorageKey } from '../lib/product';
-  import { activeTags, artistFollowRefreshToken, browseTagSelection, selectedArtistProfileAsset, selectedImageId, tagBannerHeight, tagRefreshToken, viewMode } from '../lib/stores';
-  import type { BrowseTagSelection } from '../lib/stores';
+  import { activeTags, artistFollowRefreshToken, browseTagSelection, selectedArtistProfileAsset, selectedImageId, tagBannerHeight, tagRefreshToken, viewMode } from '../modules/danbooru/stores';
+  import type { BrowseTagSelection } from '../modules/danbooru/stores';
 
   export let tag: BrowseTagSelection;
   export let images: ImageSummary[] = [];

@@ -1,18 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
   import { api, imageFileUrl, thumbnailUrl, type ImageSummary } from '../lib/api';
-  import {
-    activeFolder,
-    activeRating,
-    blacklistedTagNames,
-    duplicateScope,
-    duplicatesOnly,
-    imageRefreshToken,
-    mediaPlayback,
-    selectedImageId,
-    viewMode,
-    visibleImageIds,
-  } from '../lib/stores';
+  import { activeFolder, activeRating, blacklistedTagNames, duplicateScope, duplicatesOnly, imageRefreshToken, mediaPlayback, selectedImageId, viewMode, visibleImageIds } from '../modules/danbooru/stores';
   import HomeBreadcrumbBack from './HomeBreadcrumbBack.svelte';
 
   const SIMPLE_BATCH_SIZE = 80;

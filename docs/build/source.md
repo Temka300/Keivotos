@@ -221,3 +221,25 @@ This creates, inspects and restores a real scratch bundle and verifies that canc
 sends no restore request and browser preferences stay separate. It also uses
 explicit response fixtures for out-of-order estimates, missing/additional owners
 and preserved-checkpoint presentation. No real data or external service is used.
+
+## Frontend store contract
+
+Run the store ownership/persistence checks with Node after installing the existing
+frontend development dependencies:
+
+```bash
+node tests/frontend_stores.mjs
+```
+
+This bundles the actual stores with the existing Vite dependency into temporary
+files. It checks compatibility-export identity, single initialization, legacy
+storage keys, normalization, derived updates, profile migration/failure rollback,
+and that importing Files/suite stores does not initialize Danbooru state. It uses
+in-memory browser storage and stubbed profile requests, and removes its temporary
+bundles. Keep the timed browser checks for actual interaction/motion coverage.
+
+Store owners are `lib/suiteStores.ts`, `lib/filesStores.ts` and
+`modules/danbooru/stores.ts`; persistence primitives and common grid choices live
+in `lib/persistedStore.ts` and `lib/gridPreferences.ts`. Existing storage keys are
+unchanged. New callers should import their owner directly; `lib/stores.ts` remains
+an explicit compatibility export. API ownership is a separate boundary.

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import Sidebar from './Sidebar.svelte';
-  import { sidebarHandlePosition, sidebarOpen } from '../lib/stores';
+  import { sidebarHandlePosition, sidebarOpen } from '../modules/danbooru/stores';
 
   const DRAG_THRESHOLD = 4;
   const MIN_HANDLE_POSITION = 10;

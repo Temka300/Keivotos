@@ -3,7 +3,7 @@
   import SearchHelpModal from './SearchHelpModal.svelte';
   import { prepareSettingsPresentation } from '../lib/settingsPresentation';
   import { loadSettingsModal, type SettingsModalModule } from '../lib/settingsLoader';
-  import { activeCollectionId, selectedImageId, viewMode } from '../lib/stores';
+  import { activeCollectionId, selectedImageId, viewMode } from '../modules/danbooru/stores';
 
   let showMenu = false;
   let showSettings = false;

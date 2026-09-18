@@ -8,7 +8,7 @@
   // menus clear the others when they open, which only works if it can reach
   // this flag. Left unbound (as in Files) the component just manages itself.
   import type { Writable } from 'svelte/store';
-  import { gridSizeOptions, type GridSize } from '../lib/stores';
+  import { gridSizeOptions, type GridSize } from '../lib/gridPreferences';
 
   export let value: Writable<GridSize>;
   export let open = false;

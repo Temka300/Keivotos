@@ -1,9 +1,5 @@
-import {
-  activeCollectionId,
-  activeModule,
-  selectedImageId,
-  viewMode,
-} from '../lib/stores';
+import { activeCollectionId, selectedImageId, viewMode } from './danbooru/stores';
+import { activeModule } from '../lib/suiteStores';
 
 export interface DrawerAction {
   id: string;

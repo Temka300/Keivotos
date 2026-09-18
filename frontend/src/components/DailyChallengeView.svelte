@@ -8,7 +8,7 @@
     type TagInfo,
   } from '../lib/api';
   import { persistentStorageKey } from '../lib/product';
-  import { activeRating, activeTags, selectedImageId, viewMode } from '../lib/stores';
+  import { activeRating, activeTags, selectedImageId, viewMode } from '../modules/danbooru/stores';
   import HomeBreadcrumbBack from './HomeBreadcrumbBack.svelte';
 
   type ChallengeState = {

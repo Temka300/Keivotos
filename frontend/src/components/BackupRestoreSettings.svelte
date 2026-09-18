@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { api, type BackupComponents, type BackupConfiguration, type BackupEstimate, type BackupManifest, type LocalRecoveryStatus } from '../lib/api';
   import { SUITE_NAME } from '../lib/product';
-  import { suiteModules } from '../lib/stores';
+  import { suiteModules } from '../lib/suiteStores';
 
   export let toolRunning = false;
 
