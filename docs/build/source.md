@@ -175,3 +175,38 @@ uv run --locked tests/run_directory_picker_browser.py --script credentials
 It uses the same external Node/Playwright setup described above. It covers
 status/save/remove errors, retry, successful input clearing, and confirms that
 no connection check is triggered automatically.
+
+## Modularization browser baseline
+
+Before moving frontend ownership, run the timed shell/Settings checks with an
+external Node + Playwright + Chromium installation (the same prerequisites as
+the folder-picker checks):
+
+```bash
+.venv/bin/python tests/run_modularization_browser.py --output /tmp/keivotos-browser-baseline
+```
+
+The output directory must not already exist. Supply `--node /absolute/path/to/node`
+when needed; `PLAYWRIGHT_MODULE` and `PLAYWRIGHT_BROWSERS_PATH` select an external
+Playwright package and browser cache. Missing browser/system dependencies must be
+prepared separately; the runner does not install anything.
+
+The runner builds the current frontend into a temporary directory, starts an
+isolated loopback backend with a fresh `KEIVOTOS_HOME`, checks that home through
+the API, and launches a fresh browser context. It leaves `frontend/dist`, the
+live server, and the real library alone. It enables Danbooru only in this scratch
+home. Browser requests outside the fixture origin fail the test.
+
+Coverage includes timed drawer entry/exit and dismissal paths; sidebar entry,
+closing and rapid reversal without remounting; grip hide/hover/drag/keyboard and
+reload persistence; contained scrolling; independent Files/Danbooru size choices;
+disabled/enabled Settings sections; search highlight timing; Settings presentation
+cleanup; reduced motion; and Browse/Tags/Home sidebar placement. Saved grip
+positions retain the existing one-decimal normalization on reload.
+
+The output contains build/server logs, a screenshot, a Playwright trace and
+`report.json` with checks, frame samples, API requests and browser errors. The
+runner removes its disposable library and stops its own server after each run.
+These checks use an empty library: they do not establish image-detail, playback,
+Home image-lane, populated grid, native-dialog or native Windows behavior. Run
+those affected interactions separately before and after moving their components.
