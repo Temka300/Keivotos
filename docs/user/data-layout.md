@@ -104,3 +104,18 @@ reports missing or failed attachment recovery; these failures do not undo the
 metadata restore. Missing attachments are recreated in the managed hidden layout,
 which Files can resolve regardless of the current storage-mode setting. Original
 media remains outside these bundles.
+
+### What the backup screen covers
+
+Each selectable component shows its owner. Disabled modules retain backup
+eligibility; unavailable data is omitted and reported after creation. Files origin
+notes require the shared user database; preserving their screenshots/clips also
+requires the attachment selection. Inspect a bundle to see its actual included
+and omitted components before restoring it. Restoring the user database replaces
+all suite, Files and module user data together, as stated in the confirmation.
+
+Grid sizes, motion, sidebar position and other browser preferences remain in the
+browser and are not backed up or restored. The sanitized configuration copy inside
+a bundle is reference-only; restore does not apply it. Original media, thumbnails,
+credentials and the disposable Files index remain excluded. Preserved legacy
+checkpoint history appears separately from the rotating current checkpoints.

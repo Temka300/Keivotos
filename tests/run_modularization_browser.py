@@ -36,6 +36,7 @@ uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
+    parser.add_argument('--script', choices=('modularization', 'backup'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
@@ -73,7 +74,7 @@ def main() -> int:
                         time.sleep(.1)
                 else:
                     raise RuntimeError('Isolated server startup timed out')
-                result = subprocess.run([args.node, str(ROOT / 'tests/browser_modularization.cjs'), str(context)],
+                result = subprocess.run([args.node, str(ROOT / 'tests' / f'browser_{args.script}.cjs'), str(context)],
                                         cwd=ROOT, env=env, timeout=180)
             finally:
                 server.terminate()

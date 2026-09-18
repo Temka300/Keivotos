@@ -210,3 +210,14 @@ runner removes its disposable library and stops its own server after each run.
 These checks use an empty library: they do not establish image-detail, playback,
 Home image-lane, populated grid, native-dialog or native Windows behavior. Run
 those affected interactions separately before and after moving their components.
+
+To exercise Backup Settings with the same disposable runner:
+
+```bash
+.venv/bin/python tests/run_modularization_browser.py --script backup --output /tmp/keivotos-backup-browser
+```
+
+This creates, inspects and restores a real scratch bundle and verifies that cancel
+sends no restore request and browser preferences stay separate. It also uses
+explicit response fixtures for out-of-order estimates, missing/additional owners
+and preserved-checkpoint presentation. No real data or external service is used.

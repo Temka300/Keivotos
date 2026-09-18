@@ -454,16 +454,10 @@ export interface ImportPipelineStatus {
   task: ToolStatus;
 }
 
-export interface BackupComponents {
-  user_database: boolean;
-  library_database: boolean;
-  sidecars: boolean;
-  sidecar_history: boolean;
-  artist_profile_archive: boolean;
-  file_attachments: boolean;
-}
+export type BackupComponents = Record<string, boolean>;
 
 export interface BackupEstimateDetail {
+  owner: string;
   enabled: boolean;
   exists: boolean;
   files: number;
@@ -504,9 +498,12 @@ export interface LocalRecoveryStatus {
   latest_name: string | null;
   latest_path: string | null;
   latest_at: string | null;
+  preserved_count?: number;
+  preserved_directory?: string;
 }
 
 export interface BackupResult {
+  omitted_components?: string[];
   status: string;
   path: string;
   name: string;
@@ -517,6 +514,8 @@ export interface BackupResult {
 }
 
 export interface BackupManifest {
+  component_owners?: Record<string, string>;
+  omitted_components?: string[];
   format: string;
   format_version: number;
   created_at: string;
@@ -526,6 +525,7 @@ export interface BackupManifest {
 }
 
 export interface BackupRestoreResult {
+  attachments?: { restored: number; existing: number; missing: number; failed: number };
   status: string;
   name: string;
   components: BackupComponents;
