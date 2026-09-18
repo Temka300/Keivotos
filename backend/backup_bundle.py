@@ -1,11 +1,15 @@
 """Manual, user-directed metadata backup bundles and validated restoration."""
 from __future__ import annotations
 
+import errno
+import hashlib
 import json
 import os
 import re
 import shutil
 import sqlite3
+import stat
+import tempfile
 import threading
 import time
 import zipfile
@@ -20,6 +24,8 @@ from module_descriptor import BackupComponent
 
 from config import (
     MODULE_REGISTRY,
+    RECOVERY_DIR,
+    check_recovery_path,
     ARTIST_PROFILE_ARCHIVE_DIR,
     DATA_DB_PATH,
     METADATA_DIR,
@@ -36,12 +42,6 @@ BACKUP_FORMAT = "danbooru-metadata-backup"
 BACKUP_SUFFIX = ".keivotosbk"
 LEGACY_BACKUP_SUFFIXES = (".whbackup",)
 SUPPORTED_BACKUP_SUFFIXES = (BACKUP_SUFFIX, *LEGACY_BACKUP_SUFFIXES)
-# Until restore dispatch is generalized, reject unsupported declarations before
-# touching live data rather than silently dropping their contents.
-_LEGACY_RESTORE_KEYS = frozenset({
-    "user_database", "library_database", "sidecars", "sidecar_history",
-    "artist_profile_archive", "file_attachments",
-})
 
 
 def collect_backup_components(registry=MODULE_REGISTRY) -> dict[str, BackupComponent]:
@@ -75,15 +75,15 @@ def collect_backup_components(registry=MODULE_REGISTRY) -> dict[str, BackupCompo
 
 
 BACKUP_COMPONENTS = collect_backup_components()
-# Compatibility view for the existing restore path and test path overrides.
+# Resolved source paths, also used by isolated storage fixtures.
 COMPONENTS = {
     key: (component.archive_name, component.source)
     for key, component in BACKUP_COMPONENTS.items() if component.kind != "attachments"
 }
 # Files-base attachment bytes live inside the user's own folder (outside the
 # metadata tree), keyed by content hash. They are handled specially: bundled by
-# hash on backup, and re-materialized additively (create-only) after the atomic
-# restore, so the fragile metadata-tree rollback logic is never involved.
+# hash on backup and re-materialized additively after metadata replacement.
+# Existing bytes always win; attachment failures are reported independently.
 ATTACHMENTS_COMPONENT = "file_attachments"
 ATTACHMENTS_ARCHIVE_ROOT = BACKUP_COMPONENTS[ATTACHMENTS_COMPONENT].archive_name
 _bundle_lock = threading.Lock()
@@ -165,6 +165,8 @@ def normalized_components(value: dict[str, Any] | None = None) -> dict[str, bool
 
 
 def _attachment_arcname(content_hash: str, ext: str) -> str:
+    if not re.fullmatch(r"[a-f0-9]{32}", content_hash) or (ext and not re.fullmatch(r"[a-z0-9_-]+", ext)):
+        raise ValueError("Invalid attachment hash or extension")
     suffix = ("." + ext) if ext else ""
     return f"{content_hash}{suffix}"
 
@@ -197,24 +199,23 @@ def _attachment_records(user_db_path: Path) -> dict[str, Path]:
         arcname = _attachment_arcname(row["content_hash"], ext)
         if arcname in records:
             continue
-        source = attachment_store.attachment_path(row["stored_root"], row["content_hash"], ext)
+        source = attachment_store.resolve_attachment(row["stored_root"], row["content_hash"], ext)
         if source.is_file():
             records[arcname] = source
     return records
 
 
-def _restore_attachments(bundle_dir: Path, user_db_path: Path) -> None:
+def _restore_attachments(bundle_dir: Path, user_db_path: Path) -> dict[str, int]:
     """Re-materialize bundled attachment bytes to their recorded store location.
 
     Additive and create-only: it never overwrites an existing file and never
     deletes anything, so it cannot corrupt the just-completed restore. Each file
     is attempted independently; a missing target drive skips only that file.
     """
-    if not bundle_dir.is_dir():
-        return
+    result = {"restored": 0, "existing": 0, "missing": 0, "failed": 0}
     path = Path(user_db_path)
     if not path.exists():
-        return
+        return result
     connection = sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True)
     connection.row_factory = sqlite3.Row
     try:
@@ -224,20 +225,57 @@ def _restore_attachments(bundle_dir: Path, user_db_path: Path) -> None:
                 "FROM files_annotation_attachments WHERE stored_root IS NOT NULL"
             ).fetchall()
         except sqlite3.OperationalError:
-            return
+            return result
     finally:
         connection.close()
     for row in rows:
-        ext = attachment_store.extension_for(row["file_name"], row["media_type"])
-        bundled = bundle_dir / _attachment_arcname(row["content_hash"], ext)
-        target = attachment_store.attachment_path(row["stored_root"], row["content_hash"], ext)
-        if not bundled.is_file() or target.exists():
-            continue
         try:
+            ext = attachment_store.extension_for(row["file_name"], row["media_type"])
+            bundled = bundle_dir / _attachment_arcname(row["content_hash"], ext)
+            target = attachment_store.resolve_attachment(row["stored_root"], row["content_hash"], ext)
+            check_recovery_path(target)
+            if target.exists():
+                result["existing"] += 1
+                continue
+            if not bundled.is_file():
+                result["missing"] += 1
+                continue
+            with bundled.open("rb") as stream:
+                if hashlib.file_digest(stream, "md5").hexdigest() != row["content_hash"]:
+                    raise ValueError("Attachment bytes do not match their hash")
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(bundled, target)
-        except OSError:
-            continue  # e.g. the stored folder's drive is not present on restore.
+            # Publish a complete file exclusively; a concurrent writer wins.
+            with tempfile.TemporaryDirectory(prefix=".keivotos-attachment-", dir=target.parent) as temporary:
+                candidate = Path(temporary) / "attachment"
+                shutil.copy2(bundled, candidate)
+                try:
+                    _publish_attachment(candidate, target)
+                except FileExistsError:
+                    result["existing"] += 1
+                else:
+                    result["restored"] += 1
+        except (OSError, ValueError, RuntimeError):
+            result["failed"] += 1
+    return result
+
+
+def _publish_attachment(candidate: Path, target: Path) -> None:
+    try:
+        os.link(candidate, target)
+    except OSError as error:
+        if error.errno not in {errno.EPERM, errno.EOPNOTSUPP, errno.ENOSYS, errno.EXDEV}:
+            raise
+        # FAT/exFAT stores do not support hard links. Exclusive creation still
+        # guarantees that an existing attachment can never be overwritten.
+        with target.open("xb") as destination:
+            try:
+                with candidate.open("rb") as source:
+                    shutil.copyfileobj(source, destination)
+                destination.flush()
+            except Exception:
+                destination.close()
+                target.unlink(missing_ok=True)
+                raise
 
 
 def backup_estimate(components: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -403,11 +441,16 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
         # writable volume as the final bundle.
         with _staging_directory(destination, ".danbooru-backup-staging") as temporary:
             staged: dict[str, Path] = {}
-            for key, (_archive_name, source) in COMPONENTS.items():
-                if selected[key] and BACKUP_COMPONENTS[key].kind == "sqlite":
-                    snapshot = temporary / f"{key}.sqlite"
-                    _sqlite_snapshot(source, snapshot)
-                    staged[key] = snapshot
+            with exclusive_database_access():
+                for key, (_archive_name, source) in COMPONENTS.items():
+                    if selected[key] and BACKUP_COMPONENTS[key].kind == "sqlite":
+                        snapshot = temporary / f"{key}.sqlite"
+                        _sqlite_snapshot(source, snapshot)
+                        staged[key] = snapshot
+                if selected[ATTACHMENTS_COMPONENT] and "user_database" not in staged:
+                    snapshot = temporary / "attachment-user.sqlite"
+                    _sqlite_snapshot(USER_DB_PATH, snapshot)
+                    staged["attachment_user"] = snapshot
 
             manifest: dict[str, Any] = {
                 "format": BACKUP_FORMAT,
@@ -429,7 +472,7 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
                     actual_source = staged.get(key, source)
                     _write_tree(archive, actual_source, archive_name)
                 if selected[ATTACHMENTS_COMPONENT]:
-                    for arcname, source in _attachment_records(USER_DB_PATH).items():
+                    for arcname, source in _attachment_records(staged.get("user_database", staged.get("attachment_user"))).items():
                         archive.write(source, f"{ATTACHMENTS_ARCHIVE_ROOT}/{arcname}")
                 sanitized_config = runtime_config_snapshot()
                 archive.writestr("config.json", json.dumps(sanitized_config, indent=2, ensure_ascii=False))
@@ -487,30 +530,52 @@ def inspect_backup_bundle(path: Path) -> dict[str, Any]:
 
 def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     members = []
+    seen = set()
     for info in archive.infolist():
-        path = PurePosixPath(info.filename)
-        if path.is_absolute() or ".." in path.parts:
+        name = info.filename.rstrip("/")
+        path = PurePosixPath(name)
+        mode = info.external_attr >> 16
+        if (not path.parts or path.is_absolute() or ".." in path.parts
+                or "\\" in name or ":" in name or path.as_posix() != name
+                or name.casefold() in seen or stat.S_ISLNK(mode)):
             raise ValueError(f"Unsafe backup entry: {info.filename}")
+        seen.add(name.casefold())
         members.append(info)
     return members
 
 
-def _quiesce_sqlite(path: Path, rollback_dir: Path) -> None:
-    """Checkpoint a live database and preserve any remaining journal files."""
+def _quiesce_sqlite(path: Path) -> None:
+    """Refuse replacement if an external connection prevents a full checkpoint."""
     if not path.exists():
         return
-    connection = sqlite3.connect(path, timeout=60)
+    connection = sqlite3.connect(path, timeout=1)
     try:
-        connection.execute("PRAGMA busy_timeout = 60000")
-        connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        row = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if row and row[0]:
+            raise RuntimeError(f"Database is busy: {path.name}")
     finally:
         connection.close()
-    for suffix in ("-wal", "-shm"):
-        companion = Path(str(path) + suffix)
-        if companion.exists():
-            preserved = rollback_dir / companion.relative_to(METADATA_DIR)
-            preserved.parent.mkdir(parents=True, exist_ok=True)
-            companion.replace(preserved)
+
+
+def _copy_verified(source: Path, destination: Path) -> None:
+    """Keep rollback evidence on the suite volume; verify before replacing live data."""
+    check_recovery_path(source)
+    if source.is_dir():
+        for item in source.rglob("*"):
+            check_recovery_path(item)
+        shutil.copytree(source, destination)
+        for item in source.rglob("*"):
+            if item.is_file():
+                _verify_copy(item, destination / item.relative_to(source))
+    else:
+        shutil.copy2(source, destination)
+        _verify_copy(source, destination)
+
+
+def _verify_copy(source: Path, destination: Path) -> None:
+    with source.open("rb") as left, destination.open("rb") as right:
+        if hashlib.file_digest(left, "sha256").digest() != hashlib.file_digest(right, "sha256").digest():
+            raise RuntimeError(f"Restore copy verification failed: {source.name}")
 
 
 def restore_backup_bundle(name: str) -> dict[str, Any]:
@@ -528,77 +593,86 @@ def restore_backup_bundle(name: str) -> dict[str, Any]:
 
         manifest = inspect_backup_bundle(source)
         declared = manifest.get("components", {})
-        unsupported = {key for key, included in declared.items() if included and (key not in _component_keys() or key not in _LEGACY_RESTORE_KEYS)}
+        unsupported = {key for key, included in declared.items() if included and key not in _component_keys()}
         if unsupported:
             raise ValueError("Backup component restore support is unavailable: " + ", ".join(sorted(unsupported)))
-        components = normalized_components(declared)
-        METADATA_DIR.mkdir(parents=True, exist_ok=True)
-        rollback_dir = METADATA_DIR / "local_recovery" / ("restore_" + datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S"))
-        rollback_dir.mkdir(parents=True, exist_ok=False)
+        # Restore is determined by the archive, never by today's saved preferences.
+        if any(not isinstance(value, bool) for value in declared.values()):
+            raise ValueError("Backup component selections must be booleans")
+        components = {key: declared.get(key, False) for key in _component_keys()}
+        check_recovery_path(RECOVERY_DIR)
+        RECOVERY_DIR.mkdir(parents=True, exist_ok=True)
+        rollback_dir = Path(tempfile.mkdtemp(prefix="restore_", dir=RECOVERY_DIR))
+        attachment_result = {"restored": 0, "existing": 0, "missing": 0, "failed": 0}
 
-        with _staging_directory(METADATA_DIR, ".danbooru-restore-staging") as staging:
+        with tempfile.TemporaryDirectory(prefix=".restore-staging-", dir=RECOVERY_DIR) as temporary:
+            staging = Path(temporary)
             with zipfile.ZipFile(source, "r") as archive:
                 archive.extractall(staging, members=_safe_members(archive))
-
-            staged_user = staging / "databases" / "user.sqlite"
-            staged_library = staging / "databases" / "danbooru.sqlite"
-            if components.get("user_database", False):
-                _check_sqlite(staged_user)
-            if components.get("library_database", False):
-                _check_sqlite(staged_library)
-
-            replacements: list[tuple[Path, Path]] = []
-            if components.get("user_database", False):
-                replacements.append((USER_DB_PATH, staged_user))
-            if components.get("library_database", False):
-                replacements.append((DATA_DB_PATH, staged_library))
-            if components.get("sidecars", False) and (staging / "sidecars").exists():
-                replacements.append((SIDECAR_DIR, staging / "sidecars"))
-            if components.get("sidecar_history", False) and (staging / "sidecar_archive").exists():
-                replacements.append((METADATA_DIR / "sidecar_archive", staging / "sidecar_archive"))
-            if components.get("artist_profile_archive", False) and (staging / "artist_profile_archive").exists():
-                replacements.append((ARTIST_PROFILE_ARCHIVE_DIR, staging / "artist_profile_archive"))
+            replacements = []
+            for key, (archive_name, live) in COMPONENTS.items():
+                if not components[key]:
+                    continue
+                restored = staging / archive_name
+                if BACKUP_COMPONENTS[key].kind == "sqlite":
+                    _check_sqlite(restored)
+                elif not restored.exists():
+                    # Legacy ZIPs do not record empty directory entries.
+                    continue
+                elif not restored.is_dir():
+                    raise ValueError(f"Expected a directory for {key}")
+                check_recovery_path(live)
+                replacements.append((key, live, restored))
 
             with exclusive_database_access():
-                applied: list[tuple[Path, Path | None]] = []
+                # Local preparations make the install/rollback renames atomic even
+                # when a module lives on a different volume from suite recovery.
+                prepared = []
+                applied = []
                 try:
-                    if components.get("user_database", False):
-                        _quiesce_sqlite(USER_DB_PATH, rollback_dir)
-                    if components.get("library_database", False):
-                        _quiesce_sqlite(DATA_DB_PATH, rollback_dir)
-                    for live, restored in replacements:
-                        backup_live = rollback_dir / live.relative_to(METADATA_DIR)
-                        if live.exists():
-                            backup_live.parent.mkdir(parents=True, exist_ok=True)
-                            live.replace(backup_live)
-                            previous: Path | None = backup_live
-                        else:
-                            previous = None
-                        # Record the rollback point before installing the restored
-                        # item. If that move itself fails, the original still has
-                        # to be put back.
-                        applied.append((live, previous))
+                    for key, live, restored in replacements:
+                        if BACKUP_COMPONENTS[key].kind == "sqlite":
+                            _quiesce_sqlite(live)
                         live.parent.mkdir(parents=True, exist_ok=True)
-                        restored.replace(live)
-                    if components.get("user_database", False):
-                        _check_sqlite(USER_DB_PATH)
-                    if components.get("library_database", False):
-                        _check_sqlite(DATA_DB_PATH)
-                except Exception:
-                    for live, previous in reversed(applied):
+                        local = Path(tempfile.mkdtemp(prefix=".keivotos-restore-", dir=live.parent))
+                        prepared.append(local)
+                        _copy_verified(restored, local / "incoming")
                         if live.exists():
-                            if live.is_dir():
-                                shutil.rmtree(live)
-                            else:
-                                live.unlink()
-                        if previous is not None and previous.exists():
-                            previous.replace(live)
+                            _copy_verified(live, rollback_dir / key)
+                        # Journals are moved with their database and restored on failure.
+                        paths = [live]
+                        if BACKUP_COMPONENTS[key].kind == "sqlite":
+                            paths += [Path(str(live) + suffix) for suffix in ("-wal", "-shm")]
+                        for index, path in enumerate(paths):
+                            previous = local / f"previous-{index}" if path.exists() else None
+                            if previous is not None:
+                                path.replace(previous)
+                            applied.append((path, previous, local / f"rejected-{index}"))
+                        (local / "incoming").replace(live)
+                    for key, live, _ in replacements:
+                        if BACKUP_COMPONENTS[key].kind == "sqlite":
+                            _check_sqlite(live)
+                except Exception as error:
+                    failures = []
+                    for live, previous, rejected in reversed(applied):
+                        try:
+                            if live.exists():
+                                live.replace(rejected)
+                            if previous is not None:
+                                previous.replace(live)
+                        except OSError as rollback_error:
+                            failures.append(str(rollback_error))
+                    if failures:
+                        # Never clean up local originals after a failed rollback.
+                        raise RuntimeError(f"Restore rollback needs recovery from {rollback_dir}; local copies: {prepared}") from error
+                    for local in prepared:
+                        shutil.rmtree(local)
                     raise
-
-            if components[ATTACHMENTS_COMPONENT]:
-                # Additive, create-only, and outside the atomic block: it reads the
-                # now-restored user DB and can never corrupt the completed restore.
-                _restore_attachments(staging / ATTACHMENTS_ARCHIVE_ROOT, USER_DB_PATH)
+                else:
+                    for local in prepared:
+                        shutil.rmtree(local)
+                if components[ATTACHMENTS_COMPONENT]:
+                    attachment_result = _restore_attachments(staging / ATTACHMENTS_ARCHIVE_ROOT, USER_DB_PATH)
 
         return {
             "status": "restored",
@@ -606,7 +680,10 @@ def restore_backup_bundle(name: str) -> dict[str, Any]:
             "components": components,
             "rollback_path": str(rollback_dir),
             "restart_required": True,
-            "message": "Metadata restored and verified. External images were not changed. Restart Danbooru before continuing.",
+            "attachments": attachment_result,
+            "message": "Metadata restored and verified. External images were not changed. Restart Keivotos before continuing."
+            + (f" Attachment recovery incomplete: {attachment_result['missing']} missing, {attachment_result['failed']} failed."
+               if attachment_result["missing"] or attachment_result["failed"] else ""),
         }
     finally:
         _bundle_lock.release()

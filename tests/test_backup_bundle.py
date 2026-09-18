@@ -24,7 +24,7 @@ class MetadataBackupBundleTests(unittest.TestCase):
         shutil.rmtree(self.temp, ignore_errors=True)
         self.metadata = self.temp / "metadata"
         self.destination = self.temp / "backups"
-        self.user_db = self.metadata / "user.sqlite"
+        self.user_db = self.temp / "user.sqlite"
         self.data_db = self.metadata / "danbooru.sqlite"
         self.sidecars = self.metadata / "sidecars"
         self.external_image = self.temp / "external" / "original.jpg"
@@ -51,6 +51,7 @@ class MetadataBackupBundleTests(unittest.TestCase):
             connection.close()
 
         self.originals = {
+            "RECOVERY_DIR": backup_bundle.RECOVERY_DIR,
             "METADATA_DIR": backup_bundle.METADATA_DIR,
             "USER_DB_PATH": backup_bundle.USER_DB_PATH,
             "DATA_DB_PATH": backup_bundle.DATA_DB_PATH,
@@ -59,6 +60,7 @@ class MetadataBackupBundleTests(unittest.TestCase):
             "COMPONENTS": backup_bundle.COMPONENTS,
             "get_backup_config": backup_bundle.get_backup_config,
         }
+        backup_bundle.RECOVERY_DIR = self.temp / "local_recovery"
         backup_bundle.METADATA_DIR = self.metadata
         backup_bundle.USER_DB_PATH = self.user_db
         backup_bundle.DATA_DB_PATH = self.data_db
@@ -125,6 +127,101 @@ class MetadataBackupBundleTests(unittest.TestCase):
             backup_bundle.restore_backup_bundle(path.name)
         self.assertEqual(self.user_db.read_bytes(), original)
         self.assertFalse((self.metadata / "local_recovery").exists())
+
+    def _rewrite_bundle(self, created, mutate):
+        path = Path(created["path"])
+        with zipfile.ZipFile(path) as archive:
+            contents = {name: archive.read(name) for name in archive.namelist()}
+        manifest = json.loads(contents["manifest.json"])
+        mutate(contents, manifest)
+        contents["manifest.json"] = json.dumps(manifest).encode()
+        with zipfile.ZipFile(path, "w") as archive:
+            for name, data in contents.items():
+                archive.writestr(name, data)
+
+    def test_restore_uses_manifest_selection_and_suite_recovery(self):
+        created = backup_bundle.create_backup_bundle()
+        def select_user(contents, manifest):
+            manifest["components"] = {"user_database": True}
+        self._rewrite_bundle(created, select_user)
+        (self.sidecars / "sample.json").write_text("keep-current")
+        first = backup_bundle.restore_backup_bundle(created["name"])
+        second = backup_bundle.restore_backup_bundle(created["name"])
+        self.assertNotEqual(first["rollback_path"], second["rollback_path"])
+        self.assertEqual(Path(first["rollback_path"]).parent, backup_bundle.RECOVERY_DIR)
+        self.assertTrue((Path(first["rollback_path"]) / "user_database").is_file())
+        self.assertFalse(first["components"]["library_database"])
+        self.assertEqual((self.sidecars / "sample.json").read_text(), "keep-current")
+
+    def test_install_failure_restores_every_previous_component(self):
+        created = backup_bundle.create_backup_bundle()
+        with sqlite3.connect(self.user_db) as connection:
+            connection.execute("UPDATE marker SET value='newer-user'")
+        (self.sidecars / "sample.json").write_text("newer-sidecar")
+        original_replace = Path.replace
+        def fail_install(path, target):
+            if path.name == "incoming" and target == self.sidecars:
+                raise OSError("injected install failure")
+            return original_replace(path, target)
+        with patch.object(Path, "replace", fail_install), self.assertRaisesRegex(OSError, "injected"):
+            backup_bundle.restore_backup_bundle(created["name"])
+        with sqlite3.connect(self.user_db) as connection:
+            self.assertEqual(connection.execute("SELECT value FROM marker").fetchone()[0], "newer-user")
+        self.assertEqual((self.sidecars / "sample.json").read_text(), "newer-sidecar")
+        recovery = next(backup_bundle.RECOVERY_DIR.glob("restore_*"))
+        self.assertEqual((recovery / "sidecars" / "sample.json").read_text(), "newer-sidecar")
+
+    def test_failed_rollback_retains_local_originals_and_suite_copy(self):
+        created = backup_bundle.create_backup_bundle()
+        original_replace = Path.replace
+        def fail_install_and_rollback(path, target):
+            if (path.name == "incoming" and target == self.sidecars) or path.name == "previous-0":
+                raise OSError("injected filesystem failure")
+            return original_replace(path, target)
+        with patch.object(Path, "replace", fail_install_and_rollback), self.assertRaisesRegex(RuntimeError, "needs recovery"):
+            backup_bundle.restore_backup_bundle(created["name"])
+        self.assertTrue(list(self.temp.rglob("previous-0")))
+        recovery = next(backup_bundle.RECOVERY_DIR.glob("restore_*"))
+        self.assertTrue((recovery / "user_database").is_file())
+        self.assertEqual((recovery / "sidecars" / "sample.json").read_text(), "original-sidecar")
+
+    def test_restore_does_not_require_cross_volume_rename(self):
+        created = backup_bundle.create_backup_bundle()
+        original_replace = Path.replace
+        def same_parent_only(path, target):
+            # Incoming and previous paths must be siblings of the live target.
+            if path.parent != target.parent and path.parent.parent != target.parent and target.parent.parent != path.parent:
+                raise OSError("cross-volume rename")
+            return original_replace(path, target)
+        with patch.object(Path, "replace", same_parent_only):
+            backup_bundle.restore_backup_bundle(created["name"])
+
+    def test_busy_wal_database_is_not_replaced(self):
+        created = backup_bundle.create_backup_bundle()
+        writer = sqlite3.connect(self.user_db)
+        reader = sqlite3.connect(self.user_db)
+        try:
+            writer.execute("PRAGMA journal_mode=WAL")
+            reader.execute("BEGIN")
+            reader.execute("SELECT * FROM marker").fetchall()
+            writer.execute("UPDATE marker SET value='wal-current'")
+            writer.commit()
+            with self.assertRaisesRegex(RuntimeError, "busy"):
+                backup_bundle.restore_backup_bundle(created["name"])
+            self.assertEqual(writer.execute("SELECT value FROM marker").fetchone()[0], "wal-current")
+        finally:
+            reader.close()
+            writer.close()
+
+    def test_unsafe_archive_rejected_before_live_changes(self):
+        for name in ("../escaped", "C:/escaped", "sidecars/../../escaped", "sidecars\\escaped"):
+            with self.subTest(name=name):
+                created = backup_bundle.create_backup_bundle()
+                self._rewrite_bundle(created, lambda contents, manifest: contents.update({name: b"bad"}))
+                before = self.user_db.read_bytes()
+                with self.assertRaisesRegex(ValueError, "Unsafe backup entry"):
+                    backup_bundle.restore_backup_bundle(created["name"])
+                self.assertEqual(self.user_db.read_bytes(), before)
 
     def test_repeated_backup_estimates_reuse_component_scan(self) -> None:
         with patch.object(backup_bundle, "_tree_stats", wraps=backup_bundle._tree_stats) as tree_stats:
@@ -289,7 +386,7 @@ class AttachmentBackupTests(unittest.TestCase):
         self.metadata = self.temp / "metadata"
         self.destination = self.temp / "backups"
         self.store_root = self.temp / "library"  # the user's "first Files folder"
-        self.user_db = self.metadata / "user.sqlite"
+        self.user_db = self.temp / "user.sqlite"
         self.metadata.mkdir(parents=True)
         self.store_root.mkdir(parents=True)
 
@@ -311,6 +408,7 @@ class AttachmentBackupTests(unittest.TestCase):
         connection.close()
 
         self.originals = {
+            "RECOVERY_DIR": backup_bundle.RECOVERY_DIR,
             "METADATA_DIR": backup_bundle.METADATA_DIR,
             "USER_DB_PATH": backup_bundle.USER_DB_PATH,
             "DATA_DB_PATH": backup_bundle.DATA_DB_PATH,
@@ -318,6 +416,7 @@ class AttachmentBackupTests(unittest.TestCase):
             "COMPONENTS": backup_bundle.COMPONENTS,
             "get_backup_config": backup_bundle.get_backup_config,
         }
+        backup_bundle.RECOVERY_DIR = self.temp / "local_recovery"
         backup_bundle.METADATA_DIR = self.metadata
         backup_bundle.USER_DB_PATH = self.user_db
         backup_bundle.DATA_DB_PATH = self.metadata / "danbooru.sqlite"
@@ -361,6 +460,86 @@ class AttachmentBackupTests(unittest.TestCase):
             # The Keivotos bundle brought the screenshot back to its folder.
             self.assertTrue(self.stored_path.is_file())
             self.assertEqual(self.stored_path.read_bytes(), self.data)
+        finally:
+            self._teardown()
+
+    def test_visible_attachment_is_backed_up_and_preserved(self):
+        from files_base import attachment_store
+        self._prepare()
+        try:
+            visible = attachment_store.attachment_path(self.store_root, self.hash, "png", visible=True)
+            visible.parent.mkdir()
+            self.stored_path.replace(visible)
+            created = backup_bundle.create_backup_bundle()
+            with zipfile.ZipFile(created["path"]) as archive:
+                self.assertEqual(archive.read(f"file_attachments/{self.hash}.png"), self.data)
+            visible.write_bytes(b"current-visible")
+            result = backup_bundle.restore_backup_bundle(created["name"])
+            self.assertEqual(result["attachments"]["existing"], 1)
+            self.assertEqual(visible.read_bytes(), b"current-visible")
+            self.assertFalse(self.stored_path.exists())
+        finally:
+            self._teardown()
+
+    def test_attachment_rows_follow_database_snapshot(self):
+        self._prepare()
+        try:
+            snapshot = backup_bundle._sqlite_snapshot
+            def snapshot_then_change(source, destination):
+                snapshot(source, destination)
+                with sqlite3.connect(self.user_db) as connection:
+                    connection.execute("DELETE FROM files_annotation_attachments")
+            with patch.object(backup_bundle, "_sqlite_snapshot", snapshot_then_change):
+                created = backup_bundle.create_backup_bundle()
+            with zipfile.ZipFile(created["path"]) as archive:
+                self.assertEqual(archive.read(f"file_attachments/{self.hash}.png"), self.data)
+        finally:
+            self._teardown()
+
+    def test_corrupt_attachment_is_reported_without_publishing(self):
+        self._prepare()
+        try:
+            created = backup_bundle.create_backup_bundle()
+            path = Path(created["path"])
+            with zipfile.ZipFile(path) as archive:
+                contents = {name: archive.read(name) for name in archive.namelist()}
+            contents[f"file_attachments/{self.hash}.png"] = b"wrong bytes"
+            with zipfile.ZipFile(path, "w") as archive:
+                for name, data in contents.items():
+                    archive.writestr(name, data)
+            self.stored_path.unlink()
+            restored = backup_bundle.restore_backup_bundle(created["name"])
+            self.assertFalse(self.stored_path.exists())
+            self.assertEqual(restored["attachments"]["failed"], 1)
+            self.assertIn("recovery incomplete", restored["message"])
+        finally:
+            self._teardown()
+
+    def test_attachment_restore_on_store_without_hardlinks(self):
+        import errno
+        self._prepare()
+        try:
+            created = backup_bundle.create_backup_bundle()
+            self.stored_path.unlink()
+            with patch.object(backup_bundle.os, "link", side_effect=OSError(errno.EOPNOTSUPP, "unsupported")):
+                result = backup_bundle.restore_backup_bundle(created["name"])
+            self.assertEqual(self.stored_path.read_bytes(), self.data)
+            self.assertEqual(result["attachments"]["restored"], 1)
+        finally:
+            self._teardown()
+
+    def test_attachment_publication_race_never_overwrites(self):
+        self._prepare()
+        try:
+            created = backup_bundle.create_backup_bundle()
+            self.stored_path.unlink()
+            def competing_writer(source, target):
+                target.write_bytes(b"concurrent-user-bytes")
+                raise FileExistsError("winner")
+            with patch.object(backup_bundle.os, "link", competing_writer):
+                restored = backup_bundle.restore_backup_bundle(created["name"])
+            self.assertEqual(self.stored_path.read_bytes(), b"concurrent-user-bytes")
+            self.assertEqual(restored["attachments"]["existing"], 1)
         finally:
             self._teardown()
 

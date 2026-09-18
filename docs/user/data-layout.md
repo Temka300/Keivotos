@@ -11,7 +11,8 @@ Keivotos separates replaceable application files from writable library state.
 ├── logs/
 ├── local_recovery/
 │   ├── user_database/
-│   └── preserved_user_database/
+│   ├── preserved_user_database/
+│   └── restore_*/
 ├── modules/danbooru/
 │   ├── library/
 │   ├── danbooru.sqlite
@@ -33,7 +34,7 @@ Keivotos separates replaceable application files from writable library state.
 - `backups/` is the fixed suite destination for backups you create.
 - `local_recovery/user_database/` holds the five rotating, verified snapshots of the shared user database, even without Danbooru.
 - `local_recovery/preserved_user_database/` holds verified copies of legacy checkpoints. These copies and their originals are excluded from rotation. Namespaces keep differing same-name snapshots separate.
-- A module's old `local_recovery/` remains preserved history; restore rollback directories still use that existing location.
+- A module's old `local_recovery/` remains preserved history. New restore rollback copies live under the suite's `local_recovery/restore_*/`, named by component.
 - `logs/keivotos-runtime-YYYY-MM-DD_HH-MM-SS-pPID.log` records startup, mutations, failed reads, background work, warnings, and errors.
 - `logs/keivotos-access-YYYY-MM-DD_HH-MM-SS-pPID.log` records every local HTTP method, path, and status.
 
@@ -85,3 +86,21 @@ report their omission and preserve your selection for future backups. Fresh
 Files-only backups do not create Danbooru storage. Original media, thumbnails,
 credentials and the disposable Files index remain outside these metadata bundles.
 Existing bundle component names and archive paths remain compatible.
+
+### Restoring a bundle
+
+Restore uses the components included in the selected bundle, independently of
+your current backup selections. It replaces the whole user database when that
+component is included. Unavailable module owners are rejected before replacement.
+Previous data is copied and verified in suite recovery before installation, even
+when module storage is on another drive. If installation fails, Keivotos attempts
+to put the previous data back; a rollback failure reports preserved recovery paths.
+Keep these copies until you have checked the restored library. Restart Keivotos
+after a successful restore.
+
+Attachment backups read both Files storage layouts. Restore preserves existing
+attachment files and verifies missing bytes before creating them. The response
+reports missing or failed attachment recovery; these failures do not undo the
+metadata restore. Missing attachments are recreated in the managed hidden layout,
+which Files can resolve regardless of the current storage-mode setting. Original
+media remains outside these bundles.
