@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from module_descriptor import ModuleDescriptor
+from module_descriptor import BackupComponent, ModuleDescriptor
 
 
 def _routers() -> list:
@@ -11,6 +11,12 @@ def _routers() -> list:
     from routers.files import router as files_router
 
     return [files_router]
+
+
+def _backup_components() -> tuple[BackupComponent, ...]:
+    # User-authored rows are in the suite user DB; only attachment bytes need
+    # separate coverage. The disposable Files index is deliberately excluded.
+    return (BackupComponent("file_attachments", "files", "file_attachments", "attachments"),)
 
 
 def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
@@ -27,4 +33,5 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         disableable=False,
         is_base=True,
         router_provider=_routers,
+        backup_components_provider=_backup_components,
     )

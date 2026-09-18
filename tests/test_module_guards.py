@@ -14,6 +14,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'backend'))
@@ -79,6 +80,17 @@ class ModuleHttpGuardTests(unittest.TestCase):
                     self.assertEqual(recovery['preserved_count'], 0)
                     self.assertFalse(list(home.rglob('danbooru.sqlite')))
                     self.assertEqual(request('/api/user-settings/profile_name')[0], 200)
+                    status, configuration = request('/api/backups')
+                    self.assertEqual(status, 200)
+                    self.assertEqual(configuration['estimate']['details']['user_database']['owner'], 'suite')
+                    self.assertEqual(configuration['estimate']['details']['file_attachments']['owner'], 'files')
+                    status, backup = request('/api/backups/create', 'POST')
+                    self.assertEqual(status, 200, backup)
+                    self.assertIn('library_database', backup['omitted_components'])
+                    with zipfile.ZipFile(backup['path']) as archive:
+                        self.assertIn('databases/user.sqlite', archive.namelist())
+                        self.assertNotIn('databases/danbooru.sqlite', archive.namelist())
+                    self.assertFalse((home / 'modules' / 'danbooru').exists())
                     self.assertEqual(request('/api/suite/modules/danbooru/enable', 'POST')[0], 200)
                     self.assertEqual(request('/api/stats')[0], 200)
                     self.assertEqual(request('/api/automation')[0], 200)

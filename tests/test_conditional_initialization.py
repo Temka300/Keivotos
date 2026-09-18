@@ -48,6 +48,18 @@ async def run():
         if mode == 'absent':
             assert [m.id for m in suite.list_modules()] == ['files']
             assert '/api/stats' not in app.openapi()['paths']
+        import backup_bundle, zipfile
+        created = backup_bundle.create_backup_bundle()
+        manifest = backup_bundle.inspect_backup_bundle(Path(created['path']))
+        with zipfile.ZipFile(created['path']) as archive:
+            assert 'databases/user.sqlite' in archive.namelist()
+        assert manifest['component_owners']['user_database'] == 'suite'
+        assert manifest['component_owners']['file_attachments'] == 'files'
+        if mode in {'disabled', 'absent'}:
+            assert not config.MODULE_HOME.exists()
+            assert not manifest['components'].get('library_database', False)
+        if mode == 'preserved':
+            assert manifest['components']['library_database']
         tasks = sorted(t.get_name() for t in asyncio.all_tasks() if t.get_name().startswith('danbooru-'))
     with database.get_user_db() as conn:
         tables = sorted(row['name'] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'"))

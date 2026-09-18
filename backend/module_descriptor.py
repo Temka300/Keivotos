@@ -5,7 +5,7 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ContextManager
+from typing import Any, ContextManager, Literal
 
 
 PublishHook = Callable[[sqlite3.Connection], None]
@@ -24,6 +24,17 @@ IndexInitializer = Callable[[Path, Callable[[], ContextManager[sqlite3.Connectio
 # Returns ``(name, coroutine)`` pairs the suite lifespan runs as background tasks
 # for the module's lifetime. Typed loosely to keep asyncio out of this boundary.
 BackgroundTasksHook = Callable[[], "list[Any]"]
+
+
+@dataclass(frozen=True, slots=True)
+class BackupComponent:
+    """Owner-declared backup artifact with a stable legacy archive identity."""
+
+    key: str
+    owner: str
+    archive_name: str
+    kind: Literal["sqlite", "tree", "attachments"]
+    source: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,11 +67,18 @@ class ModuleDescriptor:
     startup_hook: StartupHook | None = None
     background_tasks_hook: BackgroundTasksHook | None = None
 
+    backup_components_provider: Callable[[], tuple[BackupComponent, ...]] | None = None
     storage_migration_hook: StartupHook | None = None
     config_defaults: dict[str, Any] = field(default_factory=dict)
     index_initializer: IndexInitializer | None = None
     user_schema_provider: Callable[[], str] | None = None
     user_migrator: Callable[[sqlite3.Connection, Path, Path], None] | None = None
+
+    def backup_components(self) -> tuple[BackupComponent, ...]:
+        """Preservation eligibility is independent of operational enablement."""
+        if self.backup_components_provider is None:
+            return ()
+        return tuple(self.backup_components_provider())
 
     def run_startup(self) -> None:
         """Synchronous once-at-startup work, run only when the module is active."""

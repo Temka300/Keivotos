@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import threading
@@ -15,8 +16,10 @@ from typing import Any, Iterable
 
 from database_connections import exclusive_database_access
 from files_base import attachment_store
+from module_descriptor import BackupComponent
 
 from config import (
+    MODULE_REGISTRY,
     ARTIST_PROFILE_ARCHIVE_DIR,
     DATA_DB_PATH,
     METADATA_DIR,
@@ -33,21 +36,56 @@ BACKUP_FORMAT = "danbooru-metadata-backup"
 BACKUP_SUFFIX = ".keivotosbk"
 LEGACY_BACKUP_SUFFIXES = (".whbackup",)
 SUPPORTED_BACKUP_SUFFIXES = (BACKUP_SUFFIX, *LEGACY_BACKUP_SUFFIXES)
-# Tree-shaped components: one source path each, backed up/restored by _write_tree
-# and the rollback machinery (which requires them under METADATA_DIR/suite).
+# Until restore dispatch is generalized, reject unsupported declarations before
+# touching live data rather than silently dropping their contents.
+_LEGACY_RESTORE_KEYS = frozenset({
+    "user_database", "library_database", "sidecars", "sidecar_history",
+    "artist_profile_archive", "file_attachments",
+})
+
+
+def collect_backup_components(registry=MODULE_REGISTRY) -> dict[str, BackupComponent]:
+    """Collect installed owners without consulting enabled state or running hooks."""
+    declarations = [BackupComponent("user_database", "suite", "databases/user.sqlite", "sqlite", USER_DB_PATH)]
+    for descriptor in registry:
+        for component in descriptor.backup_components():
+            if component.owner != descriptor.slug:
+                raise ValueError("Backup component owner does not match its descriptor")
+            declarations.append(component)
+    result = {}
+    roots = []
+    for component in declarations:
+        path = PurePosixPath(component.archive_name)
+        if (not re.fullmatch(r"[a-z][a-z0-9_]*", component.key) or component.key in result
+                or not component.archive_name or not path.parts or ":" in component.archive_name
+                or path.is_absolute() or ".." in path.parts or "\\" in component.archive_name
+                or path.as_posix() != component.archive_name or path.parts[0] in {"config.json", "manifest.json"}):
+            raise ValueError(f"Invalid or duplicate backup component: {component.key}")
+        if component.kind not in {"sqlite", "tree", "attachments"}:
+            raise ValueError(f"Unsupported backup component kind: {component.kind}")
+        if component.kind != "attachments" and component.source is None:
+            raise ValueError(f"Backup source missing: {component.key}")
+        if component.kind == "attachments" and (component.owner != "files" or component.key != "file_attachments"):
+            raise ValueError("Only Files owns the attachment adapter")
+        if any(path == other or path in other.parents or other in path.parents for other in roots):
+            raise ValueError(f"Overlapping backup archive paths: {component.archive_name}")
+        roots.append(path)
+        result[component.key] = component
+    return result
+
+
+BACKUP_COMPONENTS = collect_backup_components()
+# Compatibility view for the existing restore path and test path overrides.
 COMPONENTS = {
-    "user_database": ("databases/user.sqlite", USER_DB_PATH),
-    "library_database": ("databases/danbooru.sqlite", DATA_DB_PATH),
-    "sidecars": ("sidecars", SIDECAR_DIR),
-    "sidecar_history": ("sidecar_archive", METADATA_DIR / "sidecar_archive"),
-    "artist_profile_archive": ("artist_profile_archive", ARTIST_PROFILE_ARCHIVE_DIR),
+    key: (component.archive_name, component.source)
+    for key, component in BACKUP_COMPONENTS.items() if component.kind != "attachments"
 }
 # Files-base attachment bytes live inside the user's own folder (outside the
 # metadata tree), keyed by content hash. They are handled specially: bundled by
 # hash on backup, and re-materialized additively (create-only) after the atomic
 # restore, so the fragile metadata-tree rollback logic is never involved.
 ATTACHMENTS_COMPONENT = "file_attachments"
-ATTACHMENTS_ARCHIVE_ROOT = "file_attachments"
+ATTACHMENTS_ARCHIVE_ROOT = BACKUP_COMPONENTS[ATTACHMENTS_COMPONENT].archive_name
 _bundle_lock = threading.Lock()
 _estimate_cache_lock = threading.Lock()
 _estimate_cache: dict[tuple[str, str], tuple[float, int, int]] = {}
@@ -209,6 +247,7 @@ def backup_estimate(components: dict[str, Any] | None = None) -> dict[str, Any]:
     for key, (_, path) in COMPONENTS.items():
         count, size = _cached_tree_stats(key, path) if selected[key] else (0, 0)
         details[key] = {
+            "owner": BACKUP_COMPONENTS[key].owner,
             "enabled": selected[key],
             "exists": path.exists(),
             "files": count,
@@ -228,6 +267,7 @@ def backup_estimate(components: dict[str, Any] | None = None) -> dict[str, Any]:
         except OSError:
             continue
     details[ATTACHMENTS_COMPONENT] = {
+        "owner": BACKUP_COMPONENTS[ATTACHMENTS_COMPONENT].owner,
         "enabled": selected[ATTACHMENTS_COMPONENT],
         "exists": bool(attachment_records),
         "files": len(attachment_records),
@@ -266,7 +306,7 @@ def update_backup_configuration(components: dict[str, Any]) -> dict[str, Any]:
     selected = normalized_components(components)
     if not any(selected.values()):
         raise ValueError("Select at least one backup component")
-    save_config({"backup_components": selected})
+    save_config({"backup_components": {**get_backup_config()["components"], **selected}})
     return backup_configuration()
 
 
@@ -338,12 +378,17 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
     if not _bundle_lock.acquire(blocking=False):
         raise RuntimeError("A backup or restore is already running")
     try:
-        selected = normalized_components(components)
+        requested = normalized_components(components)
+        selected = dict(requested)
+        omitted = []
+        for key, (_archive_name, source) in COMPONENTS.items():
+            if selected[key] and BACKUP_COMPONENTS[key].owner != "suite" and not source.exists():
+                selected[key] = False
+                omitted.append(key)
         if not any(selected.values()):
             raise ValueError("Select at least one backup component")
         destination = Path(get_backup_config()["destination"]).expanduser()
         destination.mkdir(parents=True, exist_ok=True)
-        METADATA_DIR.mkdir(parents=True, exist_ok=True)
         stamp = int(time.time())
         final_path = destination / f"backup_{stamp}{BACKUP_SUFFIX}"
         counter = 2
@@ -358,20 +403,20 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
         # writable volume as the final bundle.
         with _staging_directory(destination, ".danbooru-backup-staging") as temporary:
             staged: dict[str, Path] = {}
-            if selected["user_database"]:
-                staged_user = temporary / "user.sqlite"
-                _sqlite_snapshot(USER_DB_PATH, staged_user)
-                staged["user_database"] = staged_user
-            if selected["library_database"]:
-                staged_library = temporary / "danbooru.sqlite"
-                _sqlite_snapshot(DATA_DB_PATH, staged_library)
-                staged["library_database"] = staged_library
+            for key, (_archive_name, source) in COMPONENTS.items():
+                if selected[key] and BACKUP_COMPONENTS[key].kind == "sqlite":
+                    snapshot = temporary / f"{key}.sqlite"
+                    _sqlite_snapshot(source, snapshot)
+                    staged[key] = snapshot
 
             manifest: dict[str, Any] = {
                 "format": BACKUP_FORMAT,
                 "format_version": BACKUP_FORMAT_VERSION,
                 "created_at": datetime.now().astimezone().isoformat(),
                 "components": selected,
+                "requested_components": requested,
+                "component_owners": {key: BACKUP_COMPONENTS[key].owner for key in selected},
+                "omitted_components": omitted,
                 "external_images_included": False,
                 "thumbnails_included": False,
                 "credentials_included": False,
@@ -410,7 +455,9 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
             "bytes": final_path.stat().st_size,
             "display_size": _format_bytes(final_path.stat().st_size),
             "components": selected,
-            "message": "Metadata backup created and verified. External images and thumbnails were not copied.",
+            "omitted_components": omitted,
+            "message": "Metadata backup created and verified. External images and thumbnails were not copied."
+            + (" Unavailable components were omitted: " + ", ".join(key.replace("_", " ") for key in omitted) + "." if omitted else ""),
         }
     finally:
         _bundle_lock.release()
@@ -480,7 +527,11 @@ def restore_backup_bundle(name: str) -> dict[str, Any]:
             raise FileNotFoundError("Backup file was not found")
 
         manifest = inspect_backup_bundle(source)
-        components = normalized_components(manifest.get("components"))
+        declared = manifest.get("components", {})
+        unsupported = {key for key, included in declared.items() if included and (key not in _component_keys() or key not in _LEGACY_RESTORE_KEYS)}
+        if unsupported:
+            raise ValueError("Backup component restore support is unavailable: " + ", ".join(sorted(unsupported)))
+        components = normalized_components(declared)
         METADATA_DIR.mkdir(parents=True, exist_ok=True)
         rollback_dir = METADATA_DIR / "local_recovery" / ("restore_" + datetime.now().astimezone().strftime("%Y-%m-%d_%H-%M-%S"))
         rollback_dir.mkdir(parents=True, exist_ok=False)
@@ -491,29 +542,29 @@ def restore_backup_bundle(name: str) -> dict[str, Any]:
 
             staged_user = staging / "databases" / "user.sqlite"
             staged_library = staging / "databases" / "danbooru.sqlite"
-            if components["user_database"]:
+            if components.get("user_database", False):
                 _check_sqlite(staged_user)
-            if components["library_database"]:
+            if components.get("library_database", False):
                 _check_sqlite(staged_library)
 
             replacements: list[tuple[Path, Path]] = []
-            if components["user_database"]:
+            if components.get("user_database", False):
                 replacements.append((USER_DB_PATH, staged_user))
-            if components["library_database"]:
+            if components.get("library_database", False):
                 replacements.append((DATA_DB_PATH, staged_library))
-            if components["sidecars"] and (staging / "sidecars").exists():
+            if components.get("sidecars", False) and (staging / "sidecars").exists():
                 replacements.append((SIDECAR_DIR, staging / "sidecars"))
-            if components["sidecar_history"] and (staging / "sidecar_archive").exists():
+            if components.get("sidecar_history", False) and (staging / "sidecar_archive").exists():
                 replacements.append((METADATA_DIR / "sidecar_archive", staging / "sidecar_archive"))
-            if components["artist_profile_archive"] and (staging / "artist_profile_archive").exists():
+            if components.get("artist_profile_archive", False) and (staging / "artist_profile_archive").exists():
                 replacements.append((ARTIST_PROFILE_ARCHIVE_DIR, staging / "artist_profile_archive"))
 
             with exclusive_database_access():
                 applied: list[tuple[Path, Path | None]] = []
                 try:
-                    if components["user_database"]:
+                    if components.get("user_database", False):
                         _quiesce_sqlite(USER_DB_PATH, rollback_dir)
-                    if components["library_database"]:
+                    if components.get("library_database", False):
                         _quiesce_sqlite(DATA_DB_PATH, rollback_dir)
                     for live, restored in replacements:
                         backup_live = rollback_dir / live.relative_to(METADATA_DIR)
@@ -529,9 +580,9 @@ def restore_backup_bundle(name: str) -> dict[str, Any]:
                         applied.append((live, previous))
                         live.parent.mkdir(parents=True, exist_ok=True)
                         restored.replace(live)
-                    if components["user_database"]:
+                    if components.get("user_database", False):
                         _check_sqlite(USER_DB_PATH)
-                    if components["library_database"]:
+                    if components.get("library_database", False):
                         _check_sqlite(DATA_DB_PATH)
                 except Exception:
                     for live, previous in reversed(applied):

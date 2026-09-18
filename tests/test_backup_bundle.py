@@ -89,6 +89,43 @@ class MetadataBackupBundleTests(unittest.TestCase):
         backup_bundle._estimate_cache.clear()
         shutil.rmtree(self.temp, ignore_errors=True)
 
+    def test_disabled_owner_data_remains_eligible(self) -> None:
+        import suite_modules
+        with patch.object(suite_modules, "enabled_ids", side_effect=AssertionError("Backup must not gate on enablement")):
+            created = backup_bundle.create_backup_bundle()
+        manifest = backup_bundle.inspect_backup_bundle(Path(created["path"]))
+        self.assertTrue(manifest["components"]["library_database"])
+        self.assertEqual(manifest["component_owners"]["user_database"], "suite")
+        self.assertEqual(manifest["component_owners"]["file_attachments"], "files")
+        self.assertEqual(manifest["component_owners"]["sidecars"], "danbooru")
+        with zipfile.ZipFile(created["path"]) as archive:
+            self.assertIn("databases/danbooru.sqlite", archive.namelist())
+            self.assertEqual(archive.read("sidecars/sample.json"), b"original-sidecar")
+
+    def test_missing_optional_artifacts_are_reported_without_creating_them(self) -> None:
+        self.data_db.unlink()  # Disposable fixture only.
+        created = backup_bundle.create_backup_bundle()
+        manifest = backup_bundle.inspect_backup_bundle(Path(created["path"]))
+        self.assertFalse(manifest["components"]["library_database"])
+        self.assertTrue(manifest["requested_components"]["library_database"])
+        self.assertIn("library_database", created["omitted_components"])
+        self.assertFalse(self.data_db.exists())
+        self.assertTrue(backup_bundle.get_backup_config()["components"]["library_database"])
+
+    def test_unavailable_owner_restore_rejects_before_mutation(self) -> None:
+        self.destination.mkdir(parents=True)
+        path = self.destination / "unknown.keivotosbk"
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("manifest.json", json.dumps({
+                "format": backup_bundle.BACKUP_FORMAT, "format_version": 1,
+                "components": {"unknown_owner_data": True}, "files": [],
+            }))
+        original = self.user_db.read_bytes()
+        with self.assertRaisesRegex(ValueError, "restore support is unavailable"):
+            backup_bundle.restore_backup_bundle(path.name)
+        self.assertEqual(self.user_db.read_bytes(), original)
+        self.assertFalse((self.metadata / "local_recovery").exists())
+
     def test_repeated_backup_estimates_reuse_component_scan(self) -> None:
         with patch.object(backup_bundle, "_tree_stats", wraps=backup_bundle._tree_stats) as tree_stats:
             first = backup_bundle.backup_estimate()
@@ -198,6 +235,47 @@ class MetadataBackupBundleTests(unittest.TestCase):
 
         self.assertEqual(errors, [])
         self.assertTrue(restore_finished.is_set())
+
+
+class BackupComponentDeclarationTests(unittest.TestCase):
+    def test_owner_catalog_preserves_legacy_keys_and_paths(self) -> None:
+        catalog = backup_bundle.collect_backup_components()
+        self.assertEqual({key: c.owner for key, c in catalog.items()}, {
+            "user_database": "suite", "file_attachments": "files",
+            "library_database": "danbooru", "sidecars": "danbooru",
+            "sidecar_history": "danbooru", "artist_profile_archive": "danbooru",
+        })
+        self.assertEqual(catalog["library_database"].archive_name, "databases/danbooru.sqlite")
+        self.assertEqual(catalog["user_database"].archive_name, "databases/user.sqlite")
+        self.assertNotIn("files_database", catalog)
+
+    def test_invalid_duplicate_and_overlapping_declarations_are_rejected(self) -> None:
+        from dataclasses import replace
+        from module_descriptor import BackupComponent
+        owner = backup_bundle.MODULE_REGISTRY.require("danbooru")
+        invalid = [
+            BackupComponent("user_database", "danbooru", "other", "tree", Path("unused")),
+            BackupComponent("fixture", "wrong", "other", "tree", Path("unused")),
+            BackupComponent("fixture", "danbooru", "../escape", "tree", Path("unused")),
+            BackupComponent("fixture", "danbooru", ".", "tree", Path("unused")),
+            BackupComponent("../fixture", "danbooru", "other", "tree", Path("unused")),
+            BackupComponent("fixture", "danbooru", "databases", "tree", Path("unused")),
+            BackupComponent("fixture", "danbooru", "config.json", "tree", Path("unused")),
+        ]
+        for component in invalid:
+            registry = backup_bundle.MODULE_REGISTRY.replacing(replace(owner, backup_components_provider=lambda c=component: (c,)))
+            with self.subTest(component=component), self.assertRaises(ValueError):
+                backup_bundle.collect_backup_components(registry)
+
+    def test_missing_owner_preferences_survive_saving_suite_selection(self) -> None:
+        configured = {"user_database": True, "file_attachments": True, "library_database": False}
+        components = {"user_database": ("databases/user.sqlite", Path("unused"))}
+        with patch.object(backup_bundle, "COMPONENTS", components), patch.object(
+            backup_bundle, "get_backup_config", return_value={"components": configured}
+        ), patch.object(backup_bundle, "backup_configuration", return_value={}), patch.object(backup_bundle, "save_config") as save:
+            backup_bundle.update_backup_configuration({"user_database": True, "file_attachments": False})
+        self.assertIn("library_database", save.call_args.args[0]["backup_components"])
+        self.assertFalse(save.call_args.args[0]["backup_components"]["library_database"])
 
 
 class AttachmentBackupTests(unittest.TestCase):

@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from files_base import sources
-from module_descriptor import ModuleDescriptor
+from module_descriptor import BackupComponent, ModuleDescriptor
 from modules.danbooru.configuration import configuration_defaults
 
 
@@ -123,6 +123,17 @@ def _migrate_storage() -> None:
         )
 
 
+def _backup_components() -> tuple[BackupComponent, ...]:
+    from config import DATA_DB_PATH, SIDECAR_DIR, METADATA_DIR, ARTIST_PROFILE_ARCHIVE_DIR
+
+    return (
+        BackupComponent("library_database", "danbooru", "databases/danbooru.sqlite", "sqlite", DATA_DB_PATH),
+        BackupComponent("sidecars", "danbooru", "sidecars", "tree", SIDECAR_DIR),
+        BackupComponent("sidecar_history", "danbooru", "sidecar_archive", "tree", METADATA_DIR / "sidecar_archive"),
+        BackupComponent("artist_profile_archive", "danbooru", "artist_profile_archive", "tree", ARTIST_PROFILE_ARCHIVE_DIR),
+    )
+
+
 def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
     home = suite_home / "modules" / "danbooru"
     return ModuleDescriptor(
@@ -137,6 +148,7 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         disableable=True,
         is_base=False,
         config_defaults=configuration_defaults(home),
+        backup_components_provider=_backup_components,
         storage_migration_hook=_migrate_storage,
         publish_hook=publish_sources,
         adopt_hook=adopt_source,

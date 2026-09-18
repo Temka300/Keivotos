@@ -72,3 +72,16 @@ The backend exposes `GET /api/suite/modules/danbooru/status` and
 reinitializes an enabled module without restarting Keivotos. A running module's
 retry does nothing. If the first enable attempt failed, enable it again instead.
 These APIs do not yet have a new status or retry control in the interface.
+
+## Backup ownership
+
+The shared user database includes suite settings, Files origin notes and module
+user metadata. Files contributes attachment bytes. Danbooru contributes its index,
+sidecars, sidecar history and archived artist-profile media. Disabled Danbooru data
+remains eligible for backup; disabling it does not clear your backup choices.
+
+If selected optional artifacts are unavailable, the backup response and manifest
+report their omission and preserve your selection for future backups. Fresh
+Files-only backups do not create Danbooru storage. Original media, thumbnails,
+credentials and the disposable Files index remain outside these metadata bundles.
+Existing bundle component names and archive paths remain compatible.
