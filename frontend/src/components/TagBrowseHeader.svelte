@@ -1,15 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, tick } from 'svelte';
-  import {
-    api,
-    thumbnailUrl,
-    type ArtistProfileAsset,
-    type ArtistUrl,
-    type ImageSummary,
-    type TagWikiExample,
-    type TagWikiInfo,
-    type TagWikiTextLine,
-  } from '../lib/api';
+  import { danbooruApi as api, thumbnailUrl } from '../modules/danbooru/api';
+  import { type ArtistProfileAsset, type ArtistUrl, type ImageSummary, type TagWikiExample, type TagWikiInfo, type TagWikiTextLine } from '../modules/danbooru/apiTypes';
   import { persistentStorageKey } from '../lib/product';
   import { activeTags, artistFollowRefreshToken, browseTagSelection, selectedArtistProfileAsset, selectedImageId, tagBannerHeight, tagRefreshToken, viewMode } from '../modules/danbooru/stores';
   import type { BrowseTagSelection } from '../modules/danbooru/stores';

@@ -1,6 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { api, type AutomationStatus, type ImportPhase, type ImportPipelineStatus, type StorageConfiguration, type ToolFileResult } from '../lib/api';
+  import { suiteDataApi } from '../lib/suiteDataApi';
+  import { danbooruApi } from '../modules/danbooru/api';
+  import { type AutomationStatus, type ImportPhase, type ImportPipelineStatus, type ToolFileResult } from '../modules/danbooru/apiTypes';
+  import { type StorageConfiguration } from '../lib/suiteApiTypes';
 
   export let toolRunning = false;
   export let surface: 'storage' | 'metadata' = 'metadata';
@@ -59,9 +62,9 @@
   async function load() {
     try {
       if (surface === 'storage') {
-        storage = await api.getStorageConfiguration();
+        storage = await suiteDataApi.getStorageConfiguration();
       } else {
-        [pipeline, automation] = await Promise.all([api.getImportPipeline(), api.getAutomation()]);
+        [pipeline, automation] = await Promise.all([danbooruApi.getImportPipeline(), danbooruApi.getAutomation()]);
         intervalMinutes = automation.interval_minutes;
         schedulePipelinePoll();
       }
@@ -73,7 +76,7 @@
   async function refreshPipeline() {
     if (surface !== 'metadata') return;
     try {
-      pipeline = await api.getImportPipeline();
+      pipeline = await danbooruApi.getImportPipeline();
       if (pipelineTaskRunning()) schedulePipelinePoll();
     } catch {
       // Keep the last readable phase state while a restart is in progress.
@@ -86,7 +89,7 @@
     try {
       const previousResults = pipeline.task.file_results ?? [];
       const afterIndex = previousResults.reduce((highest, result) => Math.max(highest, result.index ?? 0), 0);
-      const task = await api.getImportTask(afterIndex || undefined);
+      const task = await danbooruApi.getImportTask(afterIndex || undefined);
       const fileResults = [...previousResults, ...(task.file_results ?? [])].slice(-250);
       pipeline = { ...pipeline, task: { ...task, file_results: fileResults } };
       if (task.status === 'running' || task.status === 'cancelling') {
@@ -111,7 +114,7 @@
     error = '';
     message = '';
     try {
-      await api.runImport(phase, undefined, metadataLimit || undefined, needsNetwork);
+      await danbooruApi.runImport(phase, undefined, metadataLimit || undefined, needsNetwork);
       await refreshPipeline();
       schedulePipelinePoll(250);
       message = phase === 'all' ? 'All four import phases started.' : `${phases.find(item => item.id === phase)?.label ?? phase} started.`;
@@ -125,7 +128,7 @@
   async function cancelImport() {
     error = '';
     try {
-      await api.cancelImport();
+      await danbooruApi.cancelImport();
       await refreshPipeline();
       schedulePipelinePoll(250);
       message = 'Import cancellation requested.';
@@ -139,7 +142,7 @@
     busy = true;
     error = '';
     try {
-      automation = await api.setAutomation(enabled, intervalMinutes);
+      automation = await danbooruApi.setAutomation(enabled, intervalMinutes);
       message = enabled
         ? `Local watcher enabled every ${automation.interval_minutes} minutes. It will not contact Danbooru.`
         : 'Local watcher disabled.';

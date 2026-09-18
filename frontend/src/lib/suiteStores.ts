@@ -1,5 +1,5 @@
 import { writable } from 'svelte/store';
-import { api } from './api';
+import { suiteDataApi as api } from './suiteDataApi';
 import { DEFAULT_PROFILE_NAME, persistentStorageKey } from './product';
 import type { SuiteModule } from './suiteApi';
 import { persistedWritable, readStoredValue } from './persistedStore';

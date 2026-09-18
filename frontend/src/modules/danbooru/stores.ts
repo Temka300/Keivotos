@@ -1,5 +1,5 @@
 import { writable, derived } from 'svelte/store';
-import type { ArtistProfileAsset } from '../../lib/api';
+import type { ArtistProfileAsset } from './apiTypes';
 import { persistentStorageKey } from '../../lib/product';
 import { persistedWritable, normalizeBoolean, normalizeBooleanFalse, readStoredValue } from '../../lib/persistedStore';
 import { normalizeGridSize, type GridSize } from '../../lib/gridPreferences';

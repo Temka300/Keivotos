@@ -1,16 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import {
-    api,
-    thumbnailUrl,
-    type FavoriteTagCombo,
-    type ImageSummary,
-    type PaginatedTags,
-    type TagInfo,
-    type TagWikiExample,
-    type TagWikiInfo,
-    type TagWikiTextLine,
-  } from '../lib/api';
+  import { danbooruApi as api, thumbnailUrl } from '../modules/danbooru/api';
+  import { type FavoriteTagCombo, type ImageSummary, type PaginatedTags, type TagInfo, type TagWikiExample, type TagWikiInfo, type TagWikiTextLine } from '../modules/danbooru/apiTypes';
   import { cacheView, getCachedView, invalidateViewCache } from '../lib/viewCache';
   import { activeTags, artistFollowRefreshToken, browseTagSelection, fitMode, imageSize, selectedImageId, tagRefreshToken, viewMode } from '../modules/danbooru/stores';
   import { gridSizeByValue } from '../lib/gridPreferences';

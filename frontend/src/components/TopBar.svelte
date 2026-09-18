@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api } from '../lib/api';
+  import { danbooruApi as api } from '../modules/danbooru/api';
   import { SUITE_NAME } from '../lib/product';
   import { MODULE_DISPLAY_NAME } from '../modules/danbooru/identity';
   import { viewMode, sortBy, sortOrder, activeFolder, activeRating, activeTags, activeCollectionId, selectedImageId, fitMode, imageSize, imagePageSize, imagePageSizeOptions, duplicatesOnly, duplicateScope, blacklistedTagNames, searchString, browseTagSelection, artistNotificationsEnabled } from '../modules/danbooru/stores';

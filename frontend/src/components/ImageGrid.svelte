@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { api, type CollectionInfo, type FolderInfo, type ImageSummary, type PaginatedImages } from '../lib/api';
+  import { danbooruApi as api } from '../modules/danbooru/api';
+  import { type CollectionInfo, type FolderInfo, type ImageSummary, type PaginatedImages } from '../modules/danbooru/apiTypes';
   import { cacheView, getCachedView, invalidateViewCache } from '../lib/viewCache';
   import { searchString, activeTags, sortBy, sortOrder, activeFolder, activeRating, selectedImageId, imageRefreshToken, viewMode, activeCollectionId, collectionRefreshToken, fitMode, imageSize, imagePageSize, blacklistedTagNames, duplicatesOnly, duplicateScope, visibleImageIds, browseTagSelection, type ImagePageSize, type BrowseTagSelection } from '../modules/danbooru/stores';
   import { gridSizeByValue } from '../lib/gridPreferences';

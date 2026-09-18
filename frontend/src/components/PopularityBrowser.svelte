@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api } from '../lib/api';
+  import { danbooruApi as api } from '../modules/danbooru/api';
   import { activeFolder, activeRating, activeTags, blacklistedTagNames, searchString, sortBy, sortOrder, viewMode } from '../modules/danbooru/stores';
   import HomeBreadcrumbBack from './HomeBreadcrumbBack.svelte';
   import ImageGrid from './ImageGrid.svelte';

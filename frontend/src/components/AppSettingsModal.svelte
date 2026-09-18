@@ -1,15 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, tick } from 'svelte';
   import { get } from 'svelte/store';
-  import {
-    api,
-    type DanbooruCredentialStatus,
-    type FolderInfo,
-    type FolderRemovalMode,
-    type FolderRemovalPreview,
-    type ToolInfo,
-    type ToolStatus,
-  } from '../lib/api';
+  import { danbooruApi as api } from '../modules/danbooru/api';
+  import { type DanbooruCredentialStatus, type FolderInfo, type FolderRemovalMode, type FolderRemovalPreview, type ToolInfo, type ToolStatus } from '../modules/danbooru/apiTypes';
   import { filesApi, type AttachmentStore, type SourceInfo } from '../lib/filesApi';
   import { suiteApi, type FolderBatchResult } from '../lib/suiteApi';
   import BackupRestoreSettings from './BackupRestoreSettings.svelte';

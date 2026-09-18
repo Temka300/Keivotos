@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type ThumbnailCacheStatus } from '../lib/api';
+  import { suiteDataApi as api } from '../lib/suiteDataApi';
+  import { type ThumbnailCacheStatus } from '../lib/suiteApiTypes';
 
   let status: ThumbnailCacheStatus | null = null;
   let limitGb = 10;

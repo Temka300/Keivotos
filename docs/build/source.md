@@ -243,3 +243,22 @@ Store owners are `lib/suiteStores.ts`, `lib/filesStores.ts` and
 in `lib/persistedStore.ts` and `lib/gridPreferences.ts`. Existing storage keys are
 unchanged. New callers should import their owner directly; `lib/stores.ts` remains
 an explicit compatibility export. API ownership is a separate boundary.
+
+## Frontend API contract
+
+```bash
+node tests/frontend_api.mjs
+```
+
+This uses the existing frontend Vite dependency and a stubbed fetch function; it
+never contacts a service. `tests/snapshots/frontend_api.json` records requests and
+media URLs captured from the client before its ownership split. The test checks
+request methods, URL encoding, payloads, cancellation signals, compatibility
+method identity, errors and suite-client isolation. Update the capture only for
+an intentional request-contract change. Run the store and browser checks too.
+
+New callers use `modules/danbooru/api.ts` and its `apiTypes.ts` for Danbooru,
+`lib/suiteDataApi.ts` and `lib/suiteApiTypes.ts` for shared preservation/settings,
+and the existing `lib/filesApi.ts` or `lib/suiteApi.ts` for Files or suite registry/
+folder operations. `lib/api.ts` and `lib/apiTypes.ts` remain compatibility exports.
+The different existing transport behaviors are intentional compatibility seams.

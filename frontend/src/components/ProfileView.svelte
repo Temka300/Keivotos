@@ -1,14 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import {
-    api,
-    thumbnailUrl,
-    type ArtistFollowInfo,
-    type CollectionInfo,
-    type ImageSummary,
-    type Stats,
-    type TagWikiExample,
-  } from '../lib/api';
+  import { danbooruApi as api, thumbnailUrl } from '../modules/danbooru/api';
+  import { type ArtistFollowInfo, type CollectionInfo, type ImageSummary, type Stats, type TagWikiExample } from '../modules/danbooru/apiTypes';
   import CollectionPreviewGrid from './CollectionPreviewGrid.svelte';
   import { activeCollectionId, artistFollowRefreshToken, artistFocusRequest, browseTagSelection, collectionRefreshToken, imageRefreshToken, selectedImageId, viewMode } from '../modules/danbooru/stores';
   import { normalizeProfileName, profileName } from '../lib/suiteStores';

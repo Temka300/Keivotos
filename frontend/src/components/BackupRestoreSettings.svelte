@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type BackupComponents, type BackupConfiguration, type BackupEstimate, type BackupManifest, type LocalRecoveryStatus } from '../lib/api';
+  import { suiteDataApi as api } from '../lib/suiteDataApi';
+  import { type BackupComponents, type BackupConfiguration, type BackupEstimate, type BackupManifest, type LocalRecoveryStatus } from '../lib/suiteApiTypes';
   import { SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/suiteStores';
 

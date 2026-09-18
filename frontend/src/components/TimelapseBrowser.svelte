@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { api, imageFileUrl, thumbnailUrl, type ImageSummary } from '../lib/api';
+  import { danbooruApi as api, imageFileUrl, thumbnailUrl } from '../modules/danbooru/api';
+  import { type ImageSummary } from '../modules/danbooru/apiTypes';
   import { activeFolder, activeRating, blacklistedTagNames, duplicateScope, duplicatesOnly, imageRefreshToken, mediaPlayback, selectedImageId, viewMode, visibleImageIds } from '../modules/danbooru/stores';
   import HomeBreadcrumbBack from './HomeBreadcrumbBack.svelte';
 

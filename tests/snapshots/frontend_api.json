@@ -1,0 +1,1576 @@
+{
+  "cases": [
+    {
+      "name": "getImages",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        },
+        {
+          "$signal": true
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/images?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": true
+      }
+    },
+    {
+      "name": "getRandomImage",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/images/random?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getImage",
+      "args": [
+        7,
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/images/7?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "refreshImageRelations",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "/api/images/7/relations/refresh",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "spamHeart",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "/api/images/7/heart-spam",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "moveImageToFolder",
+      "args": [
+        7,
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/images/7/folder",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"folder\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "moveImagesToFolder",
+      "args": [
+        [
+          7,
+          9
+        ],
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/images/batch/folder",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"post_ids\":[7,9],\"folder\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "addUserImageTag",
+      "args": [
+        7,
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/images/7/user-tags",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"name\":\"a /?#한\",\"category\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "removeUserImageTag",
+      "args": [
+        7,
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/images/7/user-tags/a%20%2F%3F%23%ED%95%9C?category=a%20%2F%3F%23%ED%95%9C",
+        "method": "DELETE",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "openImageLocation",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "/api/images/7/open-location",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getHomeTags",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/home/tags?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getHomeImageRails",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/home/image-rails?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getDailyChallenge",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/challenges/daily?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "suggestChallengeCharacters",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/challenges/characters/suggest?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getTags",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        },
+        {
+          "$signal": true
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/tags?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": true
+      }
+    },
+    {
+      "name": "getTagWiki",
+      "args": [
+        "a /?#한",
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/tags/a%20%2F%3F%23%ED%95%9C/wiki?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getRandomTag",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/tags/random?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "suggestTags",
+      "args": [
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/tags/suggest?q=a+%2F%3F%23%ED%95%9C&category=a+%2F%3F%23%ED%95%9C",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getRelatedTags",
+      "args": [
+        [
+          "sky",
+          "blue hair"
+        ],
+        12
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/tags/related?tags=sky%2Cblue+hair&limit=12",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getArtistFollows",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/artist-follows",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getArtistFollowNames",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/artist-follows/names",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "followArtist",
+      "args": [
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/artist-follows/a%20%2F%3F%23%ED%95%9C?display_name=a%20%2F%3F%23%ED%95%9C",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "unfollowArtist",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/artist-follows/a%20%2F%3F%23%ED%95%9C",
+        "method": "DELETE",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "checkArtistFollow",
+      "args": [
+        "a /?#한",
+        12,
+        true
+      ],
+      "request": {
+        "url": "/api/artist-follows/a%20%2F%3F%23%ED%95%9C/check?limit=12&initialize_notifications=true",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "markArtistFollowSeen",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/artist-follows/a%20%2F%3F%23%ED%95%9C/seen",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getArtistProfileAssets",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/artist-profile-assets/a%20%2F%3F%23%ED%95%9C",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "refreshArtistProfileAssets",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/artist-profile-assets/a%20%2F%3F%23%ED%95%9C/refresh",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "refreshFollowedArtistProfileAssets",
+      "args": [],
+      "request": {
+        "url": "/api/artist-profile-assets/refresh-followed",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getPopularityPeriods",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/popularity/periods?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getTimelapseFrames",
+      "args": [
+        {
+          "q": "sky & blue/한",
+          "folder": "C:/art & files",
+          "rating": "g,e",
+          "offset": 0,
+          "limit": 12,
+          "duplicates_only": false,
+          "empty": ""
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/timelapse/frames?q=sky+%26+blue%2F%ED%95%9C&folder=C%3A%2Fart+%26+files&rating=g%2Ce&offset=0&limit=12&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getFolders",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/folders",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "registerFolder",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/folders",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"path\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "browseFolder",
+      "args": [],
+      "request": {
+        "url": "/api/folders/browse",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "rescanFolder",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/folders/a%20%2F%3F%23%ED%95%9C/rescan",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "relocateFolder",
+      "args": [
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/folders/a%20%2F%3F%23%ED%95%9C/path",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"path\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "getFolderRemovalPreview",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/folders/a%20%2F%3F%23%ED%95%9C/removal-preview",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "removeFolder",
+      "args": [
+        "a /?#한",
+        "unindex_only"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/folders/a%20%2F%3F%23%ED%95%9C?mode=unindex_only",
+        "method": "DELETE",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getStats",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/stats",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getUserSetting",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/user-settings/a%20%2F%3F%23%ED%95%9C",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "putUserSetting",
+      "args": [
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/user-settings/a%20%2F%3F%23%ED%95%9C",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"value\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "toggleFavorite",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "/api/favorites/7",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "updateFavorites",
+      "args": [
+        [
+          7,
+          9
+        ],
+        "add"
+      ],
+      "request": {
+        "url": "/api/favorites/batch",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"file_ids\":[7,9],\"action\":\"add\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "toggleFavoritePin",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "/api/favorites/7/pin",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getFavoriteIds",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/favorites/ids",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getFavoriteTags",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/favorite-tags",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "toggleFavoriteTag",
+      "args": [
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/favorite-tags/a%20%2F%3F%23%ED%95%9C?category=a%20%2F%3F%23%ED%95%9C",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "toggleFavoriteTagPin",
+      "args": [
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/favorite-tags/a%20%2F%3F%23%ED%95%9C/pin?category=a%20%2F%3F%23%ED%95%9C",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getFavoriteTagNames",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/favorite-tags/names",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getFavoriteTagCombos",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/favorite-tag-combos",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "createFavoriteTagCombo",
+      "args": [
+        [
+          "sky",
+          "blue hair"
+        ],
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/favorite-tag-combos",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"tags\":[\"sky\",\"blue hair\"],\"name\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "deleteFavoriteTagCombo",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/favorite-tag-combos/7",
+        "method": "DELETE",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getBlacklistTags",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/blacklist-tags",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "addBlacklistTag",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/blacklist-tags/a%20%2F%3F%23%ED%95%9C",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "removeBlacklistTag",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/blacklist-tags/a%20%2F%3F%23%ED%95%9C",
+        "method": "DELETE",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getBlacklistTagNames",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/blacklist-tags/names",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getCollections",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/collections",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getCollectionMemberships",
+      "args": [
+        [
+          7,
+          9
+        ]
+      ],
+      "request": {
+        "url": "/api/collections/memberships",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"file_ids\":[7,9]}",
+        "signal": false
+      }
+    },
+    {
+      "name": "createCollection",
+      "args": [
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/collections",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"name\":\"a /?#한\",\"description\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "updateCollection",
+      "args": [
+        7,
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/collections/7",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"name\":\"a /?#한\",\"description\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "deleteCollection",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/collections/7",
+        "method": "DELETE",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "toggleCollectionPin",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "/api/collections/7/pin",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "toggleCollectionImagePin",
+      "args": [
+        7,
+        7
+      ],
+      "request": {
+        "url": "/api/collections/7/images/7/pin",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "updateCollectionImages",
+      "args": [
+        7,
+        [
+          7,
+          9
+        ],
+        "add"
+      ],
+      "request": {
+        "url": "/api/collections/7/images",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"file_ids\":[7,9],\"action\":\"add\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "getTools",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/tools",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getAutomation",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/automation",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "setAutomation",
+      "args": [
+        true,
+        15
+      ],
+      "request": {
+        "url": "/api/automation",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"enabled\":true,\"interval_minutes\":15}",
+        "signal": false
+      }
+    },
+    {
+      "name": "runTool",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/tools/a /?#한/run",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getToolStatus",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/tools/a%20/?#%ED%95%9C/status",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "cancelTool",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/tools/a /?#한/cancel",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getToolFolders",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/tools/folders",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "runBackfill",
+      "args": [
+        "a /?#한",
+        12
+      ],
+      "request": {
+        "url": "/api/tools/backfill/run",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"folder\":\"a /?#한\",\"limit\":12}",
+        "signal": false
+      }
+    },
+    {
+      "name": "getDanbooruCredentials",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/danbooru/credentials",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "saveDanbooruCredentials",
+      "args": [
+        "a /?#한",
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/danbooru/credentials",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"username\":\"a /?#한\",\"api_key\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "clearDanbooruCredentials",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/danbooru/credentials",
+        "method": "DELETE",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "checkDanbooruCredentials",
+      "args": [],
+      "request": {
+        "url": "/api/danbooru/credentials/check",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getStorageConfiguration",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/storage",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getImportPipeline",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/import-pipeline",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getImportTask",
+      "args": [
+        7
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/import-pipeline/task?after_index=7",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "runImport",
+      "args": [
+        "metadata",
+        "a /?#한",
+        12,
+        true
+      ],
+      "request": {
+        "url": "/api/import-pipeline/run",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"phase\":\"metadata\",\"folder\":\"a /?#한\",\"limit\":12,\"confirm_network\":true}",
+        "signal": false
+      }
+    },
+    {
+      "name": "cancelImport",
+      "args": [],
+      "request": {
+        "url": "/api/import-pipeline/cancel",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getBackupConfiguration",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/backups",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "getLocalRecovery",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/local-recovery",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "createLocalRecoveryCheckpoint",
+      "args": [],
+      "request": {
+        "url": "/api/local-recovery/checkpoint",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "configureBackups",
+      "args": [
+        {
+          "user_database": true,
+          "file_attachments": false
+        }
+      ],
+      "request": {
+        "url": "/api/backups",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"components\":{\"user_database\":true,\"file_attachments\":false}}",
+        "signal": false
+      }
+    },
+    {
+      "name": "estimateBackup",
+      "args": [
+        {
+          "user_database": true,
+          "file_attachments": false
+        }
+      ],
+      "request": {
+        "url": "/api/backups/estimate",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"components\":{\"user_database\":true,\"file_attachments\":false}}",
+        "signal": false
+      }
+    },
+    {
+      "name": "createMetadataBackup",
+      "args": [
+        {
+          "user_database": true,
+          "file_attachments": false
+        }
+      ],
+      "request": {
+        "url": "/api/backups/create",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"components\":{\"user_database\":true,\"file_attachments\":false}}",
+        "signal": false
+      }
+    },
+    {
+      "name": "inspectMetadataBackup",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/backups/a%20%2F%3F%23%ED%95%9C/inspect",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "restoreMetadataBackup",
+      "args": [
+        "a /?#한"
+      ],
+      "request": {
+        "url": "/api/backups/restore",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"name\":\"a /?#한\"}",
+        "signal": false
+      }
+    },
+    {
+      "name": "getThumbnailCache",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/thumbnails/cache",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "cleanupThumbnailCache",
+      "args": [],
+      "request": {
+        "url": "/api/thumbnails/cache/cleanup",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "clearThumbnailCache",
+      "args": [],
+      "request": {
+        "url": "/api/thumbnails/cache/clear",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "setThumbnailCacheLimit",
+      "args": [
+        2
+      ],
+      "request": {
+        "url": "/api/thumbnails/cache/limit",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"limit_gb\":2}",
+        "signal": false
+      }
+    },
+    {
+      "name": "getImages",
+      "args": [
+        {
+          "q": "",
+          "offset": 0,
+          "duplicates_only": false
+        }
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/images?offset=0&duplicates_only=false",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "runImport",
+      "args": [
+        "discover",
+        "",
+        0,
+        false
+      ],
+      "request": {
+        "url": "/api/import-pipeline/run",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"phase\":\"discover\",\"folder\":null,\"limit\":null,\"confirm_network\":false}",
+        "signal": false
+      }
+    },
+    {
+      "name": "saveDanbooruCredentials",
+      "args": [
+        "user",
+        ""
+      ],
+      "request": {
+        "url": "/api/danbooru/credentials",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"username\":\"user\",\"api_key\":null}",
+        "signal": false
+      }
+    },
+    {
+      "name": "runBackfill",
+      "args": [],
+      "request": {
+        "url": "/api/tools/backfill/run",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"folder\":null,\"limit\":null}",
+        "signal": false
+      }
+    },
+    {
+      "name": "followArtist",
+      "args": [
+        "a /?",
+        null
+      ],
+      "request": {
+        "url": "/api/artist-follows/a%20%2F%3F",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "setAutomation",
+      "args": [
+        false
+      ],
+      "request": {
+        "url": "/api/automation",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"enabled\":false,\"interval_minutes\":null}",
+        "signal": false
+      }
+    },
+    {
+      "name": "removeFolder",
+      "args": [
+        "root"
+      ],
+      "request": {
+        "url": "http://fixture.invalid/api/folders/root?mode=unindex_only",
+        "method": "DELETE",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "createCollection",
+      "args": [
+        "name"
+      ],
+      "request": {
+        "url": "/api/collections",
+        "method": "POST",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"name\":\"name\",\"description\":\"\"}",
+        "signal": false
+      }
+    }
+  ],
+  "urls": [
+    {
+      "name": "thumbnailUrl",
+      "args": [
+        7
+      ],
+      "value": "/api/thumbnail/7?tv=v4"
+    },
+    {
+      "name": "thumbnailUrl",
+      "args": [
+        7,
+        128
+      ],
+      "value": "/api/thumbnail/7?tv=v4"
+    },
+    {
+      "name": "thumbnailUrl",
+      "args": [
+        7,
+        301,
+        "a /?#한"
+      ],
+      "value": "/api/thumbnail/7?tv=v4&size=600&v=a+%2F%3F%23%ED%95%9C"
+    },
+    {
+      "name": "thumbnailUrl",
+      "args": [
+        7,
+        601
+      ],
+      "value": "/api/thumbnail/7?tv=v4&size=1200"
+    },
+    {
+      "name": "thumbnailUrl",
+      "args": [
+        7,
+        0,
+        "token"
+      ],
+      "value": "/api/thumbnail/7?tv=v4&v=token"
+    },
+    {
+      "name": "imageFileUrl",
+      "args": [
+        7
+      ],
+      "value": "/api/image-file/7"
+    },
+    {
+      "name": "imageFileUrl",
+      "args": [
+        7,
+        "a /?#한"
+      ],
+      "value": "/api/image-file/7?v=a%20%2F%3F%23%ED%95%9C"
+    }
+  ]
+}

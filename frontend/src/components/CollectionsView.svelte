@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { api, type CollectionInfo } from '../lib/api';
+  import { danbooruApi as api } from '../modules/danbooru/api';
+  import { type CollectionInfo } from '../modules/danbooru/apiTypes';
   import { viewMode, activeCollectionId, collectionRefreshToken } from '../modules/danbooru/stores';
   import CollectionPreviewGrid from './CollectionPreviewGrid.svelte';
 

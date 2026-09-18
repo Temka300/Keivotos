@@ -395,7 +395,7 @@ class ReleaseLayoutTests(unittest.TestCase):
     def test_original_media_has_no_delete_controls(self) -> None:
         detail = (ROOT / "frontend" / "src" / "components" / "ImageDetail.svelte").read_text(encoding="utf-8")
         grid = (ROOT / "frontend" / "src" / "components" / "ImageGrid.svelte").read_text(encoding="utf-8")
-        api_client = (ROOT / "frontend" / "src" / "lib" / "api.ts").read_text(encoding="utf-8")
+        api_client = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "api.ts").read_text(encoding="utf-8")
         self.assertNotIn("Delete Image", detail)
         self.assertNotIn("deleteImage", api_client)
         self.assertNotIn("deleteSelectedImages", grid)

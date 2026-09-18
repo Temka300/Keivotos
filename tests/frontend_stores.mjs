@@ -19,7 +19,7 @@ for (const match of facade.matchAll(/export \{([^}]+)\} from '([^']+)';/g)) {
 const input = path.join(frontend, '__store_contract__.ts');
 const code = `${imports.join('\n')}
 import { ${names.join(', ')} } from ${JSON.stringify(facadePath)};
-import { api } from ${JSON.stringify(path.join(frontend, 'src/lib/api.ts'))};
+import { suiteDataApi as api } from ${JSON.stringify(path.join(frontend, 'src/lib/suiteDataApi.ts'))};
 export { api };
 export const compatibility = { ${names.join(', ')} };
 export const owners = { ${names.map(n => `${n}: direct_${n}`).join(', ')} };`;

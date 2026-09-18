@@ -1,7 +1,8 @@
 <script lang="ts">
   import { createEventDispatcher, onMount, tick } from 'svelte';
   import { fly } from 'svelte/transition';
-  import { api, imageFileUrl, thumbnailUrl, type ArtistProfileAsset, type ImageDetail as ImageDetailType, type CollectionInfo, type FolderInfo, type RelatedImageInfo, type TagInfo } from '../lib/api';
+  import { danbooruApi as api, imageFileUrl, thumbnailUrl } from '../modules/danbooru/api';
+  import { type ArtistProfileAsset, type ImageDetail as ImageDetailType, type CollectionInfo, type FolderInfo, type RelatedImageInfo, type TagInfo } from '../modules/danbooru/apiTypes';
   import { activeCollectionId, activeFolder, activeTags, browseTagSelection, collectionRefreshToken, heartSpamEnabled, imageRefreshToken, mediaPlayback, selectedImageId, tagRefreshToken, viewMode, visibleImageIds } from '../modules/danbooru/stores';
 
   export let postId: number | null = null;
