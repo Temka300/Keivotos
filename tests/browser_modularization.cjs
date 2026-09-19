@@ -9,7 +9,7 @@ assert.equal(new URL(config.url).hostname, '127.0.0.1');
 const report = { checks: [], timings: {}, errors: [], requests: [] };
 
 (async () => {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL });
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, reducedMotion: 'no-preference' });
   await context.tracing.start({ screenshots: true, snapshots: true });
   const page = await context.newPage();
@@ -89,9 +89,14 @@ const report = { checks: [], timings: {}, errors: [], requests: [] };
     await openDrawer();
     await page.getByRole('button', { name: 'Enable', exact: true }).click();
     await drawer.waitFor({ state: 'detached' });
-    await page.getByRole('button', { name: 'Browse', exact: true }).click();
+    const browse = page.getByRole('button', { name: 'Browse', exact: true });
+    await browse.waitFor();
+    // Observe before the trigger: visibility polling can miss the short entry
+    // transition when the browser and driver run on different operating systems.
+    const sidebarEntrance = sample('.sidebar-dock', 1000);
+    await browse.click();
+    report.timings.sidebarEntrance = await sidebarEntrance;
     await dock.waitFor();
-    report.timings.sidebarEntrance = await sample('.sidebar-dock', 350);
     assert(report.timings.sidebarEntrance.some(p => p.width > 1 && p.width < 250), 'Browse entry must animate');
     assert.equal(await dock.count(), 1);
     assert((await dock.boundingBox()).width > 250);

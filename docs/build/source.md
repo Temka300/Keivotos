@@ -455,3 +455,8 @@ After shutdown it verifies absent module storage/tables and preserved fixture
 media. It never removes source folders from the checkout or uses the live library.
 This is application build/runtime verification, not a native frozen-release check
 or type-checking unused compatibility barrels without their owner present.
+
+## Final modularization verification
+
+See [the verification matrix](modularization-verification.md) for the final source
+checks, repeatable commands, browser coverage and remaining platform limits.
