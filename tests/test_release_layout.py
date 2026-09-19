@@ -45,7 +45,7 @@ class ReleaseLayoutTests(unittest.TestCase):
 
     def test_default_scan_configuration_contains_no_personal_folder_names(self) -> None:
         config_source = (ROOT / "backend" / "config.py").read_text(encoding="utf-8")
-        pipeline_source = (ROOT / "scripts" / "danbooru_gallery_dl.py").read_text(encoding="utf-8")
+        pipeline_source = (ROOT / "backend" / "modules" / "danbooru" / "pipeline.py").read_text(encoding="utf-8")
         for personal_name in ("Danbooru_kivotos", "Danbooru_zANKI"):
             self.assertNotIn(personal_name, config_source)
             self.assertNotIn(personal_name, pipeline_source)
@@ -352,7 +352,7 @@ class ReleaseLayoutTests(unittest.TestCase):
     def test_windows_spec_collects_the_backend_composition_root(self) -> None:
         spec = (ROOT / "packaging" / "windows" / "Keivotos.spec").read_text(encoding="utf-8")
         self.assertIn(
-            'hiddenimports=["server", "runtime_logging", *UVICORN_HIDDEN_IMPORTS]',
+            'hiddenimports=["server", "runtime_logging", "modules.danbooru.pipeline", *UVICORN_HIDDEN_IMPORTS]',
             spec,
         )
         for package in (

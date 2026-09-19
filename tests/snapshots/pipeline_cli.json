@@ -1,0 +1,114 @@
+[
+  {
+    "args": [
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py [-h] [--root ROOT]\n                              [--gallery-dl-dir GALLERY_DL_DIR]\n                              [--sidecar-dir SIDECAR_DIR] [--user-db USER_DB]\n                              {download,backfill,import-discover,import-enrich,index,sqlite,sync,import-finalize,clean-sidecars,search}\n                              ...\n\nDownload Danbooru files with gallery-dl sidecars, or backfill metadata for\nexisting local media by Danbooru MD5 lookup.\n\npositional arguments:\n  {download,backfill,import-discover,import-enrich,index,sqlite,sync,import-finalize,clean-sidecars,search}\n    download            Use gallery-dl to download a Danbooru tag search with\n                        JSON and tag sidecars.\n    backfill            Write sidecar tags/metadata for existing local media\n                        by querying Danbooru.\n    import-discover     Import phase 1: discover paths using directory\n                        metadata only.\n    import-enrich       Import phase 2: hash files and read dimensions with\n                        bounded workers.\n    index               Build one central JSON search index from existing\n                        .danbooru.json sidecars.\n    sqlite              Build a searchable SQLite database from existing\n                        .danbooru.json sidecars.\n    sync                Incrementally sync media folders into the SQLite\n                        database: import new/changed sidecars, index sidecar-\n                        less media, remove rows for deleted files. No rebuild.\n    import-finalize     Import phase 4: incrementally sync sidecars and\n                        finalize the import ledger.\n    clean-sidecars      Delete .danbooru.json and .tags.txt sidecars whose\n                        original media file is missing.\n    search              Search the SQLite database by Danbooru tags and simple\n                        filters.\n\noptions:\n  -h, --help            show this help message and exit\n  --root ROOT           Workspace root. Default: project root.\n  --gallery-dl-dir GALLERY_DL_DIR\n                        gallery-dl config/archive work folder. Relative paths\n                        use the project root.\n  --sidecar-dir SIDECAR_DIR\n                        Central sidecar folder. Relative paths use the project\n                        root.\n  --user-db USER_DB     User database containing stable registered-root\n                        identities.\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "download",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py download [-h] [--folder FOLDER]\n                                       [--tag-folder TAG_FOLDER]\n                                       [--destination DESTINATION]\n                                       [--filename FILENAME] [--limit LIMIT]\n                                       [--archive ARCHIVE]\n                                       [--sleep-request SLEEP_REQUEST]\n                                       [--sleep-429 SLEEP_429]\n                                       [--retries RETRIES]\n                                       [--metadata-includes METADATA_INCLUDES]\n                                       [--username USERNAME]\n                                       [--api-key API_KEY] [--ugoira-zip]\n                                       [--external] [--dry-run]\n                                       tags [tags ...]\n\npositional arguments:\n  tags                  Danbooru tag query, e.g. 1girl rating:safe\n\noptions:\n  -h, --help            show this help message and exit\n  --folder FOLDER       Top-level output folder.\n  --tag-folder TAG_FOLDER\n                        Output subfolder. Default: sanitized tag query.\n  --destination DESTINATION\n                        Exact output directory (used by the in-app\n                        downloader).\n  --filename FILENAME   gallery-dl filename format.\n  --limit LIMIT         Limit downloads with gallery-dl --range 1-N.\n  --archive ARCHIVE     gallery-dl archive sqlite path.\n  --sleep-request SLEEP_REQUEST\n                        gallery-dl request delay.\n  --sleep-429 SLEEP_429\n                        gallery-dl 429 retry delay.\n  --retries RETRIES\n  --metadata-includes METADATA_INCLUDES\n                        Comma-separated Danbooru extra metadata includes.\n  --username USERNAME   Danbooru username, or set DANBOORU_USERNAME.\n  --api-key API_KEY     Danbooru API key, or set DANBOORU_API_KEY.\n  --ugoira-zip          Download ugoira ZIPs instead of converted videos.\n  --external            Follow source URLs for restricted/unavailable posts.\n  --dry-run             Print config and command without running gallery-dl.\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "backfill",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py backfill [-h] [--limit LIMIT] [--delay DELAY]\n                                       [--retries RETRIES]\n                                       [--json-suffix JSON_SUFFIX]\n                                       [--tags-suffix TAGS_SUFFIX]\n                                       [--overwrite]\n                                       [--archive-replaced-sidecars]\n                                       [--sidecar-archive-dir SIDECAR_ARCHIVE_DIR]\n                                       [--filename-md5-only]\n                                       [--gallery-dl-names-only]\n                                       [--index-jsonl INDEX_JSONL]\n                                       [--append-index] [--extra-metadata]\n                                       [--metadata-includes METADATA_INCLUDES]\n                                       [--username USERNAME]\n                                       [--api-key API_KEY] [--dry-run]\n                                       [--use-indexed-md5]\n                                       [--database DATABASE]\n                                       [paths ...]\n\npositional arguments:\n  paths                 Files/folders to scan. Defaults to Danbooru folders.\n\noptions:\n  -h, --help            show this help message and exit\n  --limit LIMIT         Only process the first N media files.\n  --delay DELAY         Seconds to wait between Danbooru API requests.\n  --retries RETRIES\n  --json-suffix JSON_SUFFIX\n  --tags-suffix TAGS_SUFFIX\n  --overwrite           Rewrite existing sidecars.\n  --archive-replaced-sidecars\n                        Copy existing sidecars to the sidecar archive before\n                        overwriting them.\n  --sidecar-archive-dir SIDECAR_ARCHIVE_DIR\n                        Archive folder for replaced sidecars. Default: project\n                        data/sidecar_archive/<timestamp>.\n  --filename-md5-only   Only inspect files with a 32-character hex hash in the\n                        filename.\n  --gallery-dl-names-only\n                        Only inspect gallery-dl-style filenames beginning with\n                        double underscores.\n  --index-jsonl INDEX_JSONL\n                        Also write matched metadata to one newline-delimited\n                        JSON index file.\n  --append-index        Append to --index-jsonl instead of replacing it at the\n                        start of the run.\n  --extra-metadata      Fetch notes/commentary/parent/children/uploader.\n  --metadata-includes METADATA_INCLUDES\n                        Comma-separated Danbooru extra metadata includes.\n  --username USERNAME   Danbooru username, or set DANBOORU_USERNAME.\n  --api-key API_KEY     Danbooru API key, or set DANBOORU_API_KEY.\n  --dry-run             List files that would be inspected.\n  --use-indexed-md5     Reuse local_md5 from the SQLite index instead of\n                        hashing media again.\n  --database DATABASE   SQLite index used by --use-indexed-md5.\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "import-discover",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py import-discover [-h] [--output OUTPUT]\n                                              [paths ...]\n\npositional arguments:\n  paths\n\noptions:\n  -h, --help       show this help message and exit\n  --output OUTPUT\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "import-enrich",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py import-enrich [-h] [--output OUTPUT]\n                                            [--workers WORKERS]\n                                            [paths ...]\n\npositional arguments:\n  paths\n\noptions:\n  -h, --help         show this help message and exit\n  --output OUTPUT\n  --workers WORKERS\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "index",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py index [-h] [--output OUTPUT]\n                                    [--json-suffix JSON_SUFFIX]\n                                    [--limit LIMIT] [--pretty] [--full]\n                                    [paths ...]\n\npositional arguments:\n  paths                 Folders to scan. Defaults to Danbooru folders.\n\noptions:\n  -h, --help            show this help message and exit\n  --output OUTPUT       Central JSON index to write.\n  --json-suffix JSON_SUFFIX\n  --limit LIMIT         Only index the first N sidecars.\n  --pretty              Write indented JSON. Larger but easier to inspect.\n  --full                Store full per-file payloads instead of compact\n                        records.\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "sqlite",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py sqlite [-h] [--output OUTPUT]\n                                     [--json-suffix JSON_SUFFIX]\n                                     [--limit LIMIT] [--replace]\n                                     [--commit-every COMMIT_EVERY]\n                                     [--include-missing-media] [--no-raw-json]\n                                     [--extra-root EXTRA_ROOT]\n                                     [paths ...]\n\npositional arguments:\n  paths                 Folders to scan. Defaults to Danbooru folders.\n\noptions:\n  -h, --help            show this help message and exit\n  --output OUTPUT       SQLite database to write.\n  --json-suffix JSON_SUFFIX\n  --limit LIMIT         Only import the first N sidecars.\n  --replace             Delete and rebuild the database before importing.\n  --commit-every COMMIT_EVERY\n                        Commit after every N imported sidecars. Use 0 to\n                        commit once at the end.\n  --include-missing-media\n                        Import sidecars even when their referenced media file\n                        is missing.\n  --no-raw-json         Do not store the full sidecar payload in the raw_json\n                        column.\n  --extra-root EXTRA_ROOT\n                        Registered external media folder; its files get the\n                        folder's name as their folder label. Repeatable.\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "sync",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py sync [-h] [--output OUTPUT]\n                                   [--json-suffix JSON_SUFFIX] [--no-raw-json]\n                                   [paths ...]\n\npositional arguments:\n  paths                 Media folders to sync. Defaults to Danbooru folders.\n\noptions:\n  -h, --help            show this help message and exit\n  --output OUTPUT       SQLite database to update.\n  --json-suffix JSON_SUFFIX\n  --no-raw-json         Do not store the full sidecar payload in the raw_json\n                        column.\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "import-finalize",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py import-finalize [-h] [--output OUTPUT]\n                                              [--json-suffix JSON_SUFFIX]\n                                              [--no-raw-json]\n                                              [paths ...]\n\npositional arguments:\n  paths\n\noptions:\n  -h, --help            show this help message and exit\n  --output OUTPUT\n  --json-suffix JSON_SUFFIX\n  --no-raw-json\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "clean-sidecars",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py clean-sidecars [-h] [--json-suffix JSON_SUFFIX]\n                                             [--tags-suffix TAGS_SUFFIX]\n                                             [--limit LIMIT] [--dry-run]\n                                             [paths ...]\n\npositional arguments:\n  paths                 Folders to scan. Defaults to Danbooru folders.\n\noptions:\n  -h, --help            show this help message and exit\n  --json-suffix JSON_SUFFIX\n  --tags-suffix TAGS_SUFFIX\n  --limit LIMIT         Only inspect/delete the first N orphan sidecars.\n  --dry-run             Print sidecars that would be deleted without deleting\n                        them.\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "search",
+      "--help"
+    ],
+    "returncode": 0,
+    "stdout": "usage: danbooru_gallery_dl.py search [-h] [--database DATABASE]\n                                     [--limit LIMIT] [--json]\n                                     ...\n\npositional arguments:\n  terms                Tags/filters. Examples: 2b_(nier:automata) solo\n                       rating:s ext:jpg artist:atomicmrshmallw -chibi\n                       2160x3840 dim:>=1920x1080 orientation:portrait\n\noptions:\n  -h, --help           show this help message and exit\n  --database DATABASE  SQLite database to search.\n  --limit LIMIT\n  --json               Print search results as JSON.\n",
+    "stderr": ""
+  },
+  {
+    "args": [],
+    "returncode": 2,
+    "stdout": "",
+    "stderr": "usage: danbooru_gallery_dl.py [-h] [--root ROOT]\n                              [--gallery-dl-dir GALLERY_DL_DIR]\n                              [--sidecar-dir SIDECAR_DIR] [--user-db USER_DB]\n                              {download,backfill,import-discover,import-enrich,index,sqlite,sync,import-finalize,clean-sidecars,search}\n                              ...\ndanbooru_gallery_dl.py: error: the following arguments are required: command\n"
+  },
+  {
+    "args": [
+      "invalid-command"
+    ],
+    "returncode": 2,
+    "stdout": "",
+    "stderr": "usage: danbooru_gallery_dl.py [-h] [--root ROOT]\n                              [--gallery-dl-dir GALLERY_DL_DIR]\n                              [--sidecar-dir SIDECAR_DIR] [--user-db USER_DB]\n                              {download,backfill,import-discover,import-enrich,index,sqlite,sync,import-finalize,clean-sidecars,search}\n                              ...\ndanbooru_gallery_dl.py: error: argument command: invalid choice: 'invalid-command' (choose from 'download', 'backfill', 'import-discover', 'import-enrich', 'index', 'sqlite', 'sync', 'import-finalize', 'clean-sidecars', 'search')\n"
+  }
+]

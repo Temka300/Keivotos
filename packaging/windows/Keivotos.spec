@@ -21,7 +21,7 @@ analysis = Analysis(
         (str(ROOT / "scripts" / "windows_folder_picker.py"), "scripts"),
         (str(ROOT / "config.json"), "."),
     ],
-    hiddenimports=["server", "runtime_logging", *UVICORN_HIDDEN_IMPORTS],
+    hiddenimports=["server", "runtime_logging", "modules.danbooru.pipeline", *UVICORN_HIDDEN_IMPORTS],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

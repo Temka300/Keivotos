@@ -354,3 +354,28 @@ search highlighting, folder overlays, task progress across sections, shared busy
 controls, Escape and presentation cleanup. Credentials/task/removal-preview
 responses and video methods are explicit test fixtures; no vault, real maintenance
 job, deletion or actual media playback is exercised by those fixtures.
+
+## Danbooru pipeline ownership
+
+The implementation is `backend/modules/danbooru/pipeline.py`. Keep invoking
+`scripts/danbooru_gallery_dl.py` with the existing arguments: that filename is
+still the CLI and packaged-helper entry point. Both historical Python imports
+(`danbooru_gallery_dl` and `scripts.danbooru_gallery_dl`) resolve to the owner
+module itself, preserving function identity, mutable globals and patch seams.
+New Python callers should import `modules.danbooru.pipeline` directly.
+
+Source defaults still resolve against the project root, independent of the
+current working directory. Frozen defaults resolve against the bundle resource
+root. The Windows/Linux freezer specs explicitly include the owner because the
+compatibility script is shipped as a data file rather than analyzed as an entry
+module. This inclusion is not evidence that a fresh packaged executable ran.
+
+```bash
+.venv/bin/python -m pytest tests/test_pipeline_ownership.py tests/test_import_phases.py tests/test_acquisition.py
+```
+
+`tests/snapshots/pipeline_cli.json` captures help for all ten commands plus the
+root help and two parser errors before the move. Tests compare output/statuses
+from another working directory, check helper dispatch and frozen defaults, and
+run discover/enrich/finalize against synthetic media and repeat finalization. Existing metadata
+lookup tests use fixtures; no live download/backfill is required for this check.
