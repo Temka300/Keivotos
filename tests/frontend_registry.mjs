@@ -26,14 +26,20 @@ try {
         activate: () => globalThis.fixtureActivated = true,
       };`);
       await fs.writeFile(path.join(extra, 'surface.ts'), "export default { owner: 'fixture' };");
+      await fs.writeFile(path.join(extra, 'settings.ts'), `export default {
+        group: { id: 'fixture', label: 'Fixture', module: 'fixture' }, order: 3,
+        component: {}, sections: [{ id: 'fixture-settings', group: 'fixture', label: 'Fixture', icon: 'window' }],
+        searchItems: [],
+      };`);
     }
     const entry = path.join(project, 'entry.ts');
     await fs.writeFile(entry, `export { moduleUi, activateModule } from './src/modules/registry';
 export { surfaceComponent } from './src/modules/surfaces';
-export { activeModule } from './src/lib/suiteStores';
+export { activeModule, startupModule } from './src/lib/suiteStores';
+export { settingsContributions } from './src/modules/settings';
 ${mode !== 'absent' ? "export { activeCollectionId, selectedImageId, viewMode } from './src/modules/danbooru/stores';" : ''}`);
     const writes = [];
-    const values = new Map();
+    const values = new Map([['keivotos:startup-module', JSON.stringify('fixture')]]);
     globalThis.localStorage = { get length() { return values.size; }, key: i => [...values.keys()][i] ?? null,
       getItem: key => values.get(key) ?? null, removeItem: key => values.delete(key),
       setItem: (key, value) => { writes.push(key); values.set(key, value); } };
@@ -49,6 +55,10 @@ ${mode !== 'absent' ? "export { activeCollectionId, selectedImageId, viewMode } 
     await fs.writeFile(bundle, chunk.code);
     const registry = await import(pathToFileURL(bundle).href);
     const { moduleUi, surfaceComponent, activateModule, activeModule } = registry;
+    assert.equal(get(registry.startupModule), mode === 'additional' ? 'fixture' : 'last');
+    assert.deepEqual(registry.settingsContributions.map(owner => owner.group.id),
+      mode === 'absent' ? ['general', 'files'] : mode === 'additional'
+        ? ['general', 'files', 'danbooru', 'fixture'] : ['general', 'files', 'danbooru']);
     assert.equal(moduleUi('files').slug, 'files');
     assert.deepEqual(moduleUi('files').drawerActions, []);
     assert.equal(surfaceComponent('files').owner, 'FilesView.svelte');

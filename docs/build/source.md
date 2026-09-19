@@ -312,3 +312,45 @@ constructors are stand-ins to isolate registration from the remaining Settings
 imports; real rendering/navigation is covered by the browser suites. Assertions
 cover surface identity/fallback, activation resets, Profile action behavior,
 Files preserving module state and absent-module store initialization.
+
+## Settings contributions
+
+The shared `AppSettingsModal.svelte` owns the frame, section navigation, search
+ranking and timed highlighting. `settings/GeneralSettings.svelte` owns suite
+controls; `modules/files/Settings.svelte` owns folder/attachment controls;
+`modules/danbooru/Settings.svelte` owns Danbooru preferences and operations.
+Danbooru's `LibraryImportSettings.svelte` lives with its module components,
+including its read-only use of the shared storage API.
+
+An owner contributes a `settings.ts` default `SettingsContribution` beside its
+UI registration. Keep group, section and setting IDs globally unique and stable:
+search jumps target the existing `setting-<id>` anchors. The registry discovers
+installed contributions; backend enablement filters the navigation groups.
+The existing installed-owner search catalog and ranking are preserved, including
+its pre-existing search entries for disabled owners. This extraction does not
+change that search behavior.
+
+Each open dialog has a `settingsSession` for cross-owner folder refreshes, tool
+polling dispatch, busy-state aggregation, overlay dismissal and media restoration.
+Keep provider instances mounted across section/search switches so drafts and
+polling survive. Nested dialogs use the session portal to retain their former
+parent outside the contained scroll pane. The session preserves the final media
+resume decision during child teardown and is discarded with the dialog.
+Startup choices use enabled backend modules; normalization accepts installed
+frontend owner slugs, preserving Files/Danbooru/last and the existing storage key.
+
+```bash
+node tests/frontend_settings.mjs
+node tests/frontend_registry.mjs
+.venv/bin/python tests/run_modularization_browser.py --script settings --output /tmp/keivotos-settings-browser
+```
+
+The catalog snapshot captures the 11 sections and 31 search entries before
+extraction. Files' folder description now says “a module” instead of hardcoding
+Danbooru. Runtime checks cover isolated dialog coordination, installed/absent/
+additional contributions and startup normalization. Browser checks cover owner
+visibility/order, lazy credential loading and unsaved drafts, preference keys,
+search highlighting, folder overlays, task progress across sections, shared busy
+controls, Escape and presentation cleanup. Credentials/task/removal-preview
+responses and video methods are explicit test fixtures; no vault, real maintenance
+job, deletion or actual media playback is exercised by those fixtures.

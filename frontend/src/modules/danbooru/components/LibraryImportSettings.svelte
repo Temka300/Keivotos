@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { suiteDataApi } from '../lib/suiteDataApi';
-  import { danbooruApi } from '../modules/danbooru/api';
-  import { type AutomationStatus, type ImportPhase, type ImportPipelineStatus, type ToolFileResult } from '../modules/danbooru/apiTypes';
-  import { type StorageConfiguration } from '../lib/suiteApiTypes';
+  import { suiteDataApi } from '../../../lib/suiteDataApi';
+  import { danbooruApi } from '../api';
+  import { type AutomationStatus, type ImportPhase, type ImportPipelineStatus, type ToolFileResult } from '../apiTypes';
+  import { type StorageConfiguration } from '../../../lib/suiteApiTypes';
 
   export let toolRunning = false;
   export let surface: 'storage' | 'metadata' = 'metadata';

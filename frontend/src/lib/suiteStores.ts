@@ -8,7 +8,10 @@ export type MotionPreference = 'system' | 'full' | 'reduced';
 export type InterfaceScale = 'default' | 'comfortable';
 // Which suite surface opens on launch. 'last' keeps the persisted activeModule
 // (today's default); a module slug forces that module when it is enabled.
-export type StartupModule = 'files' | 'danbooru' | 'last';
+export type StartupModule = string;
+const installedStartupModules = new Set(
+  Object.keys(import.meta.glob('../modules/*/ui.ts')).map(path => path.split('/')[2]),
+);
 
 function normalizeMotionPreference(value: unknown): MotionPreference {
   return value === 'full' || value === 'reduced' ? value : 'system';
@@ -19,7 +22,7 @@ function normalizeInterfaceScale(value: unknown): InterfaceScale {
 }
 
 function normalizeStartupModule(value: unknown): StartupModule {
-  return value === 'files' || value === 'danbooru' ? value : 'last';
+  return typeof value === 'string' && installedStartupModules.has(value) ? value : 'last';
 }
 
 export function normalizeProfileName(value: unknown): string {

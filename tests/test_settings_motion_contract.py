@@ -37,12 +37,15 @@ class SettingsMotionContractTests(unittest.TestCase):
         # v1.1.3: the flat functional list became scope groups — General (whole
         # suite), Files (the base), and one group per module. The module group is
         # registry-driven so it disappears when the module is disabled.
-        self.assertIn("const sectionGroups = [", self.source)
-        self.assertIn("label: 'General'", self.source)
-        self.assertIn("label: 'Files'", self.source)
-        # The module group's label comes from the module's identity, not a literal
-        # (keeps the release-layout no-hardcoded-'Danbooru' guard happy).
-        self.assertIn("label: MODULE_NAME", self.source)
+        registry = (ROOT / "frontend/src/modules/settings.ts").read_text(encoding="utf-8")
+        general = (ROOT / "frontend/src/settings/settings.ts").read_text(encoding="utf-8")
+        files = (ROOT / "frontend/src/modules/files/settings.ts").read_text(encoding="utf-8")
+        module = (ROOT / "frontend/src/modules/danbooru/settings.ts").read_text(encoding="utf-8")
+        self.assertIn("const sectionGroups = settingsContributions.map", self.source)
+        self.assertIn("label: 'General'", general)
+        self.assertIn("label: 'Files'", files)
+        self.assertIn("label: MODULE_NAME", module)
+        self.assertIn("'./*/settings.ts'", registry)
         self.assertIn("$enabledModules.includes(group.module)", self.source)
 
 
