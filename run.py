@@ -33,7 +33,7 @@ def main(arguments: list[str] | None = None) -> int:
                 print(f"[ERROR] {description} failed (exit {result.returncode}).", file=sys.stderr)
                 return result.returncode
 
-    print("[RUN] Starting Keivotos - Danbooru...", flush=True)
+    print("[RUN] Starting Keivotos...", flush=True)
     # Run in this process so Ctrl+C and uvicorn's reload retain their normal
     # behavior, without an extra Python parent waiting on the server.
     previous_argv = sys.argv

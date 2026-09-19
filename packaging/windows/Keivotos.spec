@@ -1,9 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_submodules
+import sys
+from PyInstaller.utils.hooks import collect_submodules, copy_metadata
 
 
 ROOT = Path(SPECPATH).parents[1]
+sys.path.insert(0, str(ROOT / "backend"))
+from delivery import delivery_plan
+
+PLAN = delivery_plan('win32')
+MODULE_METADATA = [entry for package in PLAN.metadata_packages for entry in copy_metadata(package, recursive=True)]
+MODULE_IMPORTS = [name for package in PLAN.collect_packages for name in collect_submodules(package)]
 UVICORN_HIDDEN_IMPORTS = [
     *collect_submodules("uvicorn.lifespan"),
     *collect_submodules("uvicorn.loops"),
@@ -15,13 +22,12 @@ analysis = Analysis(
     [str(ROOT / "app.py")],
     pathex=[str(ROOT), str(ROOT / "backend")],
     binaries=[],
-    datas=[
+    datas=MODULE_METADATA + [
         (str(ROOT / "frontend" / "dist"), "frontend/dist"),
-        (str(ROOT / "scripts" / "danbooru_gallery_dl.py"), "scripts"),
-        (str(ROOT / "scripts" / "windows_folder_picker.py"), "scripts"),
+        *((str(ROOT / path), str(Path(path).parent)) for _label, path in PLAN.helpers),
         (str(ROOT / "config.json"), "."),
     ],
-    hiddenimports=["server", "runtime_logging", "modules.danbooru.pipeline", *UVICORN_HIDDEN_IMPORTS],
+    hiddenimports=[*PLAN.hidden_imports, *MODULE_IMPORTS, *UVICORN_HIDDEN_IMPORTS],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

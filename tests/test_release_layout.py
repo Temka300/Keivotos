@@ -352,7 +352,7 @@ class ReleaseLayoutTests(unittest.TestCase):
     def test_windows_spec_collects_the_backend_composition_root(self) -> None:
         spec = (ROOT / "packaging" / "windows" / "Keivotos.spec").read_text(encoding="utf-8")
         self.assertIn(
-            'hiddenimports=["server", "runtime_logging", "modules.danbooru.pipeline", *UVICORN_HIDDEN_IMPORTS]',
+            'hiddenimports=[*PLAN.hidden_imports, *MODULE_IMPORTS, *UVICORN_HIDDEN_IMPORTS]',
             spec,
         )
         for package in (

@@ -7,12 +7,14 @@ from pathlib import Path
 from module_descriptor import ModuleDescriptor
 try:
     from modules.danbooru import descriptor as danbooru_descriptor
+    from modules.danbooru.delivery import contribution as danbooru_delivery
     from modules.danbooru.helpers import dispatch_helper as danbooru_helper
 except ModuleNotFoundError as exc:
     if exc.name != "modules.danbooru":
         raise
     danbooru_descriptor = None
     danbooru_helper = None
+    danbooru_delivery = None
 from modules.files import descriptor as files_descriptor
 
 
@@ -20,6 +22,13 @@ from modules.files import descriptor as files_descriptor
 _DESCRIPTOR_FACTORIES = (
     files_descriptor,
 ) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ())
+
+
+_DELIVERY_PROVIDERS = (danbooru_delivery,) if danbooru_delivery is not None else ()
+
+
+def delivery_contributions(target: str):
+    return tuple(provider(target) for provider in _DELIVERY_PROVIDERS)
 
 
 _HELPER_HANDLERS = (danbooru_helper,) if danbooru_helper is not None else ()

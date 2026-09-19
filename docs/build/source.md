@@ -400,3 +400,28 @@ Run isolated credential and dispatch coverage without using a real vault:
 
 Native DPAPI/Secret Service and fresh frozen-build verification remain separate
 platform checks; mocked credential tests do not establish OS vault availability.
+
+## Module delivery requirements
+
+`backend/delivery.py` combines suite requirements with module contributions from
+`backend/module_registry.py`. Danbooru declares its pipeline helper, gallery-dl
+executable and Linux vault packaging requirements in its own `delivery.py`.
+Installed-but-disabled modules remain packaged. Physically absent modules do
+not contribute helpers or tool requirements. FFmpeg and the folder picker remain
+suite requirements.
+
+The Windows/Linux build specifications and release builders consume this plan.
+`app.py --portable-check` verifies declared helpers and, in frozen builds, tool
+executables. With Danbooru installed it now also detects a missing pipeline
+wrapper. Saved paths and existing command-line interfaces are unchanged.
+
+These checks exercise specifications and simulated frozen layouts without
+building or publishing artifacts:
+
+```sh
+.venv/bin/python -m pytest tests/test_delivery.py tests/test_source_launcher.py tests/test_linux_release.py tests/test_release_layout.py
+```
+
+Passing these checks does not establish a working native packaged artifact or
+complete frontend operation with a module physically removed. Native build/smoke
+verification remains required before distributing a release.

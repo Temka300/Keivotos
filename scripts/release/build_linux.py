@@ -19,6 +19,8 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "backend"))
+from delivery import delivery_plan
 
 
 def run(*args, cwd, env=None):
@@ -49,7 +51,7 @@ def smoke(stage: Path, home: Path) -> None:
                 "KEIVOTOS_DEVELOPER_LAN", "KEIVOTOS_LAN_HOST"):
         env.pop(key, None)
     for tool, flag in (("Keivotos", "--version"), ("Keivotos", "--portable-check"),
-                       ("gallery-dl", "--version"), ("ffmpeg", "-version")):
+                       *((tool.name, tool.version_flag) for tool in delivery_plan("linux").tools)):
         run(stage / tool, flag, cwd=stage, env=env)
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
@@ -176,12 +178,15 @@ def main(argv=None) -> int:
         dist, build = work / "dist", work / "build"
         run(python, "-m", "PyInstaller", "--noconfirm", "--clean", "--distpath", dist,
             "--workpath", build, "packaging/linux/Keivotos.spec", cwd=source)
-        run(python, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--console",
-            "--name", "gallery-dl", "--distpath", dist, "--workpath", build / "gallery-dl",
-            "--specpath", work, "packaging/windows/gallery_dl_entry.py", cwd=source)
+        module_tools = [tool for tool in delivery_plan("linux").tools if tool.entry_script]
+        for tool in module_tools:
+            run(python, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--console",
+                "--name", tool.name, "--distpath", dist, "--workpath", build / tool.name,
+                "--specpath", work, tool.entry_script, cwd=source)
         stage = work / name
         shutil.copytree(dist / "Keivotos", stage, symlinks=False)
-        shutil.copy2(dist / "gallery-dl", stage / "gallery-dl")
+        for tool in module_tools:
+            shutil.copy2(dist / tool.name, stage / tool.name)
         ffmpeg = subprocess.check_output([str(python), "-c",
                     "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())"], cwd=source, text=True).strip()
         shutil.copy2(ffmpeg, stage / "ffmpeg")

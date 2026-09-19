@@ -162,29 +162,35 @@ def _open_browser_when_ready(url: str) -> None:
 
 def _portable_check(configuration) -> int:
     frontend = ROOT / "frontend" / "dist" / "index.html"
-    folder_picker = ROOT / "scripts" / "windows_folder_picker.py"
+    from delivery import delivery_plan
+
+    plan = delivery_plan(sys.platform)
     asgi_app = _load_asgi_app()
     backend_ok = any(getattr(route, "path", None) == "/" for route in asgi_app.routes)
     print(f"{DISPLAY_NAME} {VERSION}")
     print(f"Resources: {ROOT}")
     print(f"Frontend: {'ok' if frontend.is_file() else 'missing'} ({frontend})")
     print(f"Backend: {'ok' if backend_ok else 'missing root route'}")
-    print(f"Folder picker: {'ok' if folder_picker.is_file() else 'missing'} ({folder_picker})")
+    helpers_ok = True
+    for label, relative_path in plan.helpers:
+        helper = ROOT / relative_path
+        helpers_ok = helpers_ok and helper.is_file()
+        print(f"{label}: {'ok' if helper.is_file() else 'missing'} ({helper})")
     print(f"Writable home: {configuration.SUITE_HOME}")
     print(f"Runtime config: {configuration.RUNTIME_CONFIG_FILE}")
-    print(f"Library: {configuration.DATA_ROOT}")
-    print(f"Metadata: {configuration.METADATA_DIR}")
-    print(f"gallery-dl: {configuration.GALLERY_DL_DIR}")
+    for label, attribute in plan.configured_paths:
+        print(f"{label}: {getattr(configuration, attribute)}")
     tools_ok = True
     if getattr(sys, "frozen", False):
         executable_dir = Path(sys.executable).resolve().parent
         suffix = ".exe" if sys.platform == "win32" else ""
-        for tool_name in (f"gallery-dl{suffix}", f"ffmpeg{suffix}"):
+        for tool in plan.tools:
+            tool_name = f"{tool.name}{suffix}"
             tool_path = executable_dir / tool_name
             present = tool_path.is_file()
             tools_ok = tools_ok and present
             print(f"{tool_name}: {'ok' if present else 'missing'} ({tool_path})")
-    return 0 if frontend.is_file() and backend_ok and folder_picker.is_file() and tools_ok else 1
+    return 0 if frontend.is_file() and backend_ok and helpers_ok and tools_ok else 1
 
 
 def _port_available(host: str, port: int) -> tuple[bool, str | None]:

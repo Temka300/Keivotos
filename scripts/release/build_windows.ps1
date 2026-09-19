@@ -193,14 +193,23 @@ try {
         --distpath $DistRoot --workpath $WorkRoot `
         .\packaging\windows\Keivotos.spec
     if ($LASTEXITCODE -ne 0) { throw "Application build failed" }
-    .\.venv\Scripts\pyinstaller.exe --noconfirm --clean --onefile --console `
-        --name gallery-dl --distpath $DistRoot --workpath (Join-Path $WorkRoot "gallery-dl") `
-        .\packaging\windows\gallery_dl_entry.py
-    if ($LASTEXITCODE -ne 0) { throw "gallery-dl build failed" }
+    $DeliveryJson = & .\.venv\Scripts\python.exe .\scripts\release\delivery_plan.py
+    if ($LASTEXITCODE -ne 0) { throw "Delivery requirements could not be loaded" }
+    $Delivery = $DeliveryJson | ConvertFrom-Json
+    $ModuleTools = @($Delivery.tools | Where-Object { $_.entry_script })
+    foreach ($Tool in $ModuleTools) {
+        .\.venv\Scripts\pyinstaller.exe --noconfirm --clean --onefile --console `
+            --name $Tool.name --distpath $DistRoot --workpath (Join-Path $WorkRoot $Tool.name) `
+            $Tool.entry_script
+        if ($LASTEXITCODE -ne 0) { throw "Module tool build failed: $($Tool.name)" }
+    }
 
     New-Item -ItemType Directory -Path $ArtifactRoot -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $DistRoot "Keivotos") -Destination $StageRoot -Recurse
-    Copy-Item -LiteralPath (Join-Path $DistRoot "gallery-dl.exe") -Destination (Join-Path $StageRoot "gallery-dl.exe")
+    foreach ($Tool in $ModuleTools) {
+        $ToolFile = "$($Tool.name).exe"
+        Copy-Item -LiteralPath (Join-Path $DistRoot $ToolFile) -Destination (Join-Path $StageRoot $ToolFile)
+    }
     $FfmpegPath = (& .\.venv\Scripts\python.exe -c "import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())").Trim()
     if ($LASTEXITCODE -ne 0) { throw "FFmpeg discovery failed" }
     Copy-Item -LiteralPath $FfmpegPath -Destination (Join-Path $StageRoot "ffmpeg.exe")
@@ -227,10 +236,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Packaged Keivotos version check failed" }
         & (Join-Path $StageRoot "Keivotos.exe") --portable-check
         if ($LASTEXITCODE -ne 0) { throw "Packaged Keivotos resource check failed" }
-        & (Join-Path $StageRoot "gallery-dl.exe") --version
-        if ($LASTEXITCODE -ne 0) { throw "Packaged gallery-dl version check failed" }
-        & (Join-Path $StageRoot "ffmpeg.exe") -version
-        if ($LASTEXITCODE -ne 0) { throw "Packaged FFmpeg version check failed" }
+        foreach ($Tool in $Delivery.tools) {
+            & (Join-Path $StageRoot "$($Tool.name).exe") $Tool.version_flag
+            if ($LASTEXITCODE -ne 0) { throw "Packaged tool version check failed: $($Tool.name)" }
+        }
         Test-PortableServer -Executable (Join-Path $StageRoot "Keivotos.exe") -LogDirectory $SmokeHome
     }
     finally {

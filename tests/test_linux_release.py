@@ -77,6 +77,7 @@ def test_frozen_portable_check_uses_target_tool_names(tmp_path, target, suffix):
     (tmp_path / "frontend/dist/index.html").touch()
     (tmp_path / "scripts").mkdir()
     (tmp_path / "scripts/windows_folder_picker.py").touch()
+    (tmp_path / "scripts/danbooru_gallery_dl.py").touch()
     config = SimpleNamespace(**{name: tmp_path for name in ("SUITE_HOME", "RUNTIME_CONFIG_FILE", "DATA_ROOT", "METADATA_DIR", "GALLERY_DL_DIR")})
     with patch.object(app, "ROOT", tmp_path), patch.object(sys, "platform", target), patch.object(sys, "frozen", True, create=True), patch.object(sys, "executable", str(tmp_path / f"Keivotos{suffix}")), patch.object(app, "_load_asgi_app", return_value=SimpleNamespace(routes=[SimpleNamespace(path="/")])):
         assert app._portable_check(config) == 1
@@ -190,8 +191,13 @@ def test_windows_bridge_propagates_failure_and_cleans_input(tmp_path):
     assert not Path(invoke.call_args.args[-1]).exists()
 
 
-def test_both_target_runs_linux_then_windows(tmp_path, monkeypatch):
+@pytest.mark.parametrize("installed", [False, True])
+def test_both_target_runs_linux_then_windows(tmp_path, monkeypatch, installed):
     # Exercise the complete dispatch with fake build outputs, never PyInstaller.
+    import module_registry
+    if not installed:
+        monkeypatch.setattr(module_registry, '_DELIVERY_PROVIDERS', ())
+    tool_builds = []
     monkeypatch.setattr(builder.sys, "platform", "linux")
     monkeypatch.setattr(builder.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(builder, "ROOT", tmp_path)
@@ -209,6 +215,7 @@ def test_both_target_runs_linux_then_windows(tmp_path, monkeypatch):
             dist = Path(args[args.index("--distpath") + 1])
             dist.mkdir(exist_ok=True)
             if "--onefile" in args:
+                tool_builds.append(args[args.index("--name") + 1])
                 (dist / "gallery-dl").touch()
             else:
                 (dist / "Keivotos").mkdir()
@@ -226,4 +233,5 @@ def test_both_target_runs_linux_then_windows(tmp_path, monkeypatch):
     monkeypatch.setattr(builder, "build_windows", lambda *a: sequence.append("windows"))
     assert builder.main(["--target", "both"]) == 0
     assert sequence == ["linux", "windows"]
+    assert tool_builds == (["gallery-dl"] if installed else [])
     assert (tmp_path / "artifacts/Keivotos-V1.2.3-linux-x64.zip.sha256").is_file()

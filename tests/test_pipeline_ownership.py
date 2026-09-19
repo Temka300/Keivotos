@@ -79,12 +79,9 @@ class PipelineOwnershipTests(unittest.TestCase):
             self.assertIn('import-discover', output.getvalue())
 
     def test_both_freezers_include_the_owner_imported_by_the_data_only_wrapper(self):
-        for platform in ('windows', 'linux'):
-            tree = ast.parse((ROOT / f'packaging/{platform}/Keivotos.spec').read_text())
-            analysis = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
-                            and isinstance(node.func, ast.Name) and node.func.id == 'Analysis')
-            hidden = next(keyword.value for keyword in analysis.keywords if keyword.arg == 'hiddenimports')
-            self.assertIn('modules.danbooru.pipeline', [node.value for node in hidden.elts if isinstance(node, ast.Constant)])
+        from delivery import delivery_plan
+        for platform in ('win32', 'linux'):
+            self.assertIn('modules.danbooru.pipeline', delivery_plan(platform).hidden_imports)
 
     def test_legacy_cli_runs_local_phases_and_is_resumable_without_touching_media(self):
         with tempfile.TemporaryDirectory() as temporary:
