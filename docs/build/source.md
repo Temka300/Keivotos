@@ -284,3 +284,31 @@ New callers use `modules/danbooru/api.ts` and its `apiTypes.ts` for Danbooru,
 and the existing `lib/filesApi.ts` or `lib/suiteApi.ts` for Files or suite registry/
 folder operations. `lib/api.ts` and `lib/apiTypes.ts` remain compatibility exports.
 The different existing transport behaviors are intentional compatibility seams.
+
+## Frontend module registration
+
+Each installed frontend owner contributes `modules/<slug>/ui.ts` (a default
+`ModuleUiDescriptor`) and `modules/<slug>/surface.ts` (a default Svelte component).
+The descriptor slug must match the directory name. Shared registries discover
+these files through Vite's eager glob imports, preserving synchronous activation.
+Keep surface imports out of `ui.ts`: components consume the action registry, so
+importing their constructors there would introduce initialization cycles.
+
+Files supplies the base surface and empty action list. Danbooru owns its Home
+activation reset and Profile drawer action. Unknown descriptors keep neutral
+icons/actions and unknown surfaces fall back to Files. Backend descriptors still
+control enabled/disabled visibility; build-time discovery does not enable modules.
+This is bundled contribution discovery, not runtime plugin loading. Settings and
+compatibility exports still contain module references; complete frontend absence
+is not yet established.
+
+```bash
+node tests/frontend_registry.mjs
+```
+
+The test copies source into disposable directories and runs real Vite discovery
+with installed, physically absent and additional module contributions. Component
+constructors are stand-ins to isolate registration from the remaining Settings
+imports; real rendering/navigation is covered by the browser suites. Assertions
+cover surface identity/fallback, activation resets, Profile action behavior,
+Files preserving module state and absent-module store initialization.

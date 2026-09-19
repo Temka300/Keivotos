@@ -1,4 +1,3 @@
-import { activeCollectionId, selectedImageId, viewMode } from './danbooru/stores';
 import { activeModule } from '../lib/suiteStores';
 
 export interface DrawerAction {
@@ -15,35 +14,15 @@ export interface ModuleUiDescriptor {
   activate?: () => void;
 }
 
-const UI_DESCRIPTORS: Record<string, ModuleUiDescriptor> = {
-  files: {
-    slug: 'files',
-    iconSrc: null,
-    drawerActions: [],
-  },
-  danbooru: {
-    slug: 'danbooru',
-    iconSrc: '/logo.svg',
-    activate: () => {
-      activeCollectionId.set(null);
-      selectedImageId.set(null);
-      viewMode.set('home');
-    },
-    drawerActions: [
-      {
-        id: 'profile',
-        label: 'Profile',
-        iconSrc: '/profile-avatar.svg',
-        run: () => {
-          activeModule.set('danbooru');
-          activeCollectionId.set(null);
-          selectedImageId.set(null);
-          viewMode.set('profile');
-        },
-      },
-    ],
-  },
-};
+// Eager discovery preserves synchronous activation and existing store initialization.
+// Each installed owner contributes its own actions; the registry names no module.
+const contributions = import.meta.glob<ModuleUiDescriptor>('./*/ui.ts', {
+  eager: true,
+  import: 'default',
+});
+const UI_DESCRIPTORS: Record<string, ModuleUiDescriptor> = Object.fromEntries(
+  Object.values(contributions).map((descriptor) => [descriptor.slug, descriptor]),
+);
 
 const FALLBACK_UI: ModuleUiDescriptor = {
   slug: 'unknown',
