@@ -1,16 +1,18 @@
 """Static registry of suite surfaces and optional modules."""
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from module_descriptor import ModuleDescriptor
 try:
     from modules.danbooru import descriptor as danbooru_descriptor
+    from modules.danbooru.helpers import dispatch_helper as danbooru_helper
 except ModuleNotFoundError as exc:
     if exc.name != "modules.danbooru":
         raise
     danbooru_descriptor = None
+    danbooru_helper = None
 from modules.files import descriptor as files_descriptor
 
 
@@ -18,6 +20,25 @@ from modules.files import descriptor as files_descriptor
 _DESCRIPTOR_FACTORIES = (
     files_descriptor,
 ) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ())
+
+
+_HELPER_HANDLERS = (danbooru_helper,) if danbooru_helper is not None else ()
+
+
+def dispatch_helper(
+    arguments: list[str], *, load_configuration: Callable[..., object],
+    run_helper: Callable[[str, list[str]], int],
+) -> int | None:
+    """Route explicit helper commands without loading module runtime services.
+
+    None means unclaimed; zero is a successfully handled command. Helpers are
+    process entry points, independent of UI enablement and app startup.
+    """
+    for handler in _HELPER_HANDLERS:
+        result = handler(arguments, load_configuration=load_configuration, run_helper=run_helper)
+        if result is not None:
+            return result
+    return None
 
 
 class ModuleRegistry:

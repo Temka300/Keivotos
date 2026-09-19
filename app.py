@@ -234,14 +234,13 @@ def _discover_lan_ipv4() -> str | None:
 
 def main(argv: list[str] | None = None) -> int:
     arguments = list(sys.argv[1:] if argv is None else argv)
-    if arguments == ["--credential-worker"]:
-        from credentials import _VAULT_WORKER
+    from module_registry import dispatch_helper
 
-        exec(_VAULT_WORKER, {"__name__": "__main__"})
-        return 0
-    if arguments[:1] == ["--pipeline"]:
-        _load_configuration(migrate_legacy_home=True)
-        return _run_helper("danbooru_gallery_dl.py", arguments[1:])
+    helper_result = dispatch_helper(
+        arguments, load_configuration=_load_configuration, run_helper=_run_helper,
+    )
+    if helper_result is not None:
+        return helper_result
     if arguments[:1] == ["--folder-picker"]:
         return _run_helper("windows_folder_picker.py", arguments[1:])
 

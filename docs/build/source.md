@@ -379,3 +379,24 @@ root help and two parser errors before the move. Tests compare output/statuses
 from another working directory, check helper dispatch and frozen defaults, and
 run discover/enrich/finalize against synthetic media and repeat finalization. Existing metadata
 lookup tests use fixtures; no live download/backfill is required for this check.
+
+## Danbooru credentials and process helpers
+
+The credential implementation lives in `backend/modules/danbooru/credentials.py`;
+`backend/credentials.py` remains an import-compatible alias to the same owner.
+Existing saved credential locations, OS vault formats and environment overrides
+are unchanged. The module's `helpers.py` owns `--credential-worker` and
+`--pipeline`, registered through `backend/module_registry.py`. The launcher keeps
+the shared folder-picker helper. Registration itself does not load credentials
+or contact the vault; helper invocations preserve their historical arguments
+and exit status. These explicit process entry points remain independent of UI
+enablement. When the module is absent, its flags are unrecognized.
+
+Run isolated credential and dispatch coverage without using a real vault:
+
+```sh
+.venv/bin/python -m pytest tests/test_credential_ownership.py tests/test_credentials.py tests/test_linux_release.py tests/test_pipeline_ownership.py
+```
+
+Native DPAPI/Secret Service and fresh frozen-build verification remain separate
+platform checks; mocked credential tests do not establish OS vault availability.

@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from modules.danbooru.automation import automation_status, set_automation_enabled
 from config import DATA_DB_PATH, DATA_ROOT, GALLERY_DL_DIR, METADATA_DIR, SCAN_FOLDERS
-from credentials import clear_credentials, credential_environment, credentials_status, effective_credentials, save_credentials
+from modules.danbooru.credentials import clear_credentials, credential_environment, credentials_status, effective_credentials, save_credentials
 from database import get_data_db
 from modules.danbooru.client import USER_AGENT
 from modules.danbooru.folder_registry import registered_folder_rows

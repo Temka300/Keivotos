@@ -30,7 +30,7 @@ import maintenance
 from maintenance import (
     _tool_state_lock, _tool_operation_lock, active_tool_id, exclusive_tool_operation,
 )
-from credentials import credential_environment
+from modules.danbooru.credentials import credential_environment
 from local_recovery import create_local_recovery_checkpoint
 from modules.danbooru.folder_registry import registered_folder_rows
 from modules.danbooru.home import clear_home_caches

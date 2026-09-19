@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from config import DANBOORU_MODULE
-from credentials import effective_credentials
+from modules.danbooru.credentials import effective_credentials
 from product import DISPLAY_NAME, VERSION
 
 
