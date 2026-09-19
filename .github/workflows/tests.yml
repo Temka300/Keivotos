@@ -54,6 +54,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Module boundaries
+        run: node ../tests/frontend_boundaries.mjs
+
       - name: Type and template check
         run: npm run check
 

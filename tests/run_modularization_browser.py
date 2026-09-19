@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -36,7 +37,7 @@ uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
-    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings'), default='modularization')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'absence'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
@@ -51,20 +52,34 @@ def main() -> int:
         if args.script == 'danbooru':
             from browser_library import seed_library
             seed_library(home)
-        dist = base / 'frontend'
+        project = ROOT
+        if args.script == 'absence':
+            project = base / 'source'
+            project.mkdir()
+            shutil.copytree(ROOT / 'backend', project / 'backend',
+                            ignore=shutil.ignore_patterns('danbooru', '__pycache__'))
+            for name in ('app.py', 'config.json'):
+                shutil.copy2(ROOT / name, project / name)
+            shutil.copytree(ROOT / 'frontend', project / 'frontend',
+                            ignore=shutil.ignore_patterns('node_modules', 'dist', 'danbooru'))
+            (project / 'frontend/node_modules').symlink_to(ROOT / 'frontend/node_modules', target_is_directory=True)
+            media = base / 'media'
+            media.mkdir()
+            (media / 'preserved.txt').write_text('Files-only preservation fixture')
+        dist = project / 'frontend/dist' if args.script == 'absence' else base / 'frontend'
         with (output / 'build.log').open('w') as log:
             subprocess.run([args.node, 'node_modules/vite/bin/vite.js', 'build', '--outDir', str(dist)],
-                           cwd=ROOT / 'frontend', stdout=log, stderr=subprocess.STDOUT, check=True)
+                           cwd=project / 'frontend', stdout=log, stderr=subprocess.STDOUT, check=True)
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
             port = probe.getsockname()[1]
         url = f'http://127.0.0.1:{port}'
         context = base / 'context.json'
-        context.write_text(json.dumps({'url': url, 'home': str(home), 'output': str(output)}))
+        context.write_text(json.dumps({'url': url, 'home': str(home), 'output': str(output), 'media': str(base / 'media')}))
         env = {**os.environ, 'KEIVOTOS_HOME': str(home)}
         with (output / 'server.log').open('w') as log:
             server = subprocess.Popen([sys.executable, '-c', SERVER, str(dist), str(port)],
-                                      cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
+                                      cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
             try:
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
@@ -86,6 +101,13 @@ def main() -> int:
                 except subprocess.TimeoutExpired:
                     server.kill()
                     server.wait()
+        if args.script == 'absence':
+            assert not (home / 'modules/danbooru').exists(), 'Absent module created storage'
+            with sqlite3.connect(home / 'user.sqlite') as connection:
+                tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            assert 'user_settings' in tables
+            assert not {'favorites', 'collections', 'collection_items'} & tables
+            assert (base / 'media/preserved.txt').read_text() == 'Files-only preservation fixture'
         log_text = (output / 'server.log').read_text()
         if 'Traceback (most recent call last)' in log_text or 'ERROR:' in log_text:
             raise RuntimeError('Isolated server logged errors; inspect server.log')

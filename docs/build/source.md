@@ -425,3 +425,33 @@ building or publishing artifacts:
 Passing these checks does not establish a working native packaged artifact or
 complete frontend operation with a module physically removed. Native build/smoke
 verification remains required before distributing a release.
+
+## Module boundary and Files-only checks
+
+Run the static import boundaries with:
+
+```sh
+.venv/bin/python -m pytest tests/test_module_boundaries.py
+node tests/frontend_boundaries.mjs
+```
+
+The frontend boundary check also runs in the tests workflow. Historical
+compatibility barrels are retained for installed-module callers; the application
+must use owner APIs directly or the explicit module registration boundaries.
+
+For real application checks with both Danbooru source folders physically absent:
+
+```sh
+.venv/bin/python tests/run_modularization_browser.py --script absence --output /tmp/keivotos-absence-check
+```
+
+Use a new output directory and the existing runner's Node/Playwright setup.
+`PLAYWRIGHT_CHANNEL` can select an installed browser supported by Playwright.
+The runner copies sources into scratch space, omits Danbooru there, links existing
+frontend dependencies and builds the Files-only UI without changing tracked dist.
+It checks real folder registration/scanning, browse/search/reload, stale module
+preferences, Settings, missing module endpoints and clean browser/server logs.
+After shutdown it verifies absent module storage/tables and preserved fixture
+media. It never removes source folders from the checkout or uses the live library.
+This is application build/runtime verification, not a native frozen-release check
+or type-checking unused compatibility barrels without their owner present.
