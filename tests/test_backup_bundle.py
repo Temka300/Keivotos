@@ -138,7 +138,11 @@ class MetadataBackupBundleTests(unittest.TestCase):
         contents["manifest.json"] = json.dumps(manifest).encode()
         with zipfile.ZipFile(path, "w") as archive:
             for name, data in contents.items():
-                archive.writestr(name, data)
+                # Construct exact archive names: ZipInfo(name) would normalize
+                # backslashes on Windows and silently repair the unsafe fixture.
+                info = zipfile.ZipInfo()
+                info.filename = name
+                archive.writestr(info, data)
 
     def test_restore_uses_manifest_selection_and_suite_recovery(self):
         created = backup_bundle.create_backup_bundle()
@@ -215,10 +219,12 @@ class MetadataBackupBundleTests(unittest.TestCase):
             writer.close()
 
     def test_unsafe_archive_rejected_before_live_changes(self):
-        for name in ("../escaped", "C:/escaped", "sidecars/../../escaped", "sidecars\\escaped"):
+        for name in ("../escaped", "C:/escaped", "sidecars/../../escaped", "sidecars\\escaped", "sidecars/null\x00ignored"):
             with self.subTest(name=name):
                 created = backup_bundle.create_backup_bundle()
                 self._rewrite_bundle(created, lambda contents, manifest: contents.update({name: b"bad"}))
+                with zipfile.ZipFile(created["path"]) as archive:
+                    self.assertIn(name, [info.orig_filename for info in archive.infolist()])
                 before = self.user_db.read_bytes()
                 with self.assertRaisesRegex(ValueError, "Unsafe backup entry"):
                     backup_bundle.restore_backup_bundle(created["name"])

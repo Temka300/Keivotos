@@ -532,6 +532,10 @@ def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     members = []
     seen = set()
     for info in archive.infolist():
+        # ZipInfo normalizes Windows separators and truncates NULs while reading.
+        # Reject altered names before trusting the normalized extraction path.
+        if info.orig_filename != info.filename:
+            raise ValueError(f"Unsafe backup entry: {info.orig_filename!r}")
         name = info.filename.rstrip("/")
         path = PurePosixPath(name)
         mode = info.external_attr >> 16
