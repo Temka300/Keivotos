@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from urllib.parse import quote, quote_plus
 
 from config import (
     ACCESS_LOG_FILE,
@@ -15,6 +17,23 @@ from config import (
     RUNTIME_LOG_FILE,
     SUITE_LOG_PREFIX,
 )
+
+
+def redact_log_text(value: str, secrets: tuple[str, ...] = ()) -> str:
+    """Keep diagnostics useful without recording credentials or URL queries."""
+    for secret in sorted(set(secrets), key=len, reverse=True):
+        if secret:
+            for encoded in (secret, quote(secret, safe=""), quote_plus(secret)):
+                value = value.replace(encoded, "[redacted]")
+    value = re.sub(r"(https?://)[^\s/@]+:[^\s/@]+@", r"\1[redacted]@", value)
+    value = re.sub(r"(https?://[^\s?#]+)[?#][^\s]*", r"\1?[redacted]", value)
+    value = re.sub(r"(?i)(authorization\s*[:=]\s*)(?:basic|bearer)\s+\S+", r"\1[redacted]", value)
+    return re.sub(r"(?i)((?:api[_-]?key|access_token|password)\s*[:=]\s*)[^\s&,;]+", r"\1[redacted]", value)
+
+
+class _SafeFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        return redact_log_text(super().format(record))
 
 
 class _UsefulRuntimeAccessFilter(logging.Filter):
@@ -76,12 +95,13 @@ def configure_runtime_logging() -> tuple[Path, Path]:
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
 
-    formatter = logging.Formatter(
+    formatter = _SafeFormatter(
         "%(asctime)s %(levelname)s %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     console = logging.StreamHandler()
     console.setFormatter(formatter)
+    console.addFilter(_UsefulRuntimeAccessFilter())
     runtime_handler = _file_handler(RUNTIME_LOG_FILE, formatter)
     runtime_handler.addFilter(_UsefulRuntimeAccessFilter())
     access_handler = _file_handler(ACCESS_LOG_FILE, formatter)

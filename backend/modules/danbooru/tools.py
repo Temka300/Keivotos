@@ -8,11 +8,14 @@ The task registry and its lock aliases retain their original object identity.
 from __future__ import annotations
 
 import copy
+import base64
 import json
+import logging
 import os
 import subprocess
 import sys
 import threading
+import traceback
 from collections import deque
 from pathlib import Path
 from typing import Any, Callable
@@ -34,6 +37,7 @@ from modules.danbooru.credentials import credential_environment
 from local_recovery import create_local_recovery_checkpoint
 from modules.danbooru.folder_registry import registered_folder_rows
 from modules.danbooru.home import clear_home_caches
+from runtime_logging import redact_log_text
 
 
 # Resolved against the code root rather than this file's location: the old
@@ -44,6 +48,7 @@ TOOL_WORKING_DIRECTORY = SCRIPT_PATH.parent.parent
 
 _running_tasks: dict[str, dict[str, Any]] = {}
 _running_processes: dict[str, subprocess.Popen[str]] = {}
+_logger = logging.getLogger("keivotos.danbooru.jobs")
 def tool_task_snapshot(tool_id: str) -> dict[str, Any] | None:
     """Return request-safe task state while the worker may still be updating it."""
     with _tool_state_lock:
@@ -188,7 +193,15 @@ def _launch_tool(
             }
 
     def _run():
+        secrets: tuple[str, ...] = ()
         try:
+            child_environment = environment if environment is not None else credential_environment()
+            username = child_environment.get("DANBOORU_USERNAME", "")
+            api_key = child_environment.get("DANBOORU_API_KEY", "")
+            secrets = (api_key,)
+            if username and api_key:
+                secrets += (base64.b64encode(f"{username}:{api_key}".encode()).decode(),)
+            _logger.info("%s: started (%d steps)", tool_id, len(tool_commands))
             # Keep only the console tail exposed to Settings. A 40k-file import
             # must not retain every subprocess line for the lifetime of the job.
             lines: deque[str] = deque(maxlen=100)
@@ -197,6 +210,7 @@ def _launch_tool(
                     task = _running_tasks[tool_id]
                     if task["status"] == "cancelling":
                         task["status"] = "cancelled"
+                        _logger.info("%s: cancelled before the next step", tool_id)
                         return
                     stage = (
                         stage_names[step_index - 1]
@@ -217,6 +231,7 @@ def _launch_tool(
                                 "current_file_status": None,
                             }
                         )
+                _logger.info("%s: %s", tool_id, stage)
                 proc = subprocess.Popen(
                     cmd,
                     cwd=str(TOOL_WORKING_DIRECTORY),
@@ -224,7 +239,7 @@ def _launch_tool(
                     stderr=subprocess.STDOUT,
                     text=True,
                     bufsize=1,
-                    env=environment or credential_environment(),
+                    env=child_environment,
                 )
                 with _tool_state_lock:
                     _running_processes[tool_id] = proc
@@ -233,7 +248,10 @@ def _launch_tool(
                     line = proc.stdout.readline()
                     if not line:
                         break
+                    if not line.startswith("FILE_STATUS:"):
+                        line = redact_log_text(line, secrets)
                     if line.startswith("STAGE:"):
+                        _logger.info("%s: stage %s", tool_id, line.strip().split(":", 1)[1])
                         with _tool_state_lock:
                             _running_tasks[tool_id]["stage"] = line.strip().split(":", 1)[1].replace("_", " ").title()
                         continue
@@ -253,7 +271,13 @@ def _launch_tool(
                         try:
                             event = json.loads(line.split(":", 1)[1])
                         except (json.JSONDecodeError, TypeError):
+                            _logger.warning("%s: ignored malformed file progress", tool_id)
                             continue
+                        if not isinstance(event, dict):
+                            _logger.warning("%s: ignored non-object file progress", tool_id)
+                            continue
+                        event = {key: redact_log_text(value, secrets) if isinstance(value, str) else value
+                                 for key, value in event.items()}
                         filename = str(event.get("filename") or Path(str(event.get("path") or "")).name)
                         status = str(event.get("status") or "working")
                         with _tool_state_lock:
@@ -276,8 +300,17 @@ def _launch_tool(
                                     del results[:-250]
                                 counts = task.setdefault("result_counts", {})
                                 counts[status] = int(counts.get(status, 0)) + 1
+                        if status in {"matched", "no_match", "error"}:
+                            level = logging.ERROR if status == "error" else logging.INFO
+                            _logger.log(level, "%s: %s | %s | %s", tool_id, filename,
+                                        status, str(event.get("detail") or ""))
                         continue
                     lines.append(line)
+                    message = line.rstrip()
+                    if message:
+                        level = (logging.ERROR if message.startswith("ERROR:") else
+                                 logging.WARNING if message.startswith("WARNING:") else logging.INFO)
+                        _logger.log(level, "%s: %s", tool_id, message)
                     with _tool_state_lock:
                         _running_tasks[tool_id]["output"] = "".join(lines)
                 proc.stdout.close()
@@ -287,29 +320,41 @@ def _launch_tool(
                     task = _running_tasks[tool_id]
                     if task["status"] == "cancelling":
                         task.update({"status": "cancelled", "cancellable": False})
+                        _logger.info("%s: cancelled", tool_id)
                         return
                     if proc.returncode != 0:
                         task.update({"status": "error", "output": "".join(lines), "cancellable": False})
+                        _logger.error("%s: %s failed (exit %s); results: %s", tool_id,
+                                      stage, proc.returncode, task["result_counts"])
                         return
             if on_success is not None:
                 post_step_output = on_success()
                 if post_step_output:
-                    lines.append(post_step_output.rstrip() + "\n")
+                    post_step_output = redact_log_text(post_step_output.rstrip(), secrets)
+                    lines.append(post_step_output + "\n")
+                    _logger.info("%s: %s", tool_id, post_step_output)
             if any("sync" in command for command in tool_commands):
                 try:
                     checkpoint = create_local_recovery_checkpoint("sync")
                     lines.append(checkpoint["message"].rstrip() + "\n")
+                    _logger.info("%s: %s", tool_id, checkpoint["message"])
                 except Exception as exc:  # noqa: BLE001 - sync itself succeeded.
-                    lines.append(f"Local recovery checkpoint failed: {exc}\n")
+                    message = redact_log_text(f"Local recovery checkpoint failed: {exc}", secrets)
+                    lines.append(message + "\n")
+                    _logger.warning("%s: %s", tool_id, message)
             clear_home_caches()
             with _tool_state_lock:
                 _running_tasks[tool_id].update(
                     {"status": "done", "output": "".join(lines), "cancellable": False}
                 )
+                counts = dict(_running_tasks[tool_id]["result_counts"])
+            _logger.info("%s: completed; results: %s", tool_id, counts)
         except Exception as exc:
+            _logger.error("%s: unexpected worker failure\n%s", tool_id,
+                          redact_log_text(traceback.format_exc(), secrets))
             with _tool_state_lock:
                 task = _running_tasks.setdefault(tool_id, {})
-                task.update({"status": "error", "output": str(exc), "cancellable": False})
+                task.update({"status": "error", "output": redact_log_text(str(exc), secrets), "cancellable": False})
         finally:
             with _tool_state_lock:
                 _running_processes.pop(tool_id, None)

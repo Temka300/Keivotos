@@ -33,6 +33,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from modules.danbooru.schema import create_data_indexes, ensure_data_schema  # noqa: E402
+from runtime_logging import redact_log_text  # noqa: E402
 from storage_layout import (  # noqa: E402
     LibraryRoot,
     canonical_sidecar_path,
@@ -409,22 +410,34 @@ def request_json(
 
     for attempt in range(retries + 1):
         request = urllib.request.Request(url, headers=headers)
+        context = f"GET {urllib.parse.urlsplit(endpoint).path} (attempt {attempt + 1}/{retries + 1})"
         try:
             with urllib.request.urlopen(request, timeout=30) as response:
-                return json.loads(response.read().decode("utf-8"))
+                payload = json.loads(response.read().decode("utf-8"))
+                print(f"Request: {context} succeeded", flush=True)
+                return payload
         except urllib.error.HTTPError as exc:
             if exc.code == 404 and not_found_empty:
+                print(f"Request: {context}: HTTP 404, no matching post", flush=True)
                 return []
             if exc.code == 429 and attempt < retries:
                 wait_seconds = min(60 * (attempt + 1), 300)
-                print(f"Rate limited by Danbooru; sleeping {wait_seconds}s")
+                print(f"WARNING: {context}: HTTP 429, rate limited; retry in {wait_seconds}s", flush=True)
                 time.sleep(wait_seconds)
                 continue
+            print(f"ERROR: {context}: HTTP {exc.code}; request failed", flush=True)
             raise
-        except urllib.error.URLError:
+        except urllib.error.URLError as exc:
+            detail = redact_log_text(str(exc.reason), (api_key or "",))
             if attempt < retries:
+                print(f"WARNING: {context}: {detail}; retry in {2 * (attempt + 1)}s", flush=True)
                 time.sleep(2 * (attempt + 1))
                 continue
+            print(f"ERROR: {context}: {detail}; retries exhausted", flush=True)
+            raise
+        except (OSError, ValueError) as exc:
+            detail = redact_log_text(str(exc), (api_key or "",))
+            print(f"ERROR: {context}: {type(exc).__name__}: {detail}", flush=True)
             raise
 
 
@@ -941,6 +954,7 @@ def run_backfill(args: argparse.Namespace) -> int:
             for index, media_path in enumerate(need_processing, 1):
                 emit_file_status(media_path, "working", index, total)
                 print(f"[{index}/{total}] {media_path.name}")
+                operation = "matching post"
                 try:
                     post, matched_by, matched_md5 = find_post_by_md5(
                         media_path,
@@ -957,7 +971,9 @@ def run_backfill(args: argparse.Namespace) -> int:
                         emit_file_status(media_path, "no_match", index, total, detail)
                         print("  no Danbooru md5 match")
                     else:
+                        operation = "fetching extra metadata"
                         post = add_extra_metadata(post, includes, username, api_key, args.retries, args.delay)
+                        operation = "preparing metadata"
                         payload = build_payload(
                             media_path,
                             post,
@@ -965,6 +981,7 @@ def run_backfill(args: argparse.Namespace) -> int:
                             matched_md5 or "",
                             indexed_md5s.get(os.path.normcase(str(media_path))),
                         )
+                        operation = "saving metadata"
                         archived += write_sidecars(media_path, payload, args, archive_dir)
                         if index_file:
                             index_file.write(json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n")
@@ -976,10 +993,10 @@ def run_backfill(args: argparse.Namespace) -> int:
                         print(f"  matched post {post.get('id')} by {matched_by}")
                 except Exception as exc:  # noqa: BLE001 - keep long batches moving.
                     failed += 1
-                    detail = str(exc)
+                    detail = redact_log_text(f"{operation}: {exc}", (api_key or "",))
                     update_metadata_ingest_state(state_connection, media_path, "error", detail)
                     emit_file_status(media_path, "error", index, total, detail)
-                    print(f"  failed: {exc}", file=sys.stderr)
+                    print(f"ERROR: {media_path.name}: {detail}", file=sys.stderr, flush=True)
                 if state_connection is not None and (index % 25 == 0 or index == total):
                     state_connection.commit()
                 print(f"PROGRESS:{index}/{total}", flush=True)
