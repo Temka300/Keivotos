@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { danbooruApi as api, thumbnailUrl } from '../modules/danbooru/api';
-  import { type DailyChallenge, type DailyChallengeOption, type TagInfo } from '../modules/danbooru/apiTypes';
-  import { persistentStorageKey } from '../lib/product';
-  import { activeRating, activeTags, selectedImageId, viewMode } from '../modules/danbooru/stores';
+  import { danbooruApi as api, thumbnailUrl } from '../api';
+  import { type DailyChallenge, type DailyChallengeOption, type TagInfo } from '../apiTypes';
+  import { persistentStorageKey } from '../../../lib/product';
+  import { activeRating, activeTags, selectedImageId, viewMode } from '../stores';
   import HomeBreadcrumbBack from './HomeBreadcrumbBack.svelte';
 
   type ChallengeState = {

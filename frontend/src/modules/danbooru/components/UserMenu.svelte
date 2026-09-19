@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import SearchHelpModal from './SearchHelpModal.svelte';
-  import { prepareSettingsPresentation } from '../lib/settingsPresentation';
-  import { loadSettingsModal, type SettingsModalModule } from '../lib/settingsLoader';
-  import { activeCollectionId, selectedImageId, viewMode } from '../modules/danbooru/stores';
+  import { prepareSettingsPresentation } from '../../../lib/settingsPresentation';
+  import { loadSettingsModal, type SettingsModalModule } from '../../../lib/settingsLoader';
+  import { activeCollectionId, selectedImageId, viewMode } from '../stores';
 
   let showMenu = false;
   let showSettings = false;

@@ -36,7 +36,7 @@ uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
-    parser.add_argument('--script', choices=('modularization', 'backup'), default='modularization')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
@@ -48,6 +48,9 @@ def main() -> int:
         home = base / 'home'
         home.mkdir()
         (home / 'config.json').write_text(json.dumps({'default_library_created': True}))
+        if args.script == 'danbooru':
+            from browser_library import seed_library
+            seed_library(home)
         dist = base / 'frontend'
         with (output / 'build.log').open('w') as log:
             subprocess.run([args.node, 'node_modules/vite/bin/vite.js', 'build', '--outDir', str(dist)],

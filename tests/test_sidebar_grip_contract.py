@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class SidebarGripContractTests(unittest.TestCase):
     def test_draggable_auto_hiding_grip_remains_the_primary_sidebar_control(self) -> None:
-        source = (ROOT / "frontend" / "src" / "components" / "SidebarDock.svelte").read_text(encoding="utf-8")
+        source = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "components" / "SidebarDock.svelte").read_text(encoding="utf-8")
 
         required_fragments = [
             "class:is-open={$sidebarOpen && introReady}",

@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
-  import { danbooruApi as api, thumbnailUrl } from '../modules/danbooru/api';
-  import { type ArtistFollowInfo, type CollectionInfo, type ImageSummary, type Stats, type TagWikiExample } from '../modules/danbooru/apiTypes';
+  import { danbooruApi as api, thumbnailUrl } from '../api';
+  import { type ArtistFollowInfo, type CollectionInfo, type ImageSummary, type Stats, type TagWikiExample } from '../apiTypes';
   import CollectionPreviewGrid from './CollectionPreviewGrid.svelte';
-  import { activeCollectionId, artistFollowRefreshToken, artistFocusRequest, browseTagSelection, collectionRefreshToken, imageRefreshToken, selectedImageId, viewMode } from '../modules/danbooru/stores';
-  import { normalizeProfileName, profileName } from '../lib/suiteStores';
+  import { activeCollectionId, artistFollowRefreshToken, artistFocusRequest, browseTagSelection, collectionRefreshToken, imageRefreshToken, selectedImageId, viewMode } from '../stores';
+  import { normalizeProfileName, profileName } from '../../../lib/suiteStores';
 
   const favoritePreviewLimit = 9;
   const collectionPreviewLimit = 6;

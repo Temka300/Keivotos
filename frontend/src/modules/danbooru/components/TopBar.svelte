@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { danbooruApi as api } from '../modules/danbooru/api';
-  import { SUITE_NAME } from '../lib/product';
-  import { MODULE_DISPLAY_NAME } from '../modules/danbooru/identity';
-  import { viewMode, sortBy, sortOrder, activeFolder, activeRating, activeTags, activeCollectionId, selectedImageId, fitMode, imageSize, imagePageSize, imagePageSizeOptions, duplicatesOnly, duplicateScope, blacklistedTagNames, searchString, browseTagSelection, artistNotificationsEnabled } from '../modules/danbooru/stores';
-  import GridSizeMenu from './GridSizeMenu.svelte';
-  import type { DuplicateScope, ViewMode } from '../modules/danbooru/stores';
+  import { danbooruApi as api } from '../api';
+  import { SUITE_NAME } from '../../../lib/product';
+  import { MODULE_DISPLAY_NAME } from '../identity';
+  import { viewMode, sortBy, sortOrder, activeFolder, activeRating, activeTags, activeCollectionId, selectedImageId, fitMode, imageSize, imagePageSize, imagePageSizeOptions, duplicatesOnly, duplicateScope, blacklistedTagNames, searchString, browseTagSelection, artistNotificationsEnabled } from '../stores';
+  import GridSizeMenu from '../../../components/GridSizeMenu.svelte';
+  import type { DuplicateScope, ViewMode } from '../stores';
   import SearchBar from './SearchBar.svelte';
   import ArtistNotifications from './ArtistNotifications.svelte';
   import UserMenu from './UserMenu.svelte';
-  import AppDrawer from './AppDrawer.svelte';
+  import AppDrawer from '../../../components/AppDrawer.svelte';
 
   let showFilterMenu = false;
   let showSizeMenu = false;

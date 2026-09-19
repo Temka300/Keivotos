@@ -211,6 +211,28 @@ These checks use an empty library: they do not establish image-detail, playback,
 Home image-lane, populated grid, native-dialog or native Windows behavior. Run
 those affected interactions separately before and after moving their components.
 
+For the populated Danbooru baseline:
+
+```bash
+.venv/bin/python tests/run_modularization_browser.py --script danbooru --output /tmp/keivotos-danbooru-browser
+```
+
+This mode creates 48 synthetic JPEGs and 24 tags inside the disposable home,
+then uses the real backend for thumbnails, discovery, image details and favorites.
+It checks the nine-second spotlight advance, selection, independent lane motion,
+hover/focus pause and return from detail, decoded grid/detail images, zoom/drag,
+favorite reconciliation and navigation to Profile, Collections, Challenge and
+Tags. It records browser/API errors and blocks requests outside the scratch
+server. It does not verify video/GIF playback, populated artist panels, native
+dialogs or Windows behavior. No real-library data or external service is used.
+
+Danbooru's 21 complete view/menu/media components live in
+`frontend/src/modules/danbooru/components/`, mounted by `DanbooruSurface.svelte`.
+Shared controls and the mixed Settings components remain under
+`frontend/src/components/`. Moving a component must preserve its logic, markup
+and styles; compare everything except import paths and run the applicable timed
+checks before and after the move.
+
 To exercise Backup Settings with the same disposable runner:
 
 ```bash

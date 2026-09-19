@@ -137,7 +137,7 @@ class HomeDiscoveryTests(unittest.TestCase):
         self.assertEqual(discovery.HOME_IMAGE_RAILS_CACHE, {})
 
     def test_spotlight_source_keeps_five_item_progress_contract(self) -> None:
-        source = (ROOT / "frontend" / "src" / "components" / "HomeView.svelte").read_text(encoding="utf-8")
+        source = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "components" / "HomeView.svelte").read_text(encoding="utf-8")
 
         required_fragments = [
             "const SPOTLIGHT_DURATION_MS = 9000",
@@ -162,7 +162,7 @@ class HomeDiscoveryTests(unittest.TestCase):
         self.assertNotIn("local paths</span>", source)
 
     def test_lane_keyboard_focus_pauses_without_sticking_after_detail(self) -> None:
-        source = (ROOT / "frontend" / "src" / "components" / "HomeView.svelte").read_text(encoding="utf-8")
+        source = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "components" / "HomeView.svelte").read_text(encoding="utf-8")
 
         self.assertIn(".home-lane:focus-within .home-lane-track", source)
         self.assertIn("activeElement.closest('.home-lane')", source)

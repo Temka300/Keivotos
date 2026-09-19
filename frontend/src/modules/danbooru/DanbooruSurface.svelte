@@ -2,17 +2,17 @@
   import { onMount } from 'svelte';
   import { danbooruApi as api } from './api';
   import { blacklistedTagNames, selectedArtistProfileAsset, selectedImageId, viewMode } from './stores';
-  import CollectionsView from '../../components/CollectionsView.svelte';
-  import DailyChallengeView from '../../components/DailyChallengeView.svelte';
-  import HomeView from '../../components/HomeView.svelte';
-  import ImageDetail from '../../components/ImageDetail.svelte';
-  import ImageGrid from '../../components/ImageGrid.svelte';
-  import PopularityBrowser from '../../components/PopularityBrowser.svelte';
-  import ProfileView from '../../components/ProfileView.svelte';
-  import SidebarDock from '../../components/SidebarDock.svelte';
-  import TagsBrowser from '../../components/TagsBrowser.svelte';
-  import TimelapseBrowser from '../../components/TimelapseBrowser.svelte';
-  import TopBar from '../../components/TopBar.svelte';
+  import CollectionsView from './components/CollectionsView.svelte';
+  import DailyChallengeView from './components/DailyChallengeView.svelte';
+  import HomeView from './components/HomeView.svelte';
+  import ImageDetail from './components/ImageDetail.svelte';
+  import ImageGrid from './components/ImageGrid.svelte';
+  import PopularityBrowser from './components/PopularityBrowser.svelte';
+  import ProfileView from './components/ProfileView.svelte';
+  import SidebarDock from './components/SidebarDock.svelte';
+  import TagsBrowser from './components/TagsBrowser.svelte';
+  import TimelapseBrowser from './components/TimelapseBrowser.svelte';
+  import TopBar from './components/TopBar.svelte';
 
   onMount(async () => {
     try {

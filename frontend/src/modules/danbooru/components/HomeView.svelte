@@ -2,10 +2,10 @@
   import { onDestroy, onMount } from 'svelte';
   import { flip } from 'svelte/animate';
   import { fade } from 'svelte/transition';
-  import { danbooruApi as api, thumbnailUrl } from '../modules/danbooru/api';
-  import { type HomeCoverCandidate, type HomeImageRail, type HomeImageRailItem, type HomeTagInfo, type HomeTags } from '../modules/danbooru/apiTypes';
-  import { persistentStorageKey } from '../lib/product';
-  import { activeCollectionId, activeFolder, activeRating, browseTagSelection, homeLayout, selectedImageId, viewMode } from '../modules/danbooru/stores';
+  import { danbooruApi as api, thumbnailUrl } from '../api';
+  import { type HomeCoverCandidate, type HomeImageRail, type HomeImageRailItem, type HomeTagInfo, type HomeTags } from '../apiTypes';
+  import { persistentStorageKey } from '../../../lib/product';
+  import { activeCollectionId, activeFolder, activeRating, browseTagSelection, homeLayout, selectedImageId, viewMode } from '../stores';
 
   type StreamItem = HomeImageRailItem & {
     rail_key: string;

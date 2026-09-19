@@ -1,10 +1,10 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
-  import { danbooruApi as api } from '../modules/danbooru/api';
-  import { type CollectionInfo, type FolderInfo, type ImageSummary, type PaginatedImages } from '../modules/danbooru/apiTypes';
-  import { cacheView, getCachedView, invalidateViewCache } from '../lib/viewCache';
-  import { searchString, activeTags, sortBy, sortOrder, activeFolder, activeRating, selectedImageId, imageRefreshToken, viewMode, activeCollectionId, collectionRefreshToken, fitMode, imageSize, imagePageSize, blacklistedTagNames, duplicatesOnly, duplicateScope, visibleImageIds, browseTagSelection, type ImagePageSize, type BrowseTagSelection } from '../modules/danbooru/stores';
-  import { gridSizeByValue } from '../lib/gridPreferences';
+  import { danbooruApi as api } from '../api';
+  import { type CollectionInfo, type FolderInfo, type ImageSummary, type PaginatedImages } from '../apiTypes';
+  import { cacheView, getCachedView, invalidateViewCache } from '../../../lib/viewCache';
+  import { searchString, activeTags, sortBy, sortOrder, activeFolder, activeRating, selectedImageId, imageRefreshToken, viewMode, activeCollectionId, collectionRefreshToken, fitMode, imageSize, imagePageSize, blacklistedTagNames, duplicatesOnly, duplicateScope, visibleImageIds, browseTagSelection, type ImagePageSize, type BrowseTagSelection } from '../stores';
+  import { gridSizeByValue } from '../../../lib/gridPreferences';
   import ImageCard from './ImageCard.svelte';
   import FilterChips from './FilterChips.svelte';
   import TagBrowseHeader from './TagBrowseHeader.svelte';

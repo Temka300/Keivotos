@@ -1,9 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { danbooruApi as api } from '../modules/danbooru/api';
-  import { type FolderInfo, type TagInfo } from '../modules/danbooru/apiTypes';
-  import { activeFolder, activeFolderLabel, activeTags, activeRating, viewMode, activeCollectionId, blacklistedTagNames, collectionRefreshToken, imageRefreshToken, ratingSelectionValues, tagRefreshToken, toggleRatingSelection } from '../modules/danbooru/stores';
-  import type { CollectionInfo } from '../modules/danbooru/apiTypes';
+  import { danbooruApi as api } from '../api';
+  import { type FolderInfo, type TagInfo } from '../apiTypes';
+  import { activeFolder, activeFolderLabel, activeTags, activeRating, viewMode, activeCollectionId, blacklistedTagNames, collectionRefreshToken, imageRefreshToken, ratingSelectionValues, tagRefreshToken, toggleRatingSelection } from '../stores';
+  import type { CollectionInfo } from '../apiTypes';
 
   let folders: FolderInfo[] = [];
   let collections: CollectionInfo[] = [];

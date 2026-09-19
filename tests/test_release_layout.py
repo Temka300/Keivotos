@@ -393,8 +393,8 @@ class ReleaseLayoutTests(unittest.TestCase):
         self.assertTrue((ROOT / "packaging" / "windows" / "assets" / "keivotos.ico").is_file())
 
     def test_original_media_has_no_delete_controls(self) -> None:
-        detail = (ROOT / "frontend" / "src" / "components" / "ImageDetail.svelte").read_text(encoding="utf-8")
-        grid = (ROOT / "frontend" / "src" / "components" / "ImageGrid.svelte").read_text(encoding="utf-8")
+        detail = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "components" / "ImageDetail.svelte").read_text(encoding="utf-8")
+        grid = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "components" / "ImageGrid.svelte").read_text(encoding="utf-8")
         api_client = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "api.ts").read_text(encoding="utf-8")
         self.assertNotIn("Delete Image", detail)
         self.assertNotIn("deleteImage", api_client)
@@ -429,8 +429,8 @@ class ReleaseLayoutTests(unittest.TestCase):
             (ROOT / "frontend" / "public" / "profile-avatar.svg").read_text(encoding="utf-8"),
             module_profile_mark,
         )
-        user_menu = (ROOT / "frontend" / "src" / "components" / "UserMenu.svelte").read_text(encoding="utf-8")
-        profile_view = (ROOT / "frontend" / "src" / "components" / "ProfileView.svelte").read_text(encoding="utf-8")
+        user_menu = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "components" / "UserMenu.svelte").read_text(encoding="utf-8")
+        profile_view = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "components" / "ProfileView.svelte").read_text(encoding="utf-8")
         stores = (ROOT / "frontend" / "src" / "lib" / "suiteStores.ts").read_text(encoding="utf-8")
         frontend_product = (ROOT / "frontend" / "src" / "lib" / "product.ts").read_text(encoding="utf-8")
         module_identity = (ROOT / "frontend" / "src" / "modules" / "danbooru" / "identity.ts").read_text(encoding="utf-8")
@@ -461,8 +461,11 @@ class ReleaseLayoutTests(unittest.TestCase):
             "BackupRestoreSettings.svelte",
             "TopBar.svelte",
         ):
+            component_dir = (
+                "modules/danbooru/components" if component_name == "TopBar.svelte" else "components"
+            )
             component = (
-                ROOT / "frontend" / "src" / "components" / component_name
+                ROOT / "frontend" / "src" / component_dir / component_name
             ).read_text(encoding="utf-8")
             self.assertNotIn(SUITE_NAME, component)
             self.assertNotIn("'Danbooru'", component)

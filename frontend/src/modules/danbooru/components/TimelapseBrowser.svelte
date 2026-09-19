@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onDestroy, onMount } from 'svelte';
-  import { danbooruApi as api, imageFileUrl, thumbnailUrl } from '../modules/danbooru/api';
-  import { type ImageSummary } from '../modules/danbooru/apiTypes';
-  import { activeFolder, activeRating, blacklistedTagNames, duplicateScope, duplicatesOnly, imageRefreshToken, mediaPlayback, selectedImageId, viewMode, visibleImageIds } from '../modules/danbooru/stores';
+  import { danbooruApi as api, imageFileUrl, thumbnailUrl } from '../api';
+  import { type ImageSummary } from '../apiTypes';
+  import { activeFolder, activeRating, blacklistedTagNames, duplicateScope, duplicatesOnly, imageRefreshToken, mediaPlayback, selectedImageId, viewMode, visibleImageIds } from '../stores';
   import HomeBreadcrumbBack from './HomeBreadcrumbBack.svelte';
 
   const SIMPLE_BATCH_SIZE = 80;

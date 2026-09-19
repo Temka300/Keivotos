@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { activeTags } from '../modules/danbooru/stores';
-  import { danbooruApi as api } from '../modules/danbooru/api';
-  import { type TagInfo } from '../modules/danbooru/apiTypes';
+  import { activeTags } from '../stores';
+  import { danbooruApi as api } from '../api';
+  import { type TagInfo } from '../apiTypes';
 
   let inputValue = '';
   let searchInput: HTMLInputElement;

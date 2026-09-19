@@ -1,6 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { activeTags, activeFolder, activeFolderLabel, activeRating, duplicatesOnly, duplicateScope, ratingSelectionValues } from '../modules/danbooru/stores';
+  import { activeTags, activeFolder, activeFolderLabel, activeRating, duplicatesOnly, duplicateScope, ratingSelectionValues } from '../stores';
 
   export let total = 0;
   export let selectMode = false;

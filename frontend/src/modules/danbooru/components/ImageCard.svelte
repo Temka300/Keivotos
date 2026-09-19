@@ -1,9 +1,9 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import type { ImageSummary } from '../modules/danbooru/apiTypes';
-  import { imageFileUrl, thumbnailUrl } from '../modules/danbooru/api';
-  import { fitMode, imageSize, mediaPlayback } from '../modules/danbooru/stores';
-  import { gridSizeByValue } from '../lib/gridPreferences';
+  import type { ImageSummary } from '../apiTypes';
+  import { imageFileUrl, thumbnailUrl } from '../api';
+  import { fitMode, imageSize, mediaPlayback } from '../stores';
+  import { gridSizeByValue } from '../../../lib/gridPreferences';
 
   export let image: ImageSummary;
   export let selectMode = false;

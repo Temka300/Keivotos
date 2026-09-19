@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-COMPONENTS = ROOT / "frontend" / "src" / "components"
+COMPONENTS = ROOT / "frontend" / "src" / "modules" / "danbooru" / "components"
 
 
 class ViewNavigationTests(unittest.TestCase):
