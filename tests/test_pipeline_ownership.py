@@ -13,7 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import closing, redirect_stdout
 from unittest.mock import patch
 
 from PIL import Image
@@ -42,7 +42,7 @@ class PipelineOwnershipTests(unittest.TestCase):
         self.assertEqual(pipeline.project_root(), ROOT)
         self.assertEqual(pipeline.BACKEND_DIR, ROOT / 'backend')
         with tempfile.TemporaryDirectory() as temporary:
-            bundle = Path(temporary)
+            bundle = Path(temporary).resolve()
             with patch.object(sys, '_MEIPASS', str(bundle), create=True), patch.object(
                 pipeline, '__file__', str(bundle / 'modules/danbooru/pipeline.py')
             ):
@@ -100,7 +100,7 @@ class PipelineOwnershipTests(unittest.TestCase):
                 result = subprocess.run(command + [phase, str(library), '--output', str(database)],
                                         cwd=base, env=env, text=True, capture_output=True, timeout=30)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            with sqlite3.connect(database) as db:
+            with closing(sqlite3.connect(database)) as db, db:
                 row = db.execute('SELECT f.local_md5,p.width,p.height FROM files f JOIN posts p ON p.file_id=f.id').fetchone()
                 self.assertEqual(row, (hashlib.md5(original).hexdigest(), 40, 30))
                 self.assertEqual(db.execute('SELECT phase,status FROM ingest_state').fetchone(), ('finalized', 'done'))

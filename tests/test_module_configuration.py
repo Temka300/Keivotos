@@ -42,7 +42,7 @@ print(json.dumps({"module": config.DANBOORU_MODULE, "base": str(config.BASE_HOME
             result = subprocess.run([sys.executable, "-c", code], cwd=ROOT, check=True,
                                     env={**os.environ, "KEIVOTOS_HOME":temp, "PYTHONPATH":str(ROOT/"backend")},
                                     capture_output=True, text=True)
-            self.assertEqual(json.loads(result.stdout), {"module":None, "base":str(Path(temp)/"base"),
+            self.assertEqual(json.loads(result.stdout), {"module":None, "base":str(Path(temp).resolve()/"base"),
                                                         "user":str(Path(temp)/"user.sqlite"), "backups":str(Path(temp)/"backups")})
             self.assertFalse((Path(temp)/"modules/danbooru").exists())
 

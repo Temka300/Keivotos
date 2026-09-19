@@ -1,6 +1,7 @@
 """Preserve fresh/legacy index initialization and its existing normalization."""
 from pathlib import Path
 import sqlite3
+from contextlib import closing
 import sys
 import tempfile
 import unittest
@@ -38,7 +39,7 @@ class DanbooruIndexMigrationTests(unittest.TestCase):
     def test_legacy_index_preserves_rows_and_backfills_only_existing_candidates(self):
         with tempfile.TemporaryDirectory() as temp, patch.object(database, "DATA_DB_PATH", Path(temp) / "index.sqlite"):
             path = database.DATA_DB_PATH
-            with sqlite3.connect(path) as conn:
+            with closing(sqlite3.connect(path)) as conn, conn:
                 # The legacy files table lacks root identity and download-date columns.
                 conn.execute("CREATE TABLE files(id INTEGER PRIMARY KEY,path TEXT UNIQUE,folder TEXT,name TEXT,ext TEXT,size INTEGER,local_md5 TEXT,matched_md5 TEXT,matched_by TEXT)")
                 schema.ensure_data_schema(conn)

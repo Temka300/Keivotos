@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
+from contextlib import closing
 import sys
 import threading
 import unittest
@@ -155,7 +156,7 @@ class MetadataBackupBundleTests(unittest.TestCase):
 
     def test_install_failure_restores_every_previous_component(self):
         created = backup_bundle.create_backup_bundle()
-        with sqlite3.connect(self.user_db) as connection:
+        with closing(sqlite3.connect(self.user_db)) as connection, connection:
             connection.execute("UPDATE marker SET value='newer-user'")
         (self.sidecars / "sample.json").write_text("newer-sidecar")
         original_replace = Path.replace
@@ -165,7 +166,7 @@ class MetadataBackupBundleTests(unittest.TestCase):
             return original_replace(path, target)
         with patch.object(Path, "replace", fail_install), self.assertRaisesRegex(OSError, "injected"):
             backup_bundle.restore_backup_bundle(created["name"])
-        with sqlite3.connect(self.user_db) as connection:
+        with closing(sqlite3.connect(self.user_db)) as connection, connection:
             self.assertEqual(connection.execute("SELECT value FROM marker").fetchone()[0], "newer-user")
         self.assertEqual((self.sidecars / "sample.json").read_text(), "newer-sidecar")
         recovery = next(backup_bundle.RECOVERY_DIR.glob("restore_*"))
@@ -487,7 +488,7 @@ class AttachmentBackupTests(unittest.TestCase):
             snapshot = backup_bundle._sqlite_snapshot
             def snapshot_then_change(source, destination):
                 snapshot(source, destination)
-                with sqlite3.connect(self.user_db) as connection:
+                with closing(sqlite3.connect(self.user_db)) as connection, connection:
                     connection.execute("DELETE FROM files_annotation_attachments")
             with patch.object(backup_bundle, "_sqlite_snapshot", snapshot_then_change):
                 created = backup_bundle.create_backup_bundle()

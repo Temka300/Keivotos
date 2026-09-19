@@ -5,6 +5,7 @@ import os
 from datetime import datetime, timezone
 from unittest.mock import patch
 import sqlite3
+from contextlib import closing
 import sys
 import unittest
 from pathlib import Path
@@ -173,7 +174,7 @@ class LocalRecoveryTests(unittest.TestCase):
                 self.change_database(f"next-{number}")
                 result = local_recovery.create_local_recovery_checkpoint("sync")
             self.assertEqual(result["count"], 5)
-            with sqlite3.connect(result["latest_path"]) as connection:
+            with closing(sqlite3.connect(result["latest_path"])) as connection, connection:
                 self.assertEqual(connection.execute("SELECT COUNT(*) FROM notes").fetchone()[0], 8)
             unchanged = local_recovery.create_local_recovery_checkpoint("sync")
             self.assertFalse(unchanged["created"])
