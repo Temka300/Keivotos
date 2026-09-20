@@ -21,7 +21,7 @@ const contribution: SettingsContribution = {
     { id: 'interface-scale', section: 'appearance', label: 'Interface scale', description: 'Use the default or a roomier readable scale.', keywords: ['density', 'comfortable', 'readability', 'text'] },
     { id: 'startup-module', section: 'startup', label: 'Startup destination', description: `Choose which surface ${SUITE_NAME} opens on launch.`, keywords: ['files', 'module', 'last used', 'launch', 'open'] },
     { id: 'thumbnail-cache', section: 'storage', label: 'Thumbnail cache', description: 'Manage the three derived thumbnail tiers and size limit.', keywords: ['300', '600', '1200', 'cleanup', 'cache'] },
-    { id: 'backup', section: 'backup', label: 'Backup', description: `Choose protected components for the fixed ${SUITE_NAME} backup location.`, keywords: ['snapshot', 'database', 'sidecar', 'destination', 'size', 'metadata'] },
+    { id: 'backup', section: 'backup', label: 'Backup', description: `Choose ${SUITE_NAME} backup contents, location and automatic schedule.`, keywords: ['automatic', 'frequency', 'retention', 'destination', 'size', 'modules'] },
     { id: 'restore', section: 'backup', label: 'Restore', description: `Validate and restore a ${SUITE_NAME} backup bundle with rollback.`, keywords: ['recovery', 'rollback', 'backup'] },
     { id: 'local-recovery', section: 'backup', label: 'Automatic local recovery', description: 'Keep rotating user database checkpoints.', keywords: ['checkpoint', 'user sqlite', 'favorites', 'collections', 'automatic'] },
   ],

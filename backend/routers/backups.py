@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import zipfile
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
@@ -10,6 +11,7 @@ from maintenance import exclusive_tool_operation
 from models import BackupConfigurationUpdate, BackupCreateRequest, BackupRestoreRequest
 
 router = APIRouter()
+logger = logging.getLogger("keivotos.backups")
 
 
 @router.get("/api/backups")
@@ -17,12 +19,21 @@ def get_backup_configuration():
     return backup_configuration()
 
 
+@router.get("/api/backups/automatic-status")
+def get_automatic_backup_status():
+    from automatic_backups import automatic_backup_status
+    return automatic_backup_status()
+
+
 @router.put("/api/backups")
 def configure_backups(update: BackupConfigurationUpdate):
     try:
-        return update_backup_configuration(update.components)
+        with exclusive_tool_operation("configuring backups", wait=False):
+            return update_backup_configuration(update.components, update.options.model_dump() if update.options else None)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.post("/api/backups/estimate")
@@ -33,9 +44,12 @@ def estimate_backup(request: BackupCreateRequest):
 @router.post("/api/backups/create")
 def create_metadata_backup(request: BackupCreateRequest):
     try:
-        with exclusive_tool_operation("backing up"):
+        with exclusive_tool_operation("backing up", wait=False):
             return create_backup_bundle(request.components)
-    except (ValueError, FileNotFoundError) as exc:
+    except OSError as exc:
+        logger.exception("Backup could not access its files")
+        raise HTTPException(400, "Could not write the backup. Check the location and Logs.") from exc
+    except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
@@ -43,9 +57,12 @@ def create_metadata_backup(request: BackupCreateRequest):
 
 @router.get("/api/backups/{backup_name}/inspect")
 def inspect_metadata_backup(backup_name: str):
-    destination = Path(get_backup_config()["destination"]).expanduser()
+    destination = Path(get_backup_config()["destination"]).expanduser().resolve()
     try:
-        return inspect_backup_bundle(destination / Path(backup_name).name)
+        source = (destination / Path(backup_name).name).resolve()
+        if source.parent != destination:
+            raise ValueError("Backup must be inside the configured backup location")
+        return inspect_backup_bundle(source)
     except (ValueError, FileNotFoundError, KeyError, json.JSONDecodeError, zipfile.BadZipFile, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
 

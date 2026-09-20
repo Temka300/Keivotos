@@ -716,6 +716,16 @@
             },
             "title": "Components",
             "type": "object"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BackupOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "BackupConfigurationUpdate",
@@ -739,6 +749,51 @@
           }
         },
         "title": "BackupCreateRequest",
+        "type": "object"
+      },
+      "BackupOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "custom_location": {
+            "default": "",
+            "maxLength": 4096,
+            "title": "Custom Location",
+            "type": "string"
+          },
+          "enabled": {
+            "default": false,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "frequency_minutes": {
+            "default": 60,
+            "enum": [
+              15,
+              30,
+              45,
+              60
+            ],
+            "title": "Frequency Minutes",
+            "type": "integer"
+          },
+          "location": {
+            "default": "default",
+            "enum": [
+              "default",
+              "custom"
+            ],
+            "title": "Location",
+            "type": "string"
+          },
+          "retention": {
+            "default": 3,
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Retention",
+            "type": "integer"
+          }
+        },
+        "title": "BackupOptions",
         "type": "object"
       },
       "BackupRestoreRequest": {
@@ -5068,6 +5123,22 @@
           }
         },
         "summary": "Configure Backups"
+      }
+    },
+    "/api/backups/automatic-status": {
+      "get": {
+        "operationId": "get_automatic_backup_status_api_backups_automatic_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Automatic Backup Status"
       }
     },
     "/api/backups/create": {

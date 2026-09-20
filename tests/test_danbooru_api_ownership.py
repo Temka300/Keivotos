@@ -16,7 +16,7 @@ class DanbooruApiOwnershipTests(unittest.TestCase):
     def test_shared_models_do_not_expose_danbooru_contracts(self):
         classes = {node.name for node in ast.parse((ROOT / "backend/models.py").read_text()).body
                    if isinstance(node, ast.ClassDef)}
-        self.assertEqual(classes, {"UserSetting", "UserSettingUpdate", "BackupConfigurationUpdate",
+        self.assertEqual(classes, {"UserSetting", "UserSettingUpdate", "BackupOptions", "BackupConfigurationUpdate",
                                    "BackupCreateRequest", "BackupRestoreRequest", "ThumbnailCacheLimitUpdate"})
         self.assertFalse(hasattr(models, "ImageSummary"))
 

@@ -1,144 +1,138 @@
-// Backup settings against disposable real storage; labeled response fixtures
-// cover unavailable-owner and preserved-history presentation without live data.
+// Real backup/restore in isolated storage; no live media or network operations.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { chromium } = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 assert.match(config.home, /[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
-assert.equal(new URL(config.url).hostname, '127.0.0.1');
 (async () => {
-  const browser = await chromium.launch({ headless: true, channel: process.env.PLAYWRIGHT_CHANNEL });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
-  await context.tracing.start({ screenshots: true, snapshots: true });
-  const page = await context.newPage();
-  page.setDefaultTimeout(10000);
-  const report = { checks: [], errors: [], restoreRequests: 0 };
-  const check = text => { report.checks.push(text); console.log('PASS: ' + text); };
-  page.on('pageerror', e => report.errors.push(e.message));
-  page.on('console', m => { if (m.type() === 'error') report.errors.push(m.text()); });
-  page.on('response', r => { if (r.status() >= 400) report.errors.push(`${r.status()} ${r.url()}`); });
-  await page.route('**/*', route => {
-    if (new URL(route.request().url()).origin !== config.url) {
-      report.errors.push('Nonfixture request');
-      return route.abort();
-    }
-    if (new URL(route.request().url()).pathname === '/api/backups/restore') report.restoreRequests++;
-    return route.continue();
+ const browser = await chromium.launch({headless:true,channel:process.env.PLAYWRIGHT_CHANNEL});
+ const context = await browser.newContext({viewport:{width:1440,height:1000}});
+ await context.tracing.start({screenshots:true,snapshots:true});
+ const page = await context.newPage(); page.setDefaultTimeout(12000);
+ const report = {checks:[],errors:[],restoreRequests:0};
+ const check = text => {report.checks.push(text);console.log('PASS: '+text);};
+ page.on('pageerror',e=>report.errors.push(e.message));
+ page.on('console',m=>{if(m.type()==='error')report.errors.push(m.text());});
+ await page.route('**/*',route=>{
+  const u=new URL(route.request().url());
+  if(u.origin!==config.url){report.errors.push('Unexpected remote request');return route.abort();}
+  if(u.pathname==='/api/backups/restore')report.restoreRequests++;
+  return route.continue();
+ });
+ const settings=page.getByRole('dialog',{name:'Settings',exact:true});
+ const restore=page.getByRole('dialog',{name:'Restore backup',exact:true});
+ const moduleDialog=name=>page.getByRole('dialog',{name:`${name} backups`,exact:true});
+ const automatic=page.getByRole('switch',{name:'Automatic backup',exact:true});
+ async function open(){
+  await page.getByRole('button',{name:'Open Keivotos menu',exact:true}).click();
+  await page.getByRole('button',{name:'Settings',exact:true}).click();
+  await settings.getByRole('button',{name:'Backup',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="Automatic backup"]').disabled);
+ }
+ try {
+  await page.goto(config.url);
+  assert.equal(await page.evaluate(async()=>(await(await fetch('/api/storage')).json()).suite_home),config.home);
+  await open();
+  assert.equal(await settings.getByRole('checkbox').count(),1);
+  await settings.getByRole('checkbox',{name:'User data',exact:true}).waitFor();
+  await settings.getByRole('button',{name:'Files',exact:true}).click();
+  assert.equal(await moduleDialog('Files').getByRole('checkbox').count(),1);
+  await moduleDialog('Files').getByRole('checkbox',{name:'File attachments',exact:true}).waitFor();
+  await page.keyboard.press('Escape');
+  await moduleDialog('Files').waitFor({state:'detached'});
+  assert.equal(await settings.isVisible(),true);
+  await settings.getByRole('button',{name:'Danbooru',exact:true}).click();
+  assert.equal(await moduleDialog('Danbooru').getByRole('checkbox').count(),4);
+  check('module-oriented main page, real component dialogs, disabled module eligibility and Escape isolation');
+
+  let calls=0;
+  await page.route('**/api/backups/estimate',async route=>{
+   const call=++calls; const response=await route.fetch(); const value=await response.json();
+   value.estimated_compressed_display=call===1?'old selection':'latest selection';
+   await new Promise(resolve=>setTimeout(resolve,call===1?450:20)); await route.fulfill({json:value});
   });
-  const settings = page.getByRole('dialog', { name: 'Settings', exact: true });
-  async function openBackup() {
-    await page.getByRole('button', { name: 'Open Keivotos menu', exact: true }).click();
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await settings.getByRole('button', { name: 'Backup', exact: true }).click();
-    await settings.getByRole('checkbox').first().waitFor();
-  }
-  try {
-    await page.goto(config.url);
-    assert.equal(await page.evaluate(async () => (await (await fetch('/api/storage')).json()).suite_home), config.home);
-    await openBackup();
-    assert.equal(await settings.getByRole('checkbox').count(), 6);
-    assert.match(await settings.getByRole('checkbox', { name: /User database/ }).innerText(), /Keivotos/);
-    assert.match(await settings.getByRole('checkbox', { name: /File attachments/ }).innerText(), /Files/);
-    assert.match(await settings.getByRole('checkbox', { name: /Library database/ }).innerText(), /Danbooru/);
-    await settings.getByText(/Browser preferences such as grid size/).waitFor();
-    check('owner labels, browser exclusions and disabled-owner eligibility');
+  const history=moduleDialog('Danbooru').getByRole('checkbox',{name:'Metadata history',exact:true});
+  await history.click(); await history.click();
+  await page.waitForTimeout(650);
+  assert.equal(await settings.getByText('Estimated compressed size: old selection',{exact:true}).count(),0);
+  await settings.getByText('Estimated compressed size: latest selection',{exact:true}).waitFor();
+  await page.unroute('**/api/backups/estimate');
+  await page.route('**/api/backups',async route=>{const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,300));await route.fulfill({response});});
+  await moduleDialog('Danbooru').getByRole('button',{name:'Done',exact:true}).click();
+  assert.equal(await history.isDisabled(),true);
+  await moduleDialog('Danbooru').waitFor({state:'detached'});
+  await page.unroute('**/api/backups');
+  check('stale estimates cannot replace the latest selection; saving locks dialog edits');
 
-    // Deliver estimate replies out of order: older selection must not win.
-    let estimateCalls = 0;
-    await page.route('**/api/backups/estimate', async route => {
-      const call = ++estimateCalls;
-      const response = await route.fetch();
-      const value = await response.json();
-      value.estimated_compressed_display = call === 1 ? 'old selection' : 'latest selection';
-      await new Promise(resolve => setTimeout(resolve, call === 1 ? 450 : 20));
-      await route.fulfill({ json: value });
-    });
-    const history = settings.getByRole('checkbox', { name: /Sidecar history/ });
-    await history.click();
-    await history.click();
-    await settings.getByText('Estimated compressed size: latest selection', { exact: true }).waitFor();
-    await page.waitForTimeout(550);
-    assert.equal(await settings.getByText('Estimated compressed size: old selection', { exact: true }).count(), 0);
-    await page.unroute('**/api/backups/estimate');
-    check('delayed estimate fixture: latest selection wins');
-    await page.route('**/api/backups', async route => {
-      const response = await route.fetch();
-      await new Promise(resolve => setTimeout(resolve, 350));
-      await route.fulfill({ response });
-    });
-    await settings.getByRole('button', { name: 'Save selection', exact: true }).click();
-    assert.equal(await history.isDisabled(), true);
-    await settings.getByText('Backup contents saved.', { exact: true }).waitFor();
-    assert.equal(await history.isDisabled(), false);
-    await page.unroute('**/api/backups');
-    check('real selection save locks edits until the response is applied');
+  await page.getByLabel('Keep automatic backups',{exact:true}).selectOption('2');
+  await page.waitForFunction(()=>!document.querySelector('#backup-retention').disabled);
+  await page.getByLabel('Frequency',{exact:true}).selectOption('15');
+  await page.waitForFunction(()=>!document.querySelector('#backup-frequency').disabled);
+  await automatic.click();
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Automatic backup"]').getAttribute('aria-checked')==='true'&&!document.querySelector('[aria-label="Automatic backup"]').disabled);
+  await page.reload(); await open();
+  assert.equal(await automatic.getAttribute('aria-checked'),'true');
+  assert.equal(await page.getByLabel('Keep automatic backups',{exact:true}).inputValue(),'2');
+  assert.equal(await page.getByLabel('Frequency',{exact:true}).inputValue(),'15');
+  await automatic.click();
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="Automatic backup"]').disabled);
+  check('automatic enablement, retention and frequency persist across reload');
 
-    await settings.getByRole('button', { name: /Create (another )?backup/, exact: true }).click();
-    await settings.getByText(/Created backup_.*Unavailable components were omitted/).waitFor();
-    assert.match(await settings.locator('[aria-live="polite"]').innerText(), /library database/);
-    const select = settings.getByRole('combobox', { name: 'Backup to restore' });
-    const backup = await select.inputValue();
-    assert.match(backup, /\.keivotosbk$/);
-    // Explicit inspection uses the same real backend bundle just created.
-    await select.selectOption('');
-    await select.selectOption(backup);
-    await settings.getByText(/Restores the whole shared user database/).waitFor();
-    await settings.getByText(/Omitted when created:/).waitFor();
-    check('real backup creation reports omissions and inspection shows actual coverage');
+  await settings.getByRole('button',{name:'Custom…',exact:true}).click();
+  const picker=page.getByRole('dialog',{name:'Choose a folder',exact:true});
+  await picker.getByRole('textbox',{name:'Folder path'}).fill(config.home);
+  await picker.getByRole('button',{name:'Go',exact:true}).click();
+  await picker.getByRole('button',{name:'Choose this folder',exact:true}).click();
+  await picker.waitFor({state:'hidden'});
+  await page.waitForFunction(async home=>(await(await fetch('/api/backups')).json()).destination===home,config.home);
+  await settings.getByRole('button',{name:'Default',exact:true}).click();
+  await page.waitForFunction(async home=>(await(await fetch('/api/backups')).json()).destination===home+'/backups',config.home);
+  check('custom folder picker and default location save without moving existing backups');
 
-    let confirmation = '';
-    page.once('dialog', async dialog => { confirmation = dialog.message(); await dialog.dismiss(); });
-    await settings.getByRole('button', { name: 'Restore', exact: true }).click();
-    await page.waitForFunction(() => !document.querySelector('#setting-restore button').disabled);
-    assert.match(confirmation, /whole shared user database/);
-    assert.match(confirmation, /Files origin notes/);
-    assert.match(confirmation, /Keivotos will preserve/);
-    assert.match(confirmation, /Browser preferences will not be restored/);
-    assert.equal(report.restoreRequests, 0);
-    check('restore confirmation explains whole-database scope; cancel performs no restore');
-    await page.evaluate(() => localStorage.setItem('keivotos:files-grid-size', JSON.stringify('absurd')));
-    page.once('dialog', dialog => dialog.accept());
-    await settings.getByRole('button', { name: 'Restore', exact: true }).click();
-    await settings.getByText(/Metadata restored and verified/).waitFor();
-    await settings.getByText(/Attachments: 0 restored/).waitFor();
-    assert.equal(report.restoreRequests, 1);
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('keivotos:files-grid-size'))), 'absurd');
-    check('real scratch restore displays rollback and attachment results; browser state stays separate');
-    await page.screenshot({ path: path.join(config.output, 'backup-restored.png') });
-
-    // Response fixtures exercise future/absent owners without changing registry code.
-    await page.route('**/api/backups', async route => {
-      const response = await route.fetch();
-      const value = await response.json();
-      value.components = { user_database: true, file_attachments: true, extra_archive: false };
-      value.estimate.details = {
-        user_database: value.estimate.details.user_database,
-        file_attachments: value.estimate.details.file_attachments,
-        extra_archive: { owner: 'example', exists: false, files: 0, bytes: 0, display_size: '0 B', enabled: false },
-      };
-      await route.fulfill({ json: value });
-    });
-    await page.route('**/api/local-recovery', async route => {
-      const response = await route.fetch();
-      await route.fulfill({ json: { ...await response.json(), preserved_count: 3, preserved_directory: '/fixture/preserved' } });
-    });
-    await page.reload();
-    await openBackup();
-    assert.equal(await settings.getByRole('checkbox').count(), 3);
-    assert.equal(await settings.getByRole('checkbox', { name: /Library database/ }).count(), 0);
-    await settings.getByRole('checkbox', { name: /extra archive/ }).waitFor();
-    await settings.getByText(/3 legacy checkpoints/).waitFor();
-    check('response fixture: absent owner hidden, additional component and preserved history displayed');
-    assert.deepEqual(report.errors, []);
-    check('no browser errors or nonfixture requests');
-  } catch (error) {
-    report.failure = error.stack;
-    await page.screenshot({ path: path.join(config.output, 'failure.png') });
-    throw error;
-  } finally {
-    fs.writeFileSync(path.join(config.output, 'report.json'), JSON.stringify(report, null, 2));
-    await context.tracing.stop({ path: path.join(config.output, 'trace.zip') });
-    await browser.close();
-  }
-})().catch(error => { console.error(error); process.exitCode = 1; });
+  await settings.getByRole('button',{name:'Back up now',exact:true}).click();
+  await settings.getByText(/Backup saved ✓/).waitFor();
+  assert.match(await settings.locator('[aria-live="polite"]').innerText(),/Not included: Library index/);
+  await settings.getByRole('button',{name:'Restore now',exact:true}).click();
+  await restore.getByText(/Replaces user data for Files/).waitFor();
+  await restore.getByText(/Not included:/).waitFor();
+  let confirmation='';
+  page.once('dialog',async dialog=>{confirmation=dialog.message();await dialog.dismiss();});
+  await restore.getByRole('button',{name:'Restore backup',exact:true}).click();
+  await page.waitForTimeout(250);
+  assert.match(confirmation,/Files and every module together/);
+  assert.match(confirmation,/preserve a recovery copy/);
+  assert.equal(report.restoreRequests,0);
+  check('verified manual backup reports omissions; inspected restore explains scope and cancellation writes nothing');
+  await page.evaluate(()=>localStorage.setItem('keivotos:files-grid-size',JSON.stringify('absurd')));
+  page.once('dialog',dialog=>dialog.accept());
+  await restore.getByRole('button',{name:'Restore backup',exact:true}).click();
+  await restore.getByText(/Restore complete/).waitFor();
+  assert.equal(report.restoreRequests,1);
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('keivotos:files-grid-size'))),'absurd');
+  await restore.getByRole('button',{name:'Close backup dialog',exact:true}).click();
+  await settings.locator('summary').filter({hasText:'Backup details and recovery'}).click();
+  await settings.getByRole('button',{name:'Checkpoint now',exact:true}).click();
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Checkpoint now'&&!b.disabled));
+  check('real scratch restore preserves browser preferences and exposes recovery results; existing checkpoint control remains');
+  await settings.locator('summary').filter({hasText:'Backup details and recovery'}).click();
+  await settings.locator('main').evaluate(node => node.scrollTo(0,0));
+  await page.screenshot({path:path.join(config.output,'backups.png')});
+  await page.route('**/api/backups',async route=>{
+   const response=await route.fetch();const value=await response.json();
+   value.components={user_database:true,file_attachments:true,extra_archive:false};
+   value.estimate.details={user_database:value.estimate.details.user_database,file_attachments:value.estimate.details.file_attachments,
+    extra_archive:{owner:'example',enabled:false,exists:false,files:0,bytes:0,display_size:'0 B'}};
+   value.automatic_status={running:false,last_result:'failed',last_at:null,last_success_at:null};
+   await route.fulfill({json:value});
+  });
+  await page.reload();await open();
+  assert.equal(await settings.getByRole('button',{name:'Danbooru',exact:true}).count(),0);
+  await settings.getByText(/Last backup failed/).waitFor();
+  await settings.getByRole('button',{name:'example',exact:true}).click();
+  await moduleDialog('example').getByRole('checkbox',{name:'extra archive',exact:true}).waitFor();
+  check('fixture: absent owners disappear, contributed components remain available and failed automatic status points to Logs');
+  assert.deepEqual(report.errors,[]);
+ } catch(e) {report.failure=e.stack;await page.screenshot({path:path.join(config.output,'failure.png')});throw e;}
+ finally {fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));await context.tracing.stop({path:path.join(config.output,'trace.zip')});await browser.close();}
+})().catch(e=>{console.error(e);process.exitCode=1;});

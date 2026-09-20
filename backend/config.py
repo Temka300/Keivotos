@@ -156,6 +156,7 @@ DEFAULT_METADATA_DIR = MODULE_HOME
 LEGACY_DEFAULT_METADATA_DIR = MODULE_HOME / "metadata"
 DEFAULT_GALLERY_DL_DIR = MODULE_HOME / "gallery-dl"
 DEFAULT_BACKUP_DIR = SUITE_HOME / "backups"
+AUTOMATIC_BACKUP_STATE_FILE = SUITE_HOME / "automatic-backups.json"
 LEGACY_MODULE_BACKUP_DIR = DEFAULT_BACKUP_DIR / DANBOORU_SLUG
 LOG_DIR = SUITE_HOME / "logs"
 LOG_FILE_LIMIT_MB = 5
@@ -685,11 +686,15 @@ def save_config(overrides: dict[str, Any]) -> None:
 def runtime_config_snapshot() -> dict[str, Any]:
     """Return the effective, non-secret settings suitable for a backup bundle."""
     private_paths = {"data_root", "metadata_dir", "gallery_dl_dir"}
-    return {
+    result = {
         key: value
         for key, value in _cfg.items()
         if key not in private_paths
     }
+
+    if isinstance(result.get("backup_options"), dict):
+        result["backup_options"] = {**result["backup_options"], "custom_location": "", "location": "default"}
+    return result
 
 
 def _bounded_int(value: Any, default: int, minimum: int, maximum: int) -> int:
@@ -705,7 +710,10 @@ def get_backup_config() -> dict[str, Any]:
     components = _cfg.get("backup_components")
     if isinstance(components, dict):
         defaults.update({key: bool(value) for key, value in components.items() if key in defaults})
-    return {"destination": str(DEFAULT_BACKUP_DIR), "components": defaults}
+    options = get_backup_options()
+    destination = options["custom_location"] if options["location"] == "custom" else str(DEFAULT_BACKUP_DIR)
+    return {"destination": destination, "components": defaults, "options": options,
+            "default_destination": str(DEFAULT_BACKUP_DIR)}
 
 
 def get_thumbnail_cache_limit_bytes() -> int:
@@ -847,3 +855,34 @@ def set_attachment_store_root(path: str | None) -> None:
 
 def get_diagnostics_preferences() -> dict[str, bool]:
     return {key: _cfg.get(key) is True for key in ("verbose_logging", "show_experimental_modules")}
+
+
+def get_backup_options() -> dict[str, Any]:
+    value = _cfg.get("backup_options", {})
+    if not isinstance(value, dict):
+        value = {}
+    custom = value.get("custom_location", "")
+    custom = custom if isinstance(custom, str) else ""
+    interval = value.get("frequency_minutes", 60)
+    return {"enabled": value.get("enabled") is True,
+            "location": "custom" if value.get("location") == "custom" and custom else "default",
+            "custom_location": custom,
+            "retention": _bounded_int(value.get("retention"), 3, 1, 5),
+            "frequency_minutes": interval if type(interval) is int and interval in (15, 30, 45, 60) else 60}
+
+
+def validate_backup_destination(value: str) -> Path:
+    """Resolve custom backup paths at the configured-location boundary."""
+    path = Path(value).expanduser()
+    if not value.strip() or not path.is_absolute():
+        raise ValueError("Choose an absolute backup folder")
+    path = path.resolve(strict=False)
+    if path.exists() and not path.is_dir():
+        raise ValueError("Backup location must be a folder")
+    protected = [RECOVERY_DIR]
+    for descriptor in MODULE_REGISTRY:
+        protected.extend(component.source for component in descriptor.backup_components()
+                         if component.kind == "tree" and component.source is not None)
+    if any(path.is_relative_to(source.resolve(strict=False)) for source in protected):
+        raise ValueError("Backup location cannot be inside protected data or recovery history")
+    return path

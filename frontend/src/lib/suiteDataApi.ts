@@ -1,5 +1,5 @@
 import { get, post, put } from './http';
-import type { DiagnosticsPreferences, UserSetting, StorageConfiguration, BackupComponents, BackupEstimateDetail, BackupEstimate, BackupListItem, BackupConfiguration, LocalRecoveryStatus, BackupResult, BackupManifest, BackupRestoreResult, ThumbnailCacheStatus } from './suiteApiTypes';
+import type { BackupOptions, DiagnosticsPreferences, UserSetting, StorageConfiguration, BackupComponents, BackupEstimateDetail, BackupEstimate, BackupListItem, BackupConfiguration, LocalRecoveryStatus, BackupResult, BackupManifest, BackupRestoreResult, ThumbnailCacheStatus } from './suiteApiTypes';
 
 export const suiteDataApi = {
 getDiagnostics: () => get<DiagnosticsPreferences>('/diagnostics'),
@@ -13,6 +13,8 @@ putUserSetting: (key: string, value: string) =>
 
 getStorageConfiguration: () => get<StorageConfiguration>('/storage'),
 
+getAutomaticBackupStatus: () => get<BackupConfiguration['automatic_status']>('/backups/automatic-status'),
+
 getBackupConfiguration: () => get<BackupConfiguration>('/backups'),
 
 getLocalRecovery: () => get<LocalRecoveryStatus>('/local-recovery'),
@@ -20,8 +22,8 @@ getLocalRecovery: () => get<LocalRecoveryStatus>('/local-recovery'),
 createLocalRecoveryCheckpoint: () =>
     post<LocalRecoveryStatus & { status: string; created: boolean; message: string }>('/local-recovery/checkpoint'),
 
-configureBackups: (components: BackupComponents) =>
-    put<BackupConfiguration>('/backups', { components }),
+configureBackups: (components: BackupComponents, options?: BackupOptions) =>
+    put<BackupConfiguration>('/backups', { components, options }),
 
 estimateBackup: (components: BackupComponents) =>
     post<BackupEstimate>('/backups/estimate', { components }),

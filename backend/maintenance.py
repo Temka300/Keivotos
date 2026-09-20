@@ -22,15 +22,19 @@ def active_tool_id() -> str | None:
 
 
 @contextmanager
-def exclusive_tool_operation(operation_name: str):
+def exclusive_tool_operation(operation_name: str, *, wait: bool = True):
     """Prevent a restore/backup window from racing a newly launched tool."""
-    with _tool_operation_lock:
+    if not _tool_operation_lock.acquire(blocking=wait):
+        raise RuntimeError("Another maintenance operation is running")
+    try:
         if _module_transition:
             raise RuntimeError("Wait for the module transition to finish")
         with _tool_state_lock:
             if _active_tool_id:
                 raise RuntimeError(f"Wait for {_active_tool_id} to finish before {operation_name}")
         yield
+    finally:
+        _tool_operation_lock.release()
 
 
 @contextmanager

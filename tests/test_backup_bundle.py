@@ -238,18 +238,6 @@ class MetadataBackupBundleTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(tree_stats.call_count, 3)
 
-    def test_backup_creation_feedback_is_visible_before_restore(self) -> None:
-        source = (ROOT / "frontend" / "src" / "components" / "BackupRestoreSettings.svelte").read_text(encoding="utf-8")
-        self.assertIn("Created ${result.name} (${result.display_size}) in ${destination}", source)
-        self.assertIn("Backup location", source)
-        self.assertIn("Save selection", source)
-        self.assertNotIn("browseDestination", source)
-        self.assertNotIn("Save location", source)
-        self.assertIn('aria-live="polite"', source)
-        self.assertIn("backupMessage ? 'Create another backup' : 'Create backup'", source)
-        self.assertLess(source.index("{#if backupMessage}"), source.index('class="mt-4 grid gap-2 sm:grid-cols-2"'))
-        self.assertLess(source.index("{#if backupMessage}"), source.index('id="setting-restore"'))
-
     def test_verified_bundle_restores_metadata_and_never_images(self) -> None:
         created = backup_bundle.create_backup_bundle()
         self.assertRegex(created["name"], r"^backup_\d+(?:_\d+)?\.keivotosbk$")

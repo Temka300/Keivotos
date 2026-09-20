@@ -250,9 +250,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 raise
             runtime.fail(descriptor.slug, "Storage initialization", exc)
 
+    from automatic_backups import automatic_backup_loop
+    backup_stop = asyncio.Event()
+    backup_task = asyncio.create_task(automatic_backup_loop(backup_stop), name="suite-automatic-backup")
     try:
         yield
     finally:
+        backup_stop.set()
+        # Finish an in-progress archive before shutdown; cancelling to_thread
+        # would abandon a writer that continues running outside this coroutine.
+        await backup_task
         module_runtime = None
         for slug in list(runtime.tasks):
             await runtime.stop(slug)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 
 class UserSetting(BaseModel):
@@ -12,8 +13,18 @@ class UserSettingUpdate(BaseModel):
     value: str = Field(max_length=200)
 
 
+class BackupOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: StrictBool = False
+    location: Literal["default", "custom"] = "default"
+    custom_location: str = Field(default="", max_length=4096)
+    retention: int = Field(default=3, ge=1, le=5, strict=True)
+    frequency_minutes: Literal[15, 30, 45, 60] = 60
+
+
 class BackupConfigurationUpdate(BaseModel):
     components: dict[str, bool] = Field(default_factory=dict)
+    options: BackupOptions | None = None
 
 
 class BackupCreateRequest(BaseModel):

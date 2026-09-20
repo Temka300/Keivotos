@@ -1,9 +1,14 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { getContext, onMount, tick } from 'svelte';
   import { suiteDataApi as api } from '../lib/suiteDataApi';
-  import { type BackupComponents, type BackupConfiguration, type BackupEstimate, type BackupManifest, type LocalRecoveryStatus } from '../lib/suiteApiTypes';
+  import { type BackupOptions, type BackupComponents, type BackupConfiguration, type BackupEstimate, type BackupManifest, type LocalRecoveryStatus } from '../lib/suiteApiTypes';
   import { SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/suiteStores';
+
+  import { SETTINGS_SESSION, type SettingsSession } from '../lib/settingsSession';
+  const session = getContext<SettingsSession>(SETTINGS_SESSION);
+  let dialog = '';
+  let options: BackupOptions = {enabled:false, location:'default', custom_location:'', retention:3, frequency_minutes:60};
 
   export let toolRunning = false;
 
@@ -31,16 +36,21 @@
   let backupError = '';
 
   const choices: { key: keyof BackupComponents; label: string; description: string; recommended?: boolean }[] = [
-    { key: 'user_database', label: 'User database', description: 'Suite settings, registered folders, Files origin notes, and module data such as favorites, collections, tags and follows.', recommended: true },
-    { key: 'library_database', label: 'Library database', description: 'Immediate searchable index for a fast restore.', recommended: true },
-    { key: 'sidecars', label: 'Current sidecars', description: 'Durable metadata used to rebuild the library database.', recommended: true },
-    { key: 'sidecar_history', label: 'Sidecar history', description: 'Archived metadata versions from manual refreshes.' },
+    { key: 'user_database', label: 'User data', description: 'Your registered folders, origin notes, favorites, collections, tags, follows and profile.', recommended: true },
+    { key: 'library_database', label: 'Library index', description: 'Saved library information for a faster restore.', recommended: true },
+    { key: 'sidecars', label: 'Tags and metadata', description: 'Saved tags and details for your images.', recommended: true },
+    { key: 'sidecar_history', label: 'Metadata history', description: 'Archived metadata versions from manual refreshes.' },
     { key: 'artist_profile_archive', label: 'Artist profile archive', description: 'Locally preserved artist avatars and banners.' },
     { key: 'file_attachments', label: 'File attachments', description: 'Screenshots and clips you attached to files, so they survive a lost source folder.', recommended: true },
   ];
 
   function componentLabel(key: string) {
     return choices.find(choice => choice.key === key)?.label ?? key.replaceAll('_', ' ');
+  }
+
+  function ownerOrder(owner: string) {
+    const index = $suiteModules.findIndex(module => module.slug === owner);
+    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
   }
 
   function ownerLabel(owner: string) {
@@ -52,14 +62,17 @@
     label: componentLabel(key),
     description: choices.find(choice => choice.key === key)?.description ?? 'Preserved data contributed by this module.',
     recommended: choices.find(choice => choice.key === key)?.recommended ?? false,
-    owner: ownerLabel(configuration?.estimate.details[key]?.owner ?? 'suite'),
+    owner: configuration?.estimate.details[key]?.owner ?? 'suite',
   }));
+  $: moduleOwners = [...new Set(availableChoices.filter(choice => choice.owner !== 'suite').map(choice => choice.owner))].sort((left, right) => ownerOrder(left) - ownerOrder(right));
+  $: blocked = busy || saving || toolRunning || !!configuration?.automatic_status?.running;
   $: includedLabels = inspected ? Object.entries(inspected.components)
     .filter(([, included]) => included).map(([key]) => componentLabel(key)) : [];
 
   function applyConfiguration(value: BackupConfiguration) {
     configuration = value;
     destination = value.destination;
+    options = value.options;
     estimateRequest++;
     components = { ...value.components };
     estimate = value.estimate;
@@ -80,14 +93,14 @@
   }
 
   async function createCheckpoint() {
-    if (busy || saving || toolRunning || !configuration) return;
+    if (blocked || !configuration) return;
     busy = true;
     error = '';
     message = '';
     try {
       const result = await api.createLocalRecoveryCheckpoint();
       localRecovery = result;
-      message = result.message;
+      message = result.created ? 'Recovery checkpoint saved.' : 'Your recovery checkpoint is already up to date.';
     } catch (caught) {
       error = caught instanceof Error ? caught.message : 'Could not create a local recovery checkpoint.';
     } finally {
@@ -119,7 +132,7 @@
     backupError = '';
     if (showMessage) backupMessage = '';
     try {
-      applyConfiguration(await api.configureBackups(components));
+      applyConfiguration(await api.configureBackups(components, options));
       if (showMessage) backupMessage = 'Backup contents saved.';
       return true;
     } catch (caught) {
@@ -131,14 +144,14 @@
   }
 
   async function createBackup() {
-    if (busy || saving || toolRunning || !configuration) return;
+    if (blocked || !configuration) return;
     busy = true;
     backupError = '';
     backupMessage = '';
     try {
       if (!(await saveConfiguration(false))) return;
       const result = await api.createMetadataBackup(components);
-      backupMessage = `Created ${result.name} (${result.display_size}) in ${destination}. ${result.message}`;
+      backupMessage = `Backup saved ✓ ${result.display_size}.` + (result.omitted_components?.length ? ` Not included: ${result.omitted_components.map(componentLabel).join(', ')}.` : '');
       await load();
       selectedBackup = result.name;
     } catch (caught) {
@@ -172,11 +185,11 @@
     try {
       if (!(await inspectSelected()) || !inspected) return;
       const wholeDatabase = inspected.components.user_database
-        ? ' This replaces the whole shared user database, including suite settings, Files origin notes and every module’s user data. It cannot restore one module’s tables separately.'
+        ? ' This replaces user data for Files and every module together, including origin notes, favorites and collections.'
         : '';
-      if (!confirm(`Restore ${selectedBackup}? Included: ${includedLabels.join(', ')}.${wholeDatabase} ${SUITE_NAME} will preserve current metadata in a rollback folder. Original media will not be changed. Browser preferences will not be restored.`)) return;
+      if (!confirm(`Restore ${selectedBackup}? Included: ${includedLabels.join(', ')}.${wholeDatabase} ${SUITE_NAME} will preserve a recovery copy of the current data. Original media will not be changed. Browser preferences will not be restored.`)) return;
       const result = await api.restoreMetadataBackup(selectedBackup);
-      message = `${result.message} Rollback: ${result.rollback_path}`;
+      message = `Restore complete. Restart ${SUITE_NAME} before continuing. Recovery copy: ${result.rollback_path}`;
       if (result.attachments) {
         const a = result.attachments;
         message += ` Attachments: ${a.restored} restored, ${a.existing} already present, ${a.missing} missing, ${a.failed} failed.`;
@@ -188,49 +201,174 @@
     }
   }
 
+  async function changeOption<K extends keyof BackupOptions>(key: K, value: BackupOptions[K]) {
+    if (blocked) return;
+    const previous = options;
+    options = {...options, [key]: value};
+    if (!await saveConfiguration(false)) options = previous;
+  }
+
+  async function chooseLocation() {
+    if (blocked) return;
+    busy = true;
+    backupError = '';
+    try {
+      const initialPath = options.custom_location || (await api.getStorageConfiguration()).suite_home;
+      const path = await session.pickDirectory(initialPath);
+      if (!path) return;
+      const previous = options;
+      options = {...options, location:'custom', custom_location:path};
+      if (!await saveConfiguration(false)) options = previous;
+    } catch (caught) {
+      backupError = caught instanceof Error ? caught.message : 'Could not choose a backup folder.';
+    } finally { busy = false; }
+  }
+
+  async function finishSelection() {
+    if (await saveConfiguration(false)) dialog = '';
+  }
+
+  async function userDataToggle() {
+    const previous = {...components};
+    await toggleComponent('user_database');
+    if (!await saveConfiguration(false)) {components = previous; await refreshEstimate();}
+  }
+
+  async function openRestore() {
+    dialog = 'restore';
+    inspected = null;
+    error = '';
+    message = '';
+    try {
+      configuration = await api.getBackupConfiguration();
+      if (!configuration.backups.some(backup => backup.name === selectedBackup)) selectedBackup = configuration.backups[0]?.name ?? '';
+      await inspectSelected();
+    } catch (caught) { error = String(caught); }
+  }
+
+  function focusDialog(node: HTMLElement) {
+    const previous = document.activeElement as HTMLElement | null;
+    void tick().then(() => node.querySelector<HTMLElement>('button, select')?.focus());
+    const trap = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      const targets = [...node.querySelectorAll<HTMLElement>('button:not(:disabled), select:not(:disabled), input:not(:disabled), summary')];
+      const first = targets[0], last = targets[targets.length - 1];
+      if (event.shiftKey && document.activeElement === first) {event.preventDefault(); last?.focus();}
+      else if (!event.shiftKey && document.activeElement === last) {event.preventDefault(); first?.focus();}
+    };
+    node.addEventListener('keydown', trap);
+    return {destroy() {node.removeEventListener('keydown', trap); if (previous?.isConnected) previous.focus();}};
+  }
+
+  function dismiss() {
+    if (!dialog) return false;
+    if (!blocked) {
+      if (dialog !== 'restore' && configuration) {components = {...configuration.components}; void refreshEstimate();}
+      dialog = '';
+    }
+    return true;
+  }
+
   onMount(() => {
     void load();
+    const unregister = session.register('suite-backups', {dismissOverlay:dismiss});
+    let alive = true;
+    let polling = false;
+    const timer = setInterval(async () => {
+      if (!options.enabled || !configuration || polling) return;
+      polling = true;
+      try {const status = await api.getAutomaticBackupStatus(); if (alive && configuration) configuration = {...configuration, automatic_status:status};}
+      catch (caught) { if (alive) error = 'Could not refresh automatic backup status.'; }
+      finally {polling = false;}
+    }, 5000);
+    return () => {alive = false; clearInterval(timer); unregister();};
   });
 </script>
 
-<section id="setting-local-recovery" class="overflow-hidden rounded-xl border border-green-400/15 bg-[linear-gradient(135deg,rgba(34,197,94,.07),#111118_55%)]">
-  <div class="flex flex-wrap items-start justify-between gap-4 p-4">
-    <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2"><h4 class="text-sm font-semibold text-gray-200">Automatic user-data recovery</h4><span class="rounded-full bg-green-500/10 px-2 py-0.5 text-[9px] font-semibold uppercase text-green-300">On</span><span class="rounded-full bg-black/15 px-2 py-0.5 text-[10px] text-gray-500">{localRecovery?.retention ?? 5} retained</span><span class="rounded-full bg-black/15 px-2 py-0.5 text-[10px] text-gray-500">Startup + successful sync</span></div>
-    <button class="shrink-0 rounded-lg border border-green-400/20 px-3 py-2 text-xs font-semibold text-green-200 hover:bg-green-500/10 disabled:opacity-40" type="button" disabled={busy || saving || toolRunning || !configuration} on:click={createCheckpoint}>Checkpoint now</button>
+<section id="setting-backup" class="space-y-5">
+  <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
+    <div class="flex items-center justify-between gap-4 border-b border-[#22222e] px-4 py-4">
+      <div><h3 class="text-sm font-semibold text-gray-200">Automatic backup</h3><p class="mt-1 text-xs text-gray-500">Runs while {SUITE_NAME} is open, using your selections below.</p></div>
+      <button type="button" role="switch" aria-label="Automatic backup" aria-checked={options.enabled} disabled={blocked || !configuration} on:click={() => changeOption('enabled', !options.enabled)} class="rounded-lg border border-[#303040] px-4 py-2 text-xs {options.enabled ? 'bg-purple-500/20 text-purple-100' : 'text-gray-400'} disabled:opacity-50">{options.enabled ? 'On' : 'Off'}</button>
+    </div>
+    <div class="space-y-4 p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <span class="text-sm text-gray-300">Location</span>
+        <div class="flex gap-2">
+          <button type="button" aria-pressed={options.location === 'default'} disabled={blocked || !configuration} on:click={() => changeOption('location', 'default')} class="rounded-lg border border-[#303040] px-3 py-2 text-xs {options.location === 'default' ? 'bg-[#242432] text-gray-100' : 'text-gray-400'}">Default</button>
+          <button type="button" aria-pressed={options.location === 'custom'} disabled={blocked || !configuration} on:click={chooseLocation} class="rounded-lg border border-[#303040] px-3 py-2 text-xs {options.location === 'custom' ? 'bg-[#242432] text-gray-100' : 'text-gray-400'}">Custom…</button>
+        </div>
+      </div>
+      <p class="break-all text-xs text-gray-500">{destination || 'Loading…'}</p>
+      <div class="flex items-center justify-between gap-4">
+        <label for="backup-retention" class="text-sm text-gray-300">Keep automatic backups</label>
+        <select id="backup-retention" value={options.retention} disabled={blocked || !configuration} on:change={event => changeOption('retention', Number(event.currentTarget.value))} class="rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200">{#each [1,2,3,4,5] as count}<option value={count}>{count}</option>{/each}</select>
+      </div>
+      <div class="flex items-center justify-between gap-4">
+        <label for="backup-frequency" class="text-sm text-gray-300">Frequency</label>
+        <select id="backup-frequency" value={options.frequency_minutes} disabled={blocked || !configuration} on:change={event => changeOption('frequency_minutes', Number(event.currentTarget.value) as BackupOptions['frequency_minutes'])} class="rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200">{#each [15,30,45,60] as minutes}<option value={minutes}>{minutes === 60 ? 'One hour' : `${minutes} minutes`}</option>{/each}</select>
+      </div>
+      <p role="status" class="text-xs text-gray-400">{#if configuration?.automatic_status?.running}Backing up…{:else if configuration?.automatic_status?.last_result === 'failed'}Last backup failed ⚠ — details in Logs{:else if configuration?.automatic_status?.last_success_at}Last backup ✓ {new Date(configuration.automatic_status.last_success_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}{:else}No automatic backup yet{/if}</p>
+    </div>
+  </section>
+
+  <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
+    <h3 class="border-b border-[#22222e] px-4 py-4 text-sm font-semibold text-gray-200">Backups</h3>
+    <div class="divide-y divide-[#22222e]">
+      <button type="button" role="checkbox" aria-label="User data" aria-checked={components.user_database} disabled={blocked || !configuration} on:click={userDataToggle} class="flex w-full items-center justify-between px-4 py-4 text-sm text-gray-200 disabled:opacity-50"><span>User data</span><span aria-hidden="true" class="grid h-5 w-5 place-items-center rounded border border-[#444454]">{components.user_database ? '✓' : ''}</span></button>
+      {#each moduleOwners as owner}
+        <button type="button" disabled={blocked} on:click={() => dialog = owner} class="flex w-full items-center justify-between px-4 py-4 text-left text-sm text-gray-200 hover:bg-[#1a1a23] disabled:opacity-50"><span>{ownerLabel(owner)}</span><span class="text-gray-500" aria-hidden="true">›</span></button>
+      {/each}
+    </div>
+  </section>
+
+  <p class="text-sm text-gray-300">Estimated compressed size: {estimate?.estimated_compressed_display ?? 'Calculating…'}</p>
+  <div class="flex flex-wrap gap-3">
+    <button type="button" disabled={blocked || !configuration || !Object.values(components).some(Boolean)} on:click={createBackup} class="rounded-lg bg-purple-500/20 px-4 py-2.5 text-sm font-medium text-purple-100 disabled:opacity-50">{busy ? 'Working…' : 'Back up now'}</button>
+    <button id="setting-restore" type="button" disabled={blocked || !configuration} on:click={openRestore} class="rounded-lg border border-[#303040] px-4 py-2.5 text-sm text-gray-200 disabled:opacity-50">Restore now</button>
   </div>
-  <div class="grid gap-2 border-t border-[#242432] bg-black/10 px-4 py-3 text-[11px] sm:grid-cols-[auto_1fr]">
-    <span class="text-gray-600">Saved</span><span class="text-gray-400">{localRecovery?.count ?? 0} checkpoint{localRecovery?.count === 1 ? '' : 's'}{#if localRecovery?.latest_at} · latest {new Date(localRecovery.latest_at).toLocaleString()}{/if}</span>
-    {#if localRecovery?.preserved_count}
-      <span class="text-gray-600">Preserved history</span><span class="break-all text-gray-400">{localRecovery.preserved_count} legacy checkpoints · {localRecovery.preserved_directory}</span>
-    {/if}
-    <span class="text-gray-600">Location</span><span class="break-all font-mono text-gray-500">{localRecovery?.directory ?? 'Loading…'}</span>
-  </div>
+  {#if backupMessage}<p aria-live="polite" class="text-xs text-green-300">{backupMessage}</p>{/if}
+  {#if backupError}<p role="alert" class="text-xs text-red-300">{backupError}</p>{/if}
+  {#if message}<p role="status" class="break-all text-xs text-green-300">{message}</p>{/if}
+  {#if error}<p role="alert" class="text-xs text-red-300">{error}</p>{/if}
+
+  <details id="setting-local-recovery" class="rounded-xl border border-[#292938] bg-[#111118] p-4 text-xs text-gray-500">
+    <summary class="cursor-pointer text-gray-400">Backup details and recovery</summary>
+    <p class="mt-3">Manual backups are kept until you remove them. Automatic retention removes only unchanged automatic backups after a new backup is verified.</p>
+    <p class="mt-2">Original media, thumbnails and credentials are excluded. Browser preferences such as grid size, motion and sidebar position stay in this browser. The saved configuration copy is for reference and is not applied during restore.</p>
+    <p class="mt-2">Built-in user-data recovery remains active at startup and after successful sync. It is separate from automatic backups.</p>
+    <p class="mt-2">{localRecovery?.count ?? 0} checkpoints · {localRecovery?.retention ?? 5} retained{#if localRecovery?.latest_at} · latest {new Date(localRecovery.latest_at).toLocaleString()}{/if}</p>
+    {#if localRecovery?.preserved_count}<p class="mt-2 break-all">{localRecovery.preserved_count} legacy checkpoints · {localRecovery.preserved_directory}</p>{/if}
+    <p class="mt-2 break-all">{localRecovery?.directory}</p>
+    <button type="button" disabled={blocked || !configuration} on:click={createCheckpoint} class="mt-3 rounded-lg border border-[#303040] px-3 py-2 text-gray-300 disabled:opacity-50">Checkpoint now</button>
+  </details>
 </section>
 
-<section id="setting-backup" class="overflow-hidden rounded-2xl border border-amber-400/20 bg-[radial-gradient(circle_at_82%_0%,rgba(245,158,11,.16),transparent_38%),linear-gradient(135deg,#1d1810,#101017_72%)] p-5">
-  <div class="flex flex-wrap items-center justify-between gap-4"><div><h3 class="text-base font-bold text-amber-100">Manual metadata backup</h3><div class="mt-2 flex flex-wrap gap-2 text-[10px]"><span class="rounded-full bg-black/20 px-2.5 py-1 text-amber-100/65">No original images</span><span class="rounded-full bg-black/20 px-2.5 py-1 text-amber-100/65">No thumbnails</span><span class="rounded-full bg-black/20 px-2.5 py-1 text-amber-100/65">No credentials</span></div></div><button class="rounded-xl bg-amber-500/15 px-4 py-2 text-xs font-semibold text-amber-100 ring-1 ring-inset ring-amber-300/15 hover:bg-amber-500/25 disabled:opacity-40" type="button" disabled={busy || saving || toolRunning || !configuration} on:click={createBackup}>{busy ? 'Working…' : backupMessage ? 'Create another backup' : 'Create backup'}</button></div>
-  <div class="mt-4 rounded-xl border border-amber-300/10 bg-black/15 px-3 py-2.5"><div class="text-[10px] uppercase tracking-[0.14em] text-amber-100/45">Backup location</div><div class="mt-1 break-all font-mono text-xs text-amber-50/70">{destination || 'Loading…'}</div></div>
-  {#if backupMessage}<p aria-live="polite" class="mt-3 rounded-xl border border-green-400/20 bg-green-500/[0.08] px-4 py-3 text-xs leading-relaxed text-green-300">{backupMessage}</p>{/if}
-  {#if backupError}<p role="alert" class="mt-3 rounded-xl border border-red-400/20 bg-red-500/[0.08] px-4 py-3 text-xs leading-relaxed text-red-300">{backupError}</p>{/if}
-  <p class="mt-3 text-xs leading-relaxed text-gray-400">Disabled modules keep their backup eligibility. Unavailable data is omitted and reported after creation. Files origin notes are in the shared user database; their attachment bytes are a separate selection.</p>
-  <p class="mt-2 text-xs leading-relaxed text-gray-500">Original media, thumbnails, credentials and the rebuildable Files index are excluded. Browser preferences such as grid size, motion and sidebar position stay in this browser and are not backed up or restored. The configuration copy in a bundle is reference-only and is not applied during restore.</p>
-  <div class="mt-4 grid gap-2 sm:grid-cols-2">
-    {#each availableChoices as choice}
-      <button class="flex items-start gap-3 rounded-xl border p-3 text-left transition-colors {components[choice.key] ? 'border-amber-300/20 bg-amber-500/[0.07]' : 'border-white/5 bg-black/15'}" type="button" role="checkbox" disabled={busy || saving || toolRunning} aria-checked={components[choice.key]} on:click={() => toggleComponent(choice.key)}><span class="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded border {components[choice.key] ? 'border-amber-300/40 bg-amber-400/20 text-amber-100' : 'border-gray-700 text-transparent'}">✓</span><span><span class="text-sm font-semibold text-gray-200">{choice.label}<span class="ml-2 text-[10px] text-gray-400">{choice.owner}</span>{#if choice.recommended}<span class="ml-2 text-[9px] uppercase text-amber-300">recommended</span>{/if}</span><span class="mt-0.5 block text-xs leading-relaxed text-gray-500">{choice.description}</span><span class="mt-1 block text-[10px] text-gray-600">{estimate?.details[choice.key]?.display_size ?? 'Calculating…'} · {estimate?.details[choice.key]?.files ?? 0} files{#if estimate?.details[choice.key] && !estimate.details[choice.key].exists} · No data available{/if}</span></span></button>
-    {/each}
+{#if dialog}
+  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <div on:click|stopPropagation use:session.portal class="absolute inset-0 z-[5] flex items-center justify-center bg-black/65 p-5">
+    <div role="dialog" aria-modal="true" aria-label={dialog === 'restore' ? 'Restore backup' : `${ownerLabel(dialog)} backups`} tabindex="-1" use:focusDialog class="max-h-full w-full max-w-lg overflow-y-auto rounded-xl border border-[#343444] bg-[#111118] p-5 shadow-2xl">
+      <div class="mb-4 flex items-center justify-between gap-4"><h3 class="text-base font-semibold text-gray-200">{dialog === 'restore' ? 'Restore backup' : `${ownerLabel(dialog)} backups`}</h3><button type="button" aria-label="Close backup dialog" disabled={blocked} on:click={dismiss} class="rounded-lg px-2 py-1 text-gray-400">✕</button></div>
+      {#if dialog === 'restore'}
+        <select aria-label="Backup to restore" disabled={blocked} bind:value={selectedBackup} on:change={() => inspectSelected()} class="w-full rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200"><option value="">Choose a backup</option>{#each configuration?.backups ?? [] as backup}<option value={backup.name}>{new Date(backup.created_at).toLocaleString()} · {backup.display_size} · {backup.name}</option>{/each}</select>
+        {#if configuration?.backups.length === 0}<p class="mt-3 text-sm text-gray-400">No backups in this location.</p>{/if}
+        {#if inspected}
+          <p class="mt-4 text-xs text-gray-400">Included: {includedLabels.join(', ') || 'None'}</p>
+          {#if inspected.components.user_database}<p class="mt-3 text-sm text-gray-300">Replaces user data for Files and every module together.</p>{/if}
+          {#if inspected.omitted_components?.length}<p class="mt-3 text-xs text-gray-500">Not included: {inspected.omitted_components.map(componentLabel).join(', ')}</p>{/if}
+          <p class="mt-3 text-xs text-gray-500">A recovery copy of your current data will be preserved. Original media and browser preferences will stay unchanged.</p>
+        {/if}
+        {#if error}<p role="alert" class="mt-3 text-xs text-red-300">{error}</p>{/if}
+        {#if message}<p role="status" class="mt-3 break-all text-xs text-green-300">{message}</p>{/if}
+        <button type="button" disabled={blocked || !inspected} on:click={restoreSelected} class="mt-5 rounded-lg bg-purple-500/20 px-4 py-2 text-sm text-purple-100 disabled:opacity-50">Restore backup</button>
+      {:else}
+        <p class="mb-4 text-xs text-gray-500">Choose the data to include. Disabled modules remain eligible for backup.</p>
+        <div class="space-y-2">{#each availableChoices.filter(choice => choice.owner === dialog) as choice}
+          <button type="button" role="checkbox" aria-label={choice.label} aria-checked={components[choice.key]} disabled={blocked} on:click={() => toggleComponent(choice.key)} class="flex w-full items-start gap-3 rounded-lg border border-[#303040] p-3 text-left disabled:opacity-50"><span aria-hidden="true" class="grid h-5 w-5 shrink-0 place-items-center rounded border border-[#444454] text-gray-200">{components[choice.key] ? '✓' : ''}</span><span><span class="block text-sm text-gray-200">{choice.label}</span><span class="mt-1 block text-xs text-gray-500">{choice.description}</span>{#if configuration?.estimate.details[choice.key] && !configuration.estimate.details[choice.key].exists}<span class="mt-1 block text-xs text-gray-500">No data available</span>{/if}</span></button>
+        {/each}</div>
+        {#if backupError}<p role="alert" class="mt-3 text-xs text-red-300">{backupError}</p>{/if}
+        <button type="button" disabled={blocked} on:click={finishSelection} class="mt-5 rounded-lg border border-[#303040] px-4 py-2 text-sm text-gray-200 disabled:opacity-50">Done</button>
+      {/if}
+    </div>
   </div>
-  <div class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/10 bg-black/15 px-3 py-2.5"><div><div class="text-xs font-semibold text-amber-100/80">Estimated compressed size: {estimate?.estimated_compressed_display ?? 'Calculating…'}</div><div class="mt-0.5 text-[10px] text-amber-100/45">Raw selection {estimate?.display_size ?? '-'} · exact size is verified after creation</div></div><button class="rounded-lg border border-amber-300/15 px-3 py-2 text-xs text-amber-100/80 hover:bg-amber-500/10 disabled:opacity-40" type="button" disabled={busy || saving || toolRunning || !configuration} on:click={() => saveConfiguration()}>Save selection</button></div>
-</section>
-
-<section id="setting-restore" class="overflow-hidden rounded-xl border border-purple-400/15 bg-[#111118]">
-  <div class="border-b border-[#242432] p-4"><h4 class="text-sm font-semibold text-gray-200">Restore metadata backup</h4></div>
-  <div class="flex flex-wrap gap-2 p-4"><select class="min-w-0 flex-1 rounded-xl border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200" aria-label="Backup to restore" disabled={busy || saving || toolRunning} bind:value={selectedBackup} on:change={() => inspectSelected()}><option value="">Choose a backup</option>{#each configuration?.backups ?? [] as backup}<option value={backup.name}>{backup.name} · {backup.display_size}</option>{/each}</select><button class="rounded-xl border border-purple-400/20 px-3 py-2 text-xs text-purple-200 hover:bg-purple-500/10 disabled:opacity-40" type="button" disabled={!selectedBackup || busy || saving || toolRunning} on:click={restoreSelected}>Restore</button></div>
-  {#if inspected}<div class="border-t border-[#242432] bg-black/10 px-4 py-3 text-[11px] text-gray-500">Created {new Date(inspected.created_at).toLocaleString()} · format {inspected.format_version} · originals excluded · thumbnails excluded
-    <p class="mt-2">Included: {includedLabels.join(', ') || 'None'}</p>
-    {#if inspected.components.user_database}<p class="mt-2 text-amber-200">Restores the whole shared user database, including Files and every module’s user data.</p>{/if}
-    {#if inspected.omitted_components?.length}<p class="mt-2">Omitted when created: {inspected.omitted_components.map(componentLabel).join(', ')}</p>{/if}
-  </div>{/if}
-</section>
-
-{#if message}<p class="rounded-xl border border-green-400/15 bg-green-500/[0.05] px-4 py-3 text-xs leading-relaxed text-green-300">{message}</p>{/if}
-{#if error}<p class="rounded-xl border border-red-400/15 bg-red-500/[0.05] px-4 py-3 text-xs text-red-300">{error}</p>{/if}
+{/if}

@@ -34,7 +34,7 @@ class SuiteMaintenanceRouteTests(unittest.TestCase):
 
         shared = {(route.path, method) for owner in (backups, recovery, storage, cache)
                   for route in owner.router.routes for method in route.methods}
-        self.assertEqual(len(shared), 16)
+        self.assertEqual(len(shared), 17)
         module = {(route.path, method) for router in descriptor(Path("unused"), "test").routers()
                   for route in router.routes for method in route.methods}
         self.assertFalse(shared & module)
@@ -47,7 +47,7 @@ class SuiteMaintenanceRouteTests(unittest.TestCase):
             events = []
 
             @contextmanager
-            def guard(operation):
+            def guard(operation, **kwargs):
                 self.assertEqual(operation, label)
                 events.append("enter")
                 yield
@@ -70,7 +70,7 @@ class SuiteMaintenanceRouteTests(unittest.TestCase):
 
     def test_backup_errors_and_inspection_basename(self):
         @contextmanager
-        def guard(_name):
+        def guard(_name, **kwargs):
             yield
 
         for name, request, helper in (

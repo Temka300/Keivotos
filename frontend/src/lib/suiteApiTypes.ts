@@ -47,7 +47,18 @@ export interface BackupListItem {
   created_at: string;
 }
 
+export interface BackupOptions {
+  enabled: boolean;
+  location: 'default' | 'custom';
+  custom_location: string;
+  retention: number;
+  frequency_minutes: 15 | 30 | 45 | 60;
+}
+
 export interface BackupConfiguration {
+  options: BackupOptions;
+  default_destination: string;
+  automatic_status: { running: boolean; last_at: string | null; last_result: 'success' | 'failed' | null; last_success_at: string | null };
   destination: string;
   components: BackupComponents;
   estimate: BackupEstimate;

@@ -4,6 +4,7 @@ from __future__ import annotations
 import errno
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -34,9 +35,11 @@ from config import (
     get_backup_config,
     runtime_config_snapshot,
     save_config,
+    validate_backup_destination,
 )
 
 
+logger = logging.getLogger("keivotos.backups")
 BACKUP_FORMAT_VERSION = 1
 BACKUP_FORMAT = "danbooru-metadata-backup"
 BACKUP_SUFFIX = ".keivotosbk"
@@ -332,7 +335,11 @@ def backup_estimate(components: dict[str, Any] | None = None) -> dict[str, Any]:
 def backup_configuration() -> dict[str, Any]:
     config = get_backup_config()
     destination = Path(config["destination"]).expanduser()
+    from automatic_backups import automatic_backup_status
     return {
+        "options": config.get("options", {}),
+        "default_destination": config.get("default_destination", str(destination)),
+        "automatic_status": automatic_backup_status(),
         "destination": str(destination),
         "components": normalized_components(config["components"]),
         "estimate": backup_estimate(config["components"]),
@@ -340,11 +347,17 @@ def backup_configuration() -> dict[str, Any]:
     }
 
 
-def update_backup_configuration(components: dict[str, Any]) -> dict[str, Any]:
+def update_backup_configuration(components: dict[str, Any], options: dict[str, Any] | None = None) -> dict[str, Any]:
     selected = normalized_components(components)
     if not any(selected.values()):
         raise ValueError("Select at least one backup component")
-    save_config({"backup_components": {**get_backup_config()["components"], **selected}})
+    updates = {"backup_components": {**get_backup_config()["components"], **selected}}
+    if options is not None:
+        options = dict(options)
+        if options["location"] == "custom":
+            options["custom_location"] = str(validate_backup_destination(options["custom_location"]))
+        updates["backup_options"] = options
+    save_config(updates)
     return backup_configuration()
 
 
@@ -412,10 +425,12 @@ def _write_tree(archive: zipfile.ZipFile, source: Path, archive_root: str) -> in
     return written
 
 
-def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, Any]:
+def create_backup_bundle(components: dict[str, Any] | None = None, *, automatic_id: str | None = None) -> dict[str, Any]:
     if not _bundle_lock.acquire(blocking=False):
         raise RuntimeError("A backup or restore is already running")
     try:
+        if automatic_id is not None and not re.fullmatch(r"[a-f0-9]{32}", automatic_id):
+            raise ValueError("Invalid automatic backup identity")
         requested = normalized_components(components)
         selected = dict(requested)
         omitted = []
@@ -425,21 +440,23 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
                 omitted.append(key)
         if not any(selected.values()):
             raise ValueError("Select at least one backup component")
-        destination = Path(get_backup_config()["destination"]).expanduser()
+        destination = validate_backup_destination(get_backup_config()["destination"])
         destination.mkdir(parents=True, exist_ok=True)
         stamp = int(time.time())
-        final_path = destination / f"backup_{stamp}{BACKUP_SUFFIX}"
+        prefix = f"automatic_{automatic_id}" if automatic_id else f"backup_{stamp}"
+        final_path = destination / f"{prefix}{BACKUP_SUFFIX}"
         counter = 2
-        while final_path.exists():
-            final_path = destination / f"backup_{stamp}_{counter}{BACKUP_SUFFIX}"
+        while os.path.lexists(final_path) or os.path.lexists(final_path.with_name(final_path.name + ".partial")):
+            final_path = destination / f"{prefix}_{counter}{BACKUP_SUFFIX}"
             counter += 1
         partial_path = final_path.with_name(final_path.name + ".partial")
-        partial_path.unlink(missing_ok=True)
 
         # Stage beside the requested backup destination. The metadata source
         # only needs to be readable, and the staging files stay on the same
         # writable volume as the final bundle.
-        with _staging_directory(destination, ".danbooru-backup-staging") as temporary:
+        logger.info("Starting %s backup", "automatic" if automatic_id else "manual")
+        with tempfile.TemporaryDirectory(prefix=".keivotos-backup-", dir=destination) as temporary_name:
+            temporary = Path(temporary_name)
             staged: dict[str, Path] = {}
             with exclusive_database_access():
                 for key, (_archive_name, source) in COMPONENTS.items():
@@ -453,6 +470,7 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
                     staged["attachment_user"] = snapshot
 
             manifest: dict[str, Any] = {
+                "automatic_id": automatic_id,
                 "format": BACKUP_FORMAT,
                 "format_version": BACKUP_FORMAT_VERSION,
                 "created_at": datetime.now().astimezone().isoformat(),
@@ -465,7 +483,7 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
                 "credentials_included": False,
                 "files": [],
             }
-            with zipfile.ZipFile(partial_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, allowZip64=True) as archive:
+            with zipfile.ZipFile(partial_path, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=6, allowZip64=True) as archive:
                 for key, (archive_name, source) in COMPONENTS.items():
                     if not selected[key]:
                         continue
@@ -491,6 +509,7 @@ def create_backup_bundle(components: dict[str, Any] | None = None) -> dict[str, 
                     raise RuntimeError("Backup manifest verification failed")
             partial_path.replace(final_path)
 
+        logger.info("Backup verified: %s; omitted components: %s", final_path.name, ", ".join(omitted) or "none")
         return {
             "status": "created",
             "path": str(final_path),
