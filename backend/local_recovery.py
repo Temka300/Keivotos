@@ -128,7 +128,7 @@ def local_recovery_status() -> dict[str, Any]:
     checkpoints = _checkpoints()
     latest = checkpoints[0] if checkpoints else None
     return {
-        "enabled": True,
+        "enabled": False,
         "directory": str(CHECKPOINT_DIR),
         "retention": CHECKPOINT_RETENTION,
         "preserved_directory": str(PRESERVED_CHECKPOINT_DIR),

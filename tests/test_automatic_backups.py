@@ -216,3 +216,12 @@ def test_unwritable_status_does_not_retry_every_scheduler_tick(backup_home, monk
     schedule.tick(905)
     assert work.call_count == 1
     assert schedule.next_at == 1800
+
+
+def test_remembered_selection_survives_disabled_configuration(backup_home):
+    home, _, options = backup_home
+    options = {**options, 'remembered_components': {'sidecars': True, 'sidecar_history': False}}
+    bundles.update_backup_configuration({'user_database': True}, options)
+    loaded = json.loads((home / 'config.json').read_text())
+    assert loaded['backup_options']['remembered_components'] == options['remembered_components']
+    assert config.get_backup_options()['remembered_components'] == options['remembered_components']

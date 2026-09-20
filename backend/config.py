@@ -864,7 +864,9 @@ def get_backup_options() -> dict[str, Any]:
     custom = value.get("custom_location", "")
     custom = custom if isinstance(custom, str) else ""
     interval = value.get("frequency_minutes", 60)
-    return {"enabled": value.get("enabled") is True,
+    remembered = value.get("remembered_components", {})
+    remembered = {k: v for k, v in remembered.items() if isinstance(k, str) and type(v) is bool} if isinstance(remembered, dict) else {}
+    return {"remembered_components": remembered, "enabled": value.get("enabled") is True,
             "location": "custom" if value.get("location") == "custom" and custom else "default",
             "custom_location": custom,
             "retention": _bounded_int(value.get("retention"), 3, 1, 5),

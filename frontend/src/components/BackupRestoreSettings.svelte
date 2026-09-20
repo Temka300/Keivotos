@@ -3,7 +3,7 @@
   import { settingsError } from '../lib/http';
   import { getContext, onMount, tick } from 'svelte';
   import { suiteDataApi as api } from '../lib/suiteDataApi';
-  import { type BackupOptions, type BackupComponents, type BackupConfiguration, type BackupEstimate, type BackupManifest, type LocalRecoveryStatus } from '../lib/suiteApiTypes';
+  import { type BackupOptions, type BackupComponents, type BackupConfiguration, type BackupEstimate, type BackupManifest } from '../lib/suiteApiTypes';
   import { SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/suiteStores';
 
@@ -28,7 +28,6 @@
   let estimate: BackupEstimate | null = null;
   let selectedBackup = '';
   let inspected: BackupManifest | null = null;
-  let localRecovery: LocalRecoveryStatus | null = null;
   let busy = false;
   let saving = false;
   let estimateRequest = 0;
@@ -87,12 +86,8 @@
 
   async function load() {
     loading = true; error = '';
-    const results = await Promise.allSettled([
-      api.getBackupConfiguration().then(applyConfiguration),
-      api.getLocalRecovery().then(value => localRecovery = value),
-    ]);
-    const labels = ['Backup settings', 'Recovery checkpoints'];
-    results.forEach((result,index) => {if(result.status === 'rejected') error ||= settingsError(result.reason, labels[index]);});
+    try { applyConfiguration(await api.getBackupConfiguration()); }
+    catch (caught) { error = settingsError(caught, 'Backup settings'); }
     loading = false;
   }
 
@@ -106,22 +101,6 @@
   function selectAll(selected: boolean) {
     components = {...components, ...Object.fromEntries(availableChoices.filter(choice => choice.owner === dialog).map(choice => [choice.key, selected]))};
     void refreshEstimate();
-  }
-
-  async function createCheckpoint() {
-    if (blocked || !configuration) return;
-    busy = true;
-    error = '';
-    message = '';
-    try {
-      const result = await api.createLocalRecoveryCheckpoint();
-      localRecovery = result;
-      message = result.created ? 'Recovery checkpoint saved.' : 'Your recovery checkpoint is already up to date.';
-    } catch (caught) {
-      error = caught instanceof Error ? caught.message : 'Could not create a local recovery checkpoint.';
-    } finally {
-      busy = false;
-    }
   }
 
   async function refreshEstimate() {
@@ -236,7 +215,30 @@
     } finally { busy = false; }
   }
 
+  function ownerState(owner: string, selection: BackupComponents): boolean | 'mixed' {
+    const keys = availableChoices.filter(choice => choice.owner === owner);
+    const count = keys.filter(choice => selection[choice.key]).length;
+    return count === 0 ? false : count === keys.length ? true : 'mixed';
+  }
+
+  async function toggleOwner(owner: string) {
+    if (blocked) return;
+    const previous = {...components};
+    const previousOptions = options;
+    const keys = availableChoices.filter(choice => choice.owner === owner).map(choice => choice.key);
+    const enabled = keys.some(key => components[key]);
+    const remembered = {...options.remembered_components};
+    if (enabled) keys.forEach(key => remembered[key] = !!components[key]);
+    const hasMemory = keys.some(key => remembered[key]);
+    components = {...components, ...Object.fromEntries(keys.map(key => [key, !enabled && (hasMemory ? !!remembered[key] : true)]))};
+    options = {...options, remembered_components: remembered};
+    if (!await saveConfiguration(false)) {components = previous; options = previousOptions; await refreshEstimate();}
+  }
+
   async function finishSelection() {
+    const keys = availableChoices.filter(choice => choice.owner === dialog).map(choice => choice.key);
+    const source = keys.some(key => components[key]) ? components : configuration?.components;
+    if (source && keys.some(key => source[key])) options = {...options, remembered_components: {...options.remembered_components, ...Object.fromEntries(keys.map(key => [key, !!source[key]]))}};
     if (await saveConfiguration(false)) dialog = '';
   }
 
@@ -309,27 +311,21 @@
     <div class="backup-row"><label for="backup-frequency">Backup frequency</label><select id="backup-frequency" aria-label="Frequency" value={options.frequency_minutes} disabled={blocked} on:change={event => changeOption('frequency_minutes', Number(event.currentTarget.value) as BackupOptions['frequency_minutes'])}>{#each [15,30,45,60] as minutes}<option value={minutes}>{minutes === 60 ? '1 hour' : `${minutes} min`}</option>{/each}</select></div>
   </section>
   <section class="backup-card">
-    <div class="backup-heading"><div><h3>Backups</h3><p class="backup-hint">Choose what is included in the backup file.</p></div><button class="backup-button primary" disabled={blocked || !Object.values(components).some(Boolean)} on:click={createBackup}>{busy ? 'Working…' : 'Back up now'}</button></div>
-    <button class="backup-selection" role="checkbox" aria-label="User data" aria-checked={components.user_database} disabled={blocked} on:click={userDataToggle}><span class="backup-check" class:checked={components.user_database} aria-hidden="true">✓</span><span>User data</span><span class="backup-selection-summary">{components.user_database ? 'Included' : 'Not included'}</span></button>
+    <div class="backup-heading"><div><h3>Backups</h3></div><button class="backup-button primary" disabled={blocked || !Object.values(components).some(Boolean)} on:click={createBackup}>{busy ? 'Working…' : 'Back up now'}</button></div>
+    <button class="backup-selection" role="checkbox" aria-label="User data" aria-checked={components.user_database} disabled={blocked} on:click={userDataToggle}><span class="backup-check" class:checked={components.user_database} aria-hidden="true"></span><span>User data</span><span class="backup-selection-summary">{components.user_database ? 'Included' : 'Not included'}</span></button>
     {#each moduleOwners as owner}
-      <button class="backup-selection" aria-label={ownerLabel(owner)} disabled={blocked} on:click={() => dialog = owner}><span class="backup-check" class:checked={availableChoices.some(choice => choice.owner === owner && components[choice.key])} aria-hidden="true">✓</span><span>{ownerLabel(owner)}</span><span class="backup-selection-summary">{availableChoices.filter(choice => choice.owner === owner && components[choice.key]).length} selected</span><span class="backup-chevron" aria-hidden="true">›</span></button>
+      <div class="backup-selection module-selection">
+        <button class="module-checkbox" role="checkbox" aria-label={`${ownerLabel(owner)} backup inclusion`} aria-checked={ownerState(owner, components)} disabled={blocked} on:click={() => toggleOwner(owner)}><span class="backup-check" class:checked={ownerState(owner, components) !== false} class:mixed={ownerState(owner, components) === 'mixed'} aria-hidden="true"></span></button>
+        <button class="module-options" aria-label={ownerLabel(owner)} disabled={blocked} on:click={() => dialog = owner}><span>{ownerLabel(owner)}</span><span class="backup-selection-summary">{availableChoices.filter(choice => choice.owner === owner && components[choice.key]).length} selected</span><span class="backup-chevron" aria-hidden="true">›</span></button>
+      </div>
     {/each}
   </section>
-  <section id="setting-restore" class="backup-card backup-heading"><div><h3>Restore</h3><p class="backup-hint">Choose a backup file to inspect and restore.</p></div><button class="backup-button" disabled={blocked} on:click={openRestore}>Restore now</button></section>
-  <div class="backup-footer"><span>Estimated compressed size: {estimate?.estimated_compressed_display ?? 'Calculating…'}</span><span>Automatic backups run while {SUITE_NAME} is open.</span></div>
+  <section id="setting-restore" class="backup-card backup-heading"><div><h3>Restore</h3></div><button class="backup-button" disabled={blocked} on:click={openRestore}>Restore now</button></section>
+  <div class="backup-footer"><span>Estimated compressed size: {estimate?.estimated_compressed_display ?? 'Calculating…'}</span></div>
   {#if backupMessage}<p aria-live="polite" class="backup-notice success">{backupMessage}</p>{/if}
   {#if backupError}<p role="alert" class="backup-notice error">{backupError}</p>{/if}
   {#if message}<p role="status" class="backup-notice success">{message}</p>{/if}
-  <details id="setting-local-recovery" class="rounded-xl border border-[#292938] bg-[#111118] p-4 text-xs text-gray-500">
-    <summary class="cursor-pointer text-gray-400">Backup details and recovery</summary>
-    <p class="mt-3">Manual backups are kept until you remove them. Automatic retention removes only unchanged automatic backups after a new backup is verified.</p>
-    <p class="mt-2">Original media, thumbnails and credentials are excluded. Browser preferences such as grid size, motion and sidebar position stay in this browser. The saved configuration copy is for reference and is not applied during restore.</p>
-    <p class="mt-2">Built-in user-data recovery remains active at startup and after successful sync. It is separate from automatic backups.</p>
-    <p class="mt-2">{localRecovery?.count ?? 0} checkpoints · {localRecovery?.retention ?? 5} retained{#if localRecovery?.latest_at} · latest {new Date(localRecovery.latest_at).toLocaleString()}{/if}</p>
-    {#if localRecovery?.preserved_count}<p class="mt-2 break-all">{localRecovery.preserved_count} legacy checkpoints · {localRecovery.preserved_directory}</p>{/if}
-    <p class="mt-2 break-all">{localRecovery?.directory}</p>
-    <button type="button" disabled={blocked || !configuration} on:click={createCheckpoint} class="mt-3 rounded-lg border border-[#303040] px-3 py-2 text-gray-300 disabled:opacity-50">Checkpoint now</button>
-  </details>
+
   {/if}
 </div>
 
@@ -352,7 +348,7 @@
         {#if message}<p role="status" class="backup-notice success">{message}</p>{/if}
       {:else}
         <div class="backup-options">{#each availableChoices.filter(choice => choice.owner === dialog) as choice}
-          <button role="checkbox" aria-label={choice.label} aria-checked={components[choice.key]} disabled={blocked} on:click={() => toggleComponent(choice.key)}><span class="backup-check" class:checked={components[choice.key]} aria-hidden="true">✓</span><span><span class="option-name">{choice.label}</span><span class="backup-hint">{choice.description}</span></span></button>
+          <button role="checkbox" aria-label={choice.label} aria-checked={components[choice.key]} disabled={blocked} on:click={() => toggleComponent(choice.key)}><span class="backup-check" class:checked={components[choice.key]} aria-hidden="true"></span><span><span class="option-name">{choice.label}</span><span class="backup-hint">{choice.description}</span></span></button>
         {/each}</div>
         {#if backupError}<p role="alert" class="backup-notice error">{backupError}</p>{/if}
       {/if}
@@ -387,7 +383,12 @@
   .backup-hint{font-size:12px;color:#858899;line-height:1.5}
   h3+.backup-hint,h4+.backup-hint{margin-top:4px}
   .backup-selection{display:flex;align-items:center;gap:14px;min-height:54px;width:100%;text-align:left;padding:12px 17px;border-top:1px solid #232532}
-  .backup-check{height:18px;width:18px;flex-shrink:0;border-radius:4px;background:#15151e;border:1px solid #444454;color:transparent;display:grid;place-items:center;font-size:14px;font-weight:600}
+  .module-selection{padding:0;gap:0}
+  .module-checkbox{padding:18px 14px 18px 17px;display:flex;align-items:center}
+  .module-options{display:flex;align-items:center;gap:14px;flex:1;align-self:stretch;text-align:left;padding:12px 17px 12px 0}
+  .backup-check.checked::after{content:"";width:6px;height:10px;border:solid currentColor;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
+  .backup-check.mixed::after{width:10px;height:0;border-width:2px 0 0;transform:none}
+  .backup-check{height:18px;width:18px;flex-shrink:0;border-radius:4px;background:#15151e;border:1px solid #444454;color:transparent;display:grid;place-items:center;font-size:0;position:relative}
   .backup-check.checked{background:#4b3908;border-color:#8f6e11;color:#f1d66a}
   .backup-selection-summary{margin-left:auto;font-size:12px;color:#a2a4b6}
   .backup-chevron{font-size:24px;line-height:18px;color:#a2a4b6}

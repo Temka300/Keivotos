@@ -200,5 +200,22 @@ class LocalRecoveryTests(unittest.TestCase):
             connection.close()
 
 
+    def test_retired_api_and_status_preserve_existing_copies(self):
+        from fastapi import HTTPException
+        from routers.recovery import create_recovery_checkpoint
+        self.checkpoints.mkdir()
+        self.archive.mkdir()
+        shutil.copy2(self.user_db, self.checkpoints / 'user_historical.sqlite')
+        shutil.copy2(self.user_db, self.archive / 'user_preserved.sqlite')
+        before = {str(p): p.read_bytes() for p in self.temp.rglob('*') if p.is_file()}
+        status = local_recovery.local_recovery_status()
+        self.assertFalse(status['enabled'])
+        self.assertEqual(status['count'], 1)
+        with self.assertRaises(HTTPException) as caught:
+            create_recovery_checkpoint()
+        self.assertEqual(caught.exception.status_code, 410)
+        self.assertEqual(before, {str(p): p.read_bytes() for p in self.temp.rglob('*') if p.is_file()})
+
+
 if __name__ == "__main__":
     unittest.main()

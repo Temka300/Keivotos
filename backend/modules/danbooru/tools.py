@@ -34,7 +34,6 @@ from maintenance import (
     _tool_state_lock, _tool_operation_lock, active_tool_id, exclusive_tool_operation,
 )
 from modules.danbooru.credentials import credential_environment
-from local_recovery import create_local_recovery_checkpoint
 from modules.danbooru.folder_registry import registered_folder_rows
 from modules.danbooru.home import clear_home_caches
 from runtime_logging import redact_log_text
@@ -343,15 +342,6 @@ def _launch_tool(
                     post_step_output = redact_log_text(post_step_output.rstrip(), secrets)
                     lines.append(post_step_output + "\n")
                     _logger.info("%s: %s", tool_id, post_step_output)
-            if any("sync" in command for command in tool_commands):
-                try:
-                    checkpoint = create_local_recovery_checkpoint("sync")
-                    lines.append(checkpoint["message"].rstrip() + "\n")
-                    _logger.info("%s: %s", tool_id, checkpoint["message"])
-                except Exception as exc:  # noqa: BLE001 - sync itself succeeded.
-                    message = redact_log_text(f"Local recovery checkpoint failed: {exc}", secrets)
-                    lines.append(message + "\n")
-                    _logger.warning("%s: %s", tool_id, message)
             clear_home_caches()
             with _tool_state_lock:
                 _running_tasks[tool_id].update(

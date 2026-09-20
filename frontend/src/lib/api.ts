@@ -9,8 +9,6 @@ export const api = {
   putUserSetting: suiteDataApi.putUserSetting,
   getStorageConfiguration: suiteDataApi.getStorageConfiguration,
   getBackupConfiguration: suiteDataApi.getBackupConfiguration,
-  getLocalRecovery: suiteDataApi.getLocalRecovery,
-  createLocalRecoveryCheckpoint: suiteDataApi.createLocalRecoveryCheckpoint,
   configureBackups: suiteDataApi.configureBackups,
   estimateBackup: suiteDataApi.estimateBackup,
   createMetadataBackup: suiteDataApi.createMetadataBackup,

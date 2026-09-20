@@ -1,7 +1,7 @@
 """Application startup, background work, and shutdown.
 
 Suite-level startup always runs — user-database promotion, shared storage
-migrations, suite schema initialization, and the recovery checkpoint. Module
+migrations and suite schema initialization. Module
 storage migration and schema initialization run only for active owners. Then each
 **active** surface (the base plus every enabled module) is brought online
 generically through its descriptor: its folders are published, its startup hook
@@ -18,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -33,20 +33,10 @@ from config import (
     promote_user_database,
 )
 from database import get_user_db, init_data_db, init_user_db
-from local_recovery import create_local_recovery_checkpoint
 from module_descriptor import ModuleDescriptor
 from services.default_library import install_default_library
 
 logger = logging.getLogger(__name__)
-
-
-def run_user_recovery_checkpoint() -> None:
-    """Checkpoint the shared, irreplaceable user DB. Suite-level; always safe."""
-    try:
-        checkpoint = create_local_recovery_checkpoint("startup")
-        logger.info("Local recovery checkpoint: %s", checkpoint["message"])
-    except Exception as exc:  # noqa: BLE001 - recovery must not prevent startup.
-        logger.warning("Local recovery checkpoint failed: %s", exc)
 
 
 def install_first_run_default_library() -> None:
@@ -222,11 +212,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Suite-level and once-only; never touches an existing library.
     install_first_run_default_library()
 
-    # Protect the irreplaceable user DB regardless of which modules are enabled.
-    checkpoint_task = asyncio.create_task(
-        asyncio.to_thread(run_user_recovery_checkpoint),
-        name="suite-recovery-checkpoint",
-    )
     global module_runtime
     runtime = ModuleRuntime()
     module_runtime = runtime
@@ -263,6 +248,3 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         module_runtime = None
         for slug in list(runtime.tasks):
             await runtime.stop(slug)
-        checkpoint_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await checkpoint_task

@@ -49,7 +49,7 @@ class ModuleLifecycleTests(unittest.IsolatedAsyncioTestCase):
             lifecycle, "get_user_db", side_effect=lambda: nullcontext(self.connection),
         ))
         self.checkpoint = self.patches.enter_context(patch.object(
-            lifecycle, "create_local_recovery_checkpoint", return_value={"message": "fixture"},
+            __import__("local_recovery"), "create_local_recovery_checkpoint", side_effect=AssertionError("retired checkpoint called"),
         ))
 
     def registry(self, *modules: ModuleDescriptor, enabled: set[str]) -> None:
@@ -147,21 +147,11 @@ class ModuleLifecycleTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(lifecycle.module_runtime.status("files")["state"], "running")
                 self.assertEqual(lifecycle.module_runtime.status("optional")["state"], "failed")
 
-    async def test_recovery_runs_with_no_optional_module_enabled(self) -> None:
+    async def test_startup_does_not_create_standalone_checkpoints(self) -> None:
         self.registry(descriptor("files", base=True), enabled=set())
         async with lifecycle.lifespan(None):
-            recovery = next(t for t in asyncio.all_tasks() if t.get_name() == "suite-recovery-checkpoint")
-            await asyncio.wait_for(asyncio.shield(recovery), timeout=2)
-        self.checkpoint.assert_called_once_with("startup")
-
-    async def test_recovery_failure_does_not_abort_suite_lifetime(self) -> None:
-        self.checkpoint.side_effect = RuntimeError("fixture checkpoint failure")
-        self.registry(descriptor("files", base=True), enabled=set())
-        with self.assertLogs("lifecycle", level="WARNING") as logs:
-            async with lifecycle.lifespan(None):
-                recovery = next(t for t in asyncio.all_tasks() if t.get_name() == "suite-recovery-checkpoint")
-                await asyncio.wait_for(asyncio.shield(recovery), timeout=2)
-        self.assertTrue(any("fixture checkpoint failure" in message for message in logs.output))
+            self.assertFalse(any(t.get_name() == "suite-recovery-checkpoint" for t in asyncio.all_tasks()))
+        self.checkpoint.assert_not_called()
 
 
 class LiveModuleRuntimeTests(unittest.IsolatedAsyncioTestCase):

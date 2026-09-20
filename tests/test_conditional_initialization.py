@@ -35,12 +35,12 @@ if mode == 'preserved':
         conn.commit()
 async def run():
     async with lifecycle.lifespan(None):
-        task = next(t for t in asyncio.all_tasks() if t.get_name()=='suite-recovery-checkpoint')
-        await asyncio.wait_for(asyncio.shield(task), 5)
+        assert not any(t.get_name()=='suite-recovery-checkpoint' for t in asyncio.all_tasks())
         import local_recovery
         recovery = local_recovery.local_recovery_status()
         assert Path(recovery['directory']) == config.SUITE_HOME / 'local_recovery' / 'user_database'
-        assert recovery['count'] == 1
+        assert recovery['count'] == 0
+        assert recovery['enabled'] is False
         if mode in {'disabled', 'absent'}:
             assert not config.MODULE_HOME.exists()
         assert files.list_sources() == []

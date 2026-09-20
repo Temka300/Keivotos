@@ -48,6 +48,7 @@ export interface BackupListItem {
 }
 
 export interface BackupOptions {
+  remembered_components?: Record<string, boolean>;
   enabled: boolean;
   location: 'default' | 'custom';
   custom_location: string;

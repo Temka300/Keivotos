@@ -20,6 +20,7 @@ class BackupOptions(BaseModel):
     custom_location: str = Field(default="", max_length=4096)
     retention: int = Field(default=3, ge=1, le=5, strict=True)
     frequency_minutes: Literal[15, 30, 45, 60] = 60
+    remembered_components: dict[str, StrictBool] = Field(default_factory=dict)
 
 
 class BackupConfigurationUpdate(BaseModel):

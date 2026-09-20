@@ -89,14 +89,11 @@ class SuiteMaintenanceRouteTests(unittest.TestCase):
             # Resolution also supplies the current drive on Windows.
             inspect.assert_called_once_with(Path("/fixture/backups/fixture.zip").resolve())
 
-    def test_checkpoint_preserves_conflict_response(self):
-        with patch.object(recovery, "create_local_recovery_checkpoint", return_value={"created": True}) as create:
-            self.assertEqual(recovery.create_recovery_checkpoint(), {"created": True})
-            create.assert_called_once_with("manual")
-        with patch.object(recovery, "create_local_recovery_checkpoint", side_effect=OSError("fixture failure")):
-            with self.assertRaises(HTTPException) as caught:
-                recovery.create_recovery_checkpoint()
-            self.assertEqual((caught.exception.status_code, caught.exception.detail), (409, "fixture failure"))
+    def test_checkpoint_creation_is_retired(self):
+        with self.assertRaises(HTTPException) as caught:
+            recovery.create_recovery_checkpoint()
+        self.assertEqual(caught.exception.status_code, 410)
+        self.assertIn("Settings > Backup", caught.exception.detail)
 
     def test_cache_cleanup_clear_and_limit_forwarding(self):
         with patch.object(cache, "_valid_thumbnail_keys", return_value={"valid"}), patch.object(cache, "cleanup_thumbnail_cache", return_value={"removed": 2}) as cleanup:

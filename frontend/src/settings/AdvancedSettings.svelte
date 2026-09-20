@@ -3,21 +3,16 @@
   import { settingsError } from '../lib/http';
   import { onMount } from 'svelte';
   import { suiteDataApi } from '../lib/suiteDataApi';
-  import type { DiagnosticsPreferences, StorageConfiguration } from '../lib/suiteApiTypes';
+  import type { DiagnosticsPreferences } from '../lib/suiteApiTypes';
   let preferences: DiagnosticsPreferences | null = null;
-  let storage: StorageConfiguration | null = null;
   let busy = false;
   let error = '';
   let notice = '';
   let loading = false;
   async function load() {
     loading = true; error = '';
-    const results = await Promise.allSettled([
-      suiteDataApi.getDiagnostics().then(value => preferences = value),
-      suiteDataApi.getStorageConfiguration().then(value => storage = value),
-    ]);
-    const labels = ['Diagnostic preferences', 'Data and log locations'];
-    results.forEach((result,index) => {if(result.status === 'rejected') error ||= settingsError(result.reason, labels[index]);});
+    try { preferences = await suiteDataApi.getDiagnostics(); }
+    catch (caught) { error = settingsError(caught, 'Diagnostic preferences'); }
     loading = false;
   }
   onMount(() => {void load();});
@@ -42,10 +37,6 @@
   {#if error}<p role="alert" class="text-sm text-red-300">{error} <button class="ml-2 underline" disabled={loading || busy} on:click={load}>Retry</button></p>{/if}
   {#if notice}<p role="status" class="text-sm text-gray-400">{notice}</p>{/if}
   <section class="space-y-4 rounded-xl border border-[#292938] bg-[#111118] p-4">
-    <div><h3 class="text-sm font-medium text-gray-200">Logs and data</h3><p class="mt-1 text-xs text-gray-500">Application logs include job results, errors, and unhandled crashes. Request logs include API calls.</p></div>
-    {#if storage}
-      <div class="text-xs text-gray-400"><p>Data folder</p><p class="mt-1 break-all text-gray-500">{storage.suite_home}</p><p class="mt-3">Logs folder</p><p class="mt-1 break-all text-gray-500">{storage.log_dir}</p></div>
-    {/if}
     <div class="flex flex-wrap gap-2">
       {#each [{ target: 'data' as const, label: 'Open data folder' }, { target: 'logs' as const, label: 'Open logs folder' }, { target: 'runtime' as const, label: 'Open application log' }, { target: 'access' as const, label: 'Open request log' }] as item}
         <button type="button" disabled={busy} on:click={() => open(item.target)} class="rounded-lg border border-[#303040] px-3 py-2 text-xs text-gray-200 hover:bg-[#1a1a23] disabled:opacity-50">{item.label}</button>

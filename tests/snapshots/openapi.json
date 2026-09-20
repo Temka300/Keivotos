@@ -785,6 +785,13 @@
             "title": "Location",
             "type": "string"
           },
+          "remembered_components": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "title": "Remembered Components",
+            "type": "object"
+          },
           "retention": {
             "default": 3,
             "maximum": 5.0,
