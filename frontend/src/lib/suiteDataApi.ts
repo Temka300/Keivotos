@@ -1,7 +1,10 @@
 import { get, post, put } from './http';
-import type { UserSetting, StorageConfiguration, BackupComponents, BackupEstimateDetail, BackupEstimate, BackupListItem, BackupConfiguration, LocalRecoveryStatus, BackupResult, BackupManifest, BackupRestoreResult, ThumbnailCacheStatus } from './suiteApiTypes';
+import type { DiagnosticsPreferences, UserSetting, StorageConfiguration, BackupComponents, BackupEstimateDetail, BackupEstimate, BackupListItem, BackupConfiguration, LocalRecoveryStatus, BackupResult, BackupManifest, BackupRestoreResult, ThumbnailCacheStatus } from './suiteApiTypes';
 
 export const suiteDataApi = {
+getDiagnostics: () => get<DiagnosticsPreferences>('/diagnostics'),
+configureDiagnostics: (preferences: DiagnosticsPreferences) => put<DiagnosticsPreferences>('/diagnostics', preferences),
+openDiagnostics: (target: 'data' | 'logs' | 'runtime' | 'access') => post<{ status: string }>(`/diagnostics/open/${target}`),
 getUserSetting: (key: string) =>
     get<UserSetting>(`/user-settings/${encodeURIComponent(key)}`),
 

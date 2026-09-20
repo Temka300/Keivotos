@@ -105,3 +105,8 @@ export interface ThumbnailCacheStatus {
   tiers: Record<string, number>;
   limit_bytes: number;
 }
+
+export interface DiagnosticsPreferences {
+  verbose_logging: boolean;
+  show_experimental_modules: boolean;
+}

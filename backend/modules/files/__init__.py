@@ -24,6 +24,7 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
     return ModuleDescriptor(
         slug="files",
         name="Files",
+        description="Browse and organize your local files.",
         home=home,
         database=home / "files.sqlite",
         credentials=None,

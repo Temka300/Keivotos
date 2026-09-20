@@ -1,23 +1,17 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy, onMount } from 'svelte';
-  import { prepareSettingsPresentation } from '../lib/settingsPresentation';
-  import { loadSettingsModal, type SettingsModalModule } from '../lib/settingsLoader';
   import { SUITE_NAME, VERSION } from '../lib/product';
-  import { activeModule, enabledModules, suiteModules } from '../lib/suiteStores';
+  import { activeModule, enabledModules, suiteModules, settingsOpen, settingsInitialSection } from '../lib/suiteStores';
   import { suiteApi, type SuiteModule } from '../lib/suiteApi';
   import { activateModule, moduleUi } from '../modules/registry';
 
   const dispatch = createEventDispatcher<{ close: void }>();
   const DRAWER_EXIT_MS = 180;
-  let showSettings = false;
-  let settingsModule: SettingsModalModule | null = null;
   let closing = false;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
   let modules: SuiteModule[] = [];
-  let moduleBusy = false;
 
-  $: enabledList = modules.filter((mod) => mod.enabled);
-  $: availableList = modules.filter((mod) => mod.disableable && !mod.enabled);
+  $: enabledList = $suiteModules.filter((mod) => mod.enabled);
   $: footerActions = enabledList.flatMap((mod) => moduleUi(mod.slug).drawerActions);
 
   onMount(refreshModules);
@@ -26,56 +20,26 @@
     try {
       modules = await suiteApi.listModules();
       suiteModules.set(modules);
-      enabledModules.set(modules.filter((mod) => mod.enabled).map((mod) => mod.id));
+      enabledModules.set($suiteModules.filter((mod) => mod.enabled).map((mod) => mod.id));
     } catch (e) {
       console.error('Failed to load modules:', e);
     }
   }
 
   function close() {
-    if (showSettings || closing) return;
+    if ($settingsOpen || closing) return;
     closing = true;
     closeTimer = setTimeout(() => dispatch('close'), DRAWER_EXIT_MS);
   }
 
-  async function openSettings() {
-    settingsModule = settingsModule ?? await loadSettingsModal();
-    prepareSettingsPresentation();
-    showSettings = true;
+  function openSettings(section = 'appearance') {
+    settingsInitialSection.set(section);
+    settingsOpen.set(true);
   }
 
   function openModule(mod: SuiteModule) {
     activateModule(mod.slug);
     close();
-  }
-
-  async function enableModule(mod: SuiteModule) {
-    if (moduleBusy) return;
-    moduleBusy = true;
-    try {
-      await suiteApi.enableModule(mod.id);
-      await refreshModules();
-      openModule(mod); // switch straight into the newly added module
-    } catch (e) {
-      console.error('Failed to enable module:', e);
-    } finally {
-      moduleBusy = false;
-    }
-  }
-
-  async function disableModule(mod: SuiteModule, event: Event) {
-    event.stopPropagation();
-    if (moduleBusy) return;
-    moduleBusy = true;
-    try {
-      await suiteApi.disableModule(mod.id);
-      if ($activeModule === mod.id) activeModule.set('files');
-      await refreshModules();
-    } catch (e) {
-      console.error('Failed to disable module:', e);
-    } finally {
-      moduleBusy = false;
-    }
   }
 
   function runFooterAction(action: { run: () => void }) {
@@ -143,50 +107,11 @@
             </span>
           {/if}
           <span class="min-w-0 flex-1 truncate">{mod.name}</span>
-          {#if mod.disableable}
-            <span
-              role="button"
-              tabindex="0"
-              title="Disable module (your data is kept)"
-              class="px-1 text-gray-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
-              on:click={(e) => disableModule(mod, e)}
-              on:keydown={(e) => e.key === 'Enter' && disableModule(mod, e)}
-            >✕</span>
-          {/if}
+
         </button>
       {/each}
 
-      <!-- Available modules to add -->
-      {#if availableList.length}
-        <div class="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-600">Add a module</div>
-        {#each availableList as mod (mod.id)}
-          <div class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm">
-            <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#15151e]">
-              {#if moduleUi(mod.slug).iconSrc}
-                <img src={moduleUi(mod.slug).iconSrc ?? ''} alt="" class="h-6 w-6 rounded opacity-50" />
-              {:else}
-                <span class="text-gray-600">◇</span>
-              {/if}
-            </span>
-            <span class="min-w-0 flex-1 truncate text-gray-400">{mod.name}</span>
-            <button
-              class="rounded-md bg-purple-500/20 px-2.5 py-1 text-xs font-medium text-purple-100 transition-colors hover:bg-purple-500/30 disabled:opacity-40"
-              type="button"
-              on:click={() => enableModule(mod)}
-              disabled={moduleBusy}
-            >Enable</button>
-          </div>
-        {/each}
-      {/if}
-
-      <div class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-semibold text-gray-600">
-        <span class="grid h-9 w-9 place-items-center rounded-lg bg-[#15151e] text-gray-700">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        </span>
-        <span>Coming Soon</span>
-      </div>
+      <button type="button" class="w-full rounded-lg px-2 py-2 text-left text-sm text-gray-400 hover:bg-[#15151e]" on:click={() => openSettings('modules')}>Manage modules</button>
     </nav>
 
     <footer class="border-t border-[#292937] p-3">
@@ -209,7 +134,7 @@
           type="button"
           title="Settings"
           aria-label="Settings"
-          on:click={openSettings}
+          on:click={() => openSettings()}
         >
           <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.3 4.3c.4-1.8 2.9-1.8 3.4 0a1.7 1.7 0 002.6 1.1c1.5-.9 3.3.8 2.4 2.4a1.7 1.7 0 001.1 2.6c1.8.4 1.8 2.9 0 3.4a1.7 1.7 0 00-1.1 2.6c.9 1.5-.8 3.3-2.4 2.4a1.7 1.7 0 00-2.6 1.1c-.4 1.8-2.9 1.8-3.4 0a1.7 1.7 0 00-2.6-1.1c-1.5.9-3.3-.8-2.4-2.4a1.7 1.7 0 00-1.1-2.6c-1.8-.4-1.8-2.9 0-3.4a1.7 1.7 0 001.1-2.6c-.9-1.5.8-3.3 2.4-2.4a1.7 1.7 0 002.6-1.1z" />
@@ -220,12 +145,6 @@
     </footer>
   </aside>
 </div>
-
-{#if showSettings}
-  {#if settingsModule}
-    <svelte:component this={settingsModule.default} on:close={() => showSettings = false} />
-  {/if}
-{/if}
 
 <style>
   .app-drawer {

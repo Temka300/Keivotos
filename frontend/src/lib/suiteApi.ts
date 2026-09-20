@@ -10,6 +10,14 @@ export interface SuiteModule {
   disableable: boolean;
   is_base: boolean;
   api_prefix: string;
+  description: string;
+  experimental: boolean;
+}
+
+export interface ModuleStatus {
+  id: string;
+  state: 'disabled' | 'starting' | 'running' | 'stopping' | 'failed' | 'unavailable';
+  error: string | null;
 }
 
 export interface FolderChange {
@@ -110,6 +118,8 @@ async function putJson<T>(path: string, body: unknown): Promise<T> {
 }
 
 export const suiteApi = {
+  moduleStatus: (id: string) => getJson<ModuleStatus>(`/modules/${encodeURIComponent(id)}/status`),
+  retryModule: (id: string) => post<ModuleStatus>(`/modules/${encodeURIComponent(id)}/retry`),
   listModules: () => getJson<SuiteModule[]>('/modules'),
   enableModule: (id: string) => post<SuiteModule>(`/modules/${encodeURIComponent(id)}/enable`),
   disableModule: (id: string) => post<SuiteModule>(`/modules/${encodeURIComponent(id)}/disable`),

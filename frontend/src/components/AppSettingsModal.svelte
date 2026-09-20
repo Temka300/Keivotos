@@ -11,7 +11,8 @@
   const session = createSettingsSession(path => directoryPicker.pick(path));
   setContext(SETTINGS_SESSION, session);
   const dispatch = createEventDispatcher<{ close: void }>();
-  let selectedSection = 'appearance';
+  export let initialSection = 'appearance';
+  let selectedSection = initialSection;
   let settingsSearch = '';
   let searchHighlightTimer: ReturnType<typeof setTimeout> | null = null;
   const sectionGroups = settingsContributions.map(owner => owner.group);

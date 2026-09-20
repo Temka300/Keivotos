@@ -1326,6 +1326,25 @@
         "title": "DanbooruCredentialsUpdate",
         "type": "object"
       },
+      "DiagnosticsPreferences": {
+        "additionalProperties": false,
+        "properties": {
+          "show_experimental_modules": {
+            "title": "Show Experimental Modules",
+            "type": "boolean"
+          },
+          "verbose_logging": {
+            "title": "Verbose Logging",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "verbose_logging",
+          "show_experimental_modules"
+        ],
+        "title": "DiagnosticsPreferences",
+        "type": "object"
+      },
       "DuplicateGroup": {
         "properties": {
           "content_hash": {
@@ -3522,12 +3541,22 @@
             "title": "Api Prefix",
             "type": "string"
           },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
           "disableable": {
             "title": "Disableable",
             "type": "boolean"
           },
           "enabled": {
             "title": "Enabled",
+            "type": "boolean"
+          },
+          "experimental": {
+            "default": false,
+            "title": "Experimental",
             "type": "boolean"
           },
           "id": {
@@ -5808,6 +5837,103 @@
           }
         },
         "summary": "Check Danbooru Credentials"
+      }
+    },
+    "/api/diagnostics": {
+      "get": {
+        "operationId": "diagnostics_preferences_api_diagnostics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Diagnostics Preferences"
+      },
+      "put": {
+        "operationId": "update_diagnostics_api_diagnostics_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiagnosticsPreferences"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsPreferences"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Diagnostics"
+      }
+    },
+    "/api/diagnostics/open/{target}": {
+      "post": {
+        "operationId": "open_diagnostics_api_diagnostics_open__target__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "target",
+            "required": true,
+            "schema": {
+              "enum": [
+                "data",
+                "logs",
+                "runtime",
+                "access"
+              ],
+              "title": "Target",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Open Diagnostics"
       }
     },
     "/api/favorite-tag-combos": {

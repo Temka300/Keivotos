@@ -102,3 +102,6 @@ export const enabledModules = writable<string[]>([]);
 export const suiteModules = writable<SuiteModule[]>([]);
 export const motionPreference = persistedWritable<MotionPreference>(persistentStorageKey('motion-preference'), 'system', normalizeMotionPreference);
 export const interfaceScale = persistedWritable<InterfaceScale>(persistentStorageKey('interface-scale'), 'default', normalizeInterfaceScale);
+
+export const settingsOpen = writable(false);
+export const settingsInitialSection = writable("appearance");

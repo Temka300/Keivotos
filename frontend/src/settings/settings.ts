@@ -7,12 +7,16 @@ const contribution: SettingsContribution = {
   order: 0,
   component,
   sections: [
+    { id: 'modules', group: 'general', label: 'Modules', icon: 'grid' },
     { id: 'appearance', group: 'general', label: 'Appearance', icon: 'palette' },
     { id: 'startup', group: 'general', label: 'Startup', icon: 'window' },
     { id: 'storage', group: 'general', label: 'Storage', icon: 'folder' },
     { id: 'backup', group: 'general', label: 'Backup', icon: 'shield' },
+    { id: 'general-advanced', group: 'general', label: 'Advanced', icon: 'settings' },
   ],
   searchItems: [
+    { id: 'modules', section: 'modules', label: 'Modules', description: 'Enable modules and check their status.', keywords: ['enable', 'disable', 'retry'] },
+    { id: 'diagnostics', section: 'general-advanced', label: 'Logs and data', description: 'Open logs, the data folder, and choose diagnostic options.', keywords: ['crash', 'access', 'verbose', 'experimental'] },
     { id: 'motion', section: 'appearance', label: 'Interface motion', description: 'Follow the system or reduce interface animation.', keywords: ['animation', 'reduced motion', 'accessibility'] },
     { id: 'interface-scale', section: 'appearance', label: 'Interface scale', description: 'Use the default or a roomier readable scale.', keywords: ['density', 'comfortable', 'readability', 'text'] },
     { id: 'startup-module', section: 'startup', label: 'Startup destination', description: `Choose which surface ${SUITE_NAME} opens on launch.`, keywords: ['files', 'module', 'last used', 'launch', 'open'] },

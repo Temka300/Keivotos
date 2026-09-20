@@ -1,13 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import SearchHelpModal from './SearchHelpModal.svelte';
-  import { prepareSettingsPresentation } from '../../../lib/settingsPresentation';
-  import { loadSettingsModal, type SettingsModalModule } from '../../../lib/settingsLoader';
+  import { settingsOpen, settingsInitialSection } from '../../../lib/suiteStores';
+  import { loadSettingsModal } from '../../../lib/settingsLoader';
   import { activeCollectionId, selectedImageId, viewMode } from '../stores';
 
   let showMenu = false;
-  let showSettings = false;
-  let settingsModule: SettingsModalModule | null = null;
   let showSearchHelp = false;
 
   function toggleMenu() {
@@ -20,16 +18,15 @@
 
   onMount(() => {
     const preloadTimer = window.setTimeout(() => {
-      loadSettingsModal().then((module) => settingsModule = module).catch(console.error);
+      void loadSettingsModal().catch(console.error);
     }, 1_200);
     return () => window.clearTimeout(preloadTimer);
   });
 
-  async function openSettings() {
+  function openSettings() {
     showMenu = false;
-    settingsModule = settingsModule ?? await loadSettingsModal();
-    prepareSettingsPresentation();
-    showSettings = true;
+    settingsInitialSection.set('appearance');
+    settingsOpen.set(true);
   }
 
   function openSearchHelp() {
@@ -61,7 +58,6 @@
   function handleKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       closeMenu();
-      showSettings = false;
       showSearchHelp = false;
     }
   }
@@ -161,12 +157,6 @@
     </div>
   {/if}
 </div>
-
-{#if showSettings}
-  {#if settingsModule}
-    <svelte:component this={settingsModule.default} on:close={() => showSettings = false} />
-  {/if}
-{/if}
 
 {#if showSearchHelp}
   <SearchHelpModal on:close={() => showSearchHelp = false} />

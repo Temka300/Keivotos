@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ModulesSettings from './ModulesSettings.svelte';
+  import AdvancedSettings from './AdvancedSettings.svelte';
   import { getContext } from 'svelte';
   import { SETTINGS_SESSION, type SettingsSession } from '../lib/settingsSession';
   import { compactSegmentClass } from '../lib/settingsControls';
@@ -13,8 +15,7 @@
   const busyOwners = session.busyOwners;
   $: toolRunning = $busyOwners.size > 0;
   $: startupModuleOptions = [
-    { value: 'files' as StartupModule, label: 'Files' },
-    ...$suiteModules.filter(module => !module.is_base && $enabledModules.includes(module.id))
+    ...$suiteModules.filter(module => module.is_base || $enabledModules.includes(module.id))
       .map(module => ({ value: module.slug as StartupModule, label: module.name })),
     { value: 'last' as StartupModule, label: 'Last used' },
   ];
@@ -32,7 +33,11 @@
 </script>
 
 {#if !query}
-{#if selectedSection === 'appearance'}
+{#if selectedSection === 'modules'}
+  <ModulesSettings />
+{:else if selectedSection === 'general-advanced'}
+  <AdvancedSettings />
+{:else if selectedSection === 'appearance'}
           <div class="mx-auto max-w-3xl space-y-4">
             <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
               <div class="divide-y divide-[#22222e]">

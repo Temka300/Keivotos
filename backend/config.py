@@ -843,3 +843,7 @@ def set_attachment_store_root(path: str | None) -> None:
         save_config({"attachment_root": None})
     else:
         save_config({"attachment_root": str(Path(path).expanduser())})
+
+
+def get_diagnostics_preferences() -> dict[str, bool]:
+    return {key: _cfg.get(key) is True for key in ("verbose_logging", "show_experimental_modules")}

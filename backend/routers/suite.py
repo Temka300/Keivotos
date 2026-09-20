@@ -27,6 +27,8 @@ class SuiteModule(BaseModel):
     disableable: bool
     is_base: bool
     api_prefix: str
+    description: str = ""
+    experimental: bool = False
 
 
 class ModuleStatus(BaseModel):
@@ -154,6 +156,8 @@ def list_modules() -> list[SuiteModule]:
             disableable=descriptor.disableable,
             is_base=descriptor.is_base,
             api_prefix=descriptor.api_prefix,
+            description=descriptor.description,
+            experimental=descriptor.experimental,
         )
         for descriptor in suite_modules.descriptors()
     ]
@@ -196,6 +200,8 @@ def _set_enabled(module_id: str, enabled: bool) -> SuiteModule:
         disableable=descriptor.disableable,
         is_base=descriptor.is_base,
         api_prefix=descriptor.api_prefix,
+        description=descriptor.description,
+        experimental=descriptor.experimental,
     )
 
 

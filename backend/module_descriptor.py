@@ -56,6 +56,8 @@ class ModuleDescriptor:
     user_agent: str
     disableable: bool
     is_base: bool
+    description: str = ""
+    experimental: bool = False
     publish_hook: PublishHook | None = None
     adopt_hook: AdoptHook | None = None
     release_hook: ReleaseHook | None = None

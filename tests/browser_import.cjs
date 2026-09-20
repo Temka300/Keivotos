@@ -37,12 +37,17 @@ const report = { checks: [], errors: [], requests: [] };
  });
  const check=s=>{report.checks.push(s);console.log('PASS: '+s);};
  const dialog=page.getByRole('dialog',{name:'Settings',exact:true});
- const section=s=>dialog.getByRole('navigation',{name:'Settings sections'}).getByRole('button',{name:s,exact:true});
+ const section=s=>dialog.getByRole('navigation',{name:'Settings sections'}).getByRole('button',{name:s,exact:true}).last();
  async function open(){await page.getByRole('button',{name:'Open Keivotos menu',exact:true}).click();await page.getByRole('button',{name:'Settings',exact:true}).click();await dialog.waitFor();}
  try {
   await page.goto(config.url);
   await page.getByRole('button',{name:'Open Keivotos menu',exact:true}).click();
-  await page.getByRole('button',{name:'Enable',exact:true}).click();
+  await page.getByRole('button', {name:'Manage modules',exact:true}).click();
+  await page.getByRole('switch', {name:'Danbooru module',exact:true}).click();
+  await page.waitForFunction(() => document.querySelector('[data-module-id="danbooru"] [role="switch"]')?.getAttribute('aria-checked') === 'true');
+  await page.getByRole('button', {name:'Close settings',exact:true}).click();
+  await page.getByRole('dialog', {name:'Settings',exact:true}).waitFor({state:'detached'});
+  await page.locator('.app-drawer').getByRole('button', {name:'Danbooru',exact:true}).click();
   fixture=true;
   await page.getByRole('button',{name:'Close menu',exact:true}).waitFor({state:'hidden'});
   await open();await section('Library').click();

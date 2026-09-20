@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import quote, quote_plus
 
 from config import (
+    get_diagnostics_preferences,
     ACCESS_LOG_FILE,
     LOG_DIR,
     LOG_FILE_LIMIT_MB,
@@ -60,7 +61,7 @@ class _UsefulRuntimeAccessFilter(logging.Filter):
     _READ_METHODS = {"GET", "HEAD", "OPTIONS"}
 
     def filter(self, record: logging.LogRecord) -> bool:
-        if record.name != "uvicorn.access":
+        if get_diagnostics_preferences()["verbose_logging"] or record.name != "uvicorn.access":
             return True
         arguments = record.args
         if not isinstance(arguments, tuple) or len(arguments) < 5:

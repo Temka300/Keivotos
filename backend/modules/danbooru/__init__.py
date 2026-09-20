@@ -139,6 +139,7 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
     return ModuleDescriptor(
         slug="danbooru",
         name="Danbooru",
+        description="Browse your image library with Danbooru tags and metadata.",
         home=home,
         database=home / "danbooru.sqlite",
         credentials=home / "danbooru_credentials.json",

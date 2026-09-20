@@ -34,7 +34,7 @@ class SuiteMaintenanceRouteTests(unittest.TestCase):
 
         shared = {(route.path, method) for owner in (backups, recovery, storage, cache)
                   for route in owner.router.routes for method in route.methods}
-        self.assertEqual(len(shared), 13)
+        self.assertEqual(len(shared), 16)
         module = {(route.path, method) for router in descriptor(Path("unused"), "test").routers()
                   for route in router.routes for method in route.methods}
         self.assertFalse(shared & module)
