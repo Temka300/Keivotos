@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { accentStyle, settingsStyle, accents } from './lib/appearance';
   import { onMount } from 'svelte';
   import { get } from 'svelte/store';
   import './app.css';
@@ -21,6 +22,10 @@
   import { surfaceComponent } from './modules/surfaces';
 
   $: if (typeof document !== 'undefined') {
+    document.documentElement.dataset.accent = $accentStyle;
+    document.documentElement.dataset.settingsStyle = $settingsStyle;
+    document.documentElement.style.setProperty('--accent', accents[$accentStyle].color);
+    document.documentElement.style.setProperty('--accent-strong', accents[$accentStyle].strong);
     document.documentElement.dataset.motion = $motionPreference;
     document.documentElement.dataset.interfaceScale = $interfaceScale;
   }

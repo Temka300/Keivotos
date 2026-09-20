@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { accentStyle, accents, type AccentStyle } from '../lib/appearance';
   import ModulesSettings from './ModulesSettings.svelte';
   import AdvancedSettings from './AdvancedSettings.svelte';
   import { getContext } from 'svelte';
@@ -41,6 +42,12 @@
           <div class="mx-auto max-w-3xl space-y-4">
             <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
               <div class="divide-y divide-[#22222e]">
+                <div id="setting-accent-style" class="flex items-center justify-between gap-5 px-4 py-3">
+                  <label for="accent-style" class="text-sm font-medium text-gray-200">Accent style</label>
+                  <select id="accent-style" class="rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200" value={$accentStyle} on:change={event => accentStyle.set(event.currentTarget.value as AccentStyle)}>
+                    {#each Object.entries(accents) as [value, accent]}<option {value}>{accent.name}</option>{/each}
+                  </select>
+                </div>
                 <div id="setting-motion" class="flex items-center justify-between gap-5 px-4 py-3">
                   <div class="text-sm font-medium text-gray-200">Interface motion</div>
                   <div class="flex divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">{#each motionOptions as option}<button class={compactSegmentClass($motionPreference === option.value)} type="button" on:click={() => motionPreference.set(option.value)}>{option.label}</button>{/each}</div>

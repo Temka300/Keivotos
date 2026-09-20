@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { settingsStyle } from '../../../lib/appearance';
   import { danbooruApi as api } from '../api';
   import { SUITE_NAME } from '../../../lib/product';
   import { MODULE_DISPLAY_NAME } from '../identity';
@@ -196,10 +197,10 @@
     <img
       src="/logo.svg"
       alt=""
-      class="h-7 w-7 rounded-md shadow-[0_0_18px_rgba(168,85,247,0.22)] transition-transform group-hover:scale-105"
+      class="h-7 w-7 rounded-md shadow-[0_0_18px_var(--accent-glow)] transition-transform group-hover:scale-105"
       decoding="async"
     />
-    <span class="text-lg font-semibold {$viewMode === 'home' ? 'text-purple-100' : 'text-purple-300 group-hover:text-purple-100'}">
+    <span class="text-lg font-semibold {$settingsStyle === 'modern' ? 'text-gray-200 group-hover:text-white' : $viewMode === 'home' ? 'text-purple-100' : 'text-purple-300 group-hover:text-purple-100'}">
       {MODULE_DISPLAY_NAME}
     </span>
   </button>

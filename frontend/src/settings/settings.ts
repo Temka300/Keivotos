@@ -15,6 +15,8 @@ const contribution: SettingsContribution = {
     { id: 'general-advanced', group: 'general', label: 'Advanced', icon: 'settings' },
   ],
   searchItems: [
+    { id: 'accent-style', section: 'appearance', label: 'Accent style', description: 'Choose the interface accent color.', keywords: ['purple', 'pink', 'cyan', 'yellow', 'blue', 'green', 'orange', 'color'] },
+    { id: 'settings-style', section: 'general-advanced', label: 'Settings style', description: 'Modern or Legacy presentation.', keywords: ['theme', 'legacy', 'modern', 'colors'] },
     { id: 'modules', section: 'modules', label: 'Modules', description: 'Enable modules and check their status.', keywords: ['enable', 'disable', 'retry'] },
     { id: 'diagnostics', section: 'general-advanced', label: 'Logs and data', description: 'Open logs, the data folder, and choose diagnostic options.', keywords: ['crash', 'access', 'verbose', 'experimental'] },
     { id: 'motion', section: 'appearance', label: 'Interface motion', description: 'Follow the system or reduce interface animation.', keywords: ['animation', 'reduced motion', 'accessibility'] },

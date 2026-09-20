@@ -62,3 +62,81 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #4a4a5a;
 }
+
+/* Semantic tag colors are independent of the selectable interface accent. */
+@theme {
+  --color-copyright-50: oklch(97.7% 0.014 308.299);
+  --color-copyright-100: oklch(94.6% 0.033 307.174);
+  --color-copyright-200: oklch(90.2% 0.063 306.703);
+  --color-copyright-300: oklch(82.7% 0.119 306.383);
+  --color-copyright-400: oklch(71.4% 0.203 305.504);
+  --color-copyright-500: oklch(62.7% 0.265 303.9);
+  --color-copyright-600: oklch(55.8% 0.288 302.321);
+  --color-copyright-700: oklch(49.6% 0.265 301.924);
+  --color-copyright-800: oklch(43.8% 0.218 303.724);
+  --color-copyright-900: oklch(38.1% 0.176 304.987);
+  --color-copyright-950: oklch(29.1% 0.149 302.717);
+}
+
+:root {
+  --accent: #a855f7;
+  --accent-strong: #7e22ce;
+  --accent-light: color-mix(in srgb, var(--accent) 35%, white);
+}
+/* Existing purple interface utilities consume one shared palette. */
+html[data-settings-style='modern'] {
+  --color-purple-50: color-mix(in srgb, var(--accent) 5%, white);
+  --color-purple-100: color-mix(in srgb, var(--accent) 12%, white);
+  --color-purple-200: color-mix(in srgb, var(--accent) 25%, white);
+  --color-purple-300: color-mix(in srgb, var(--accent) 45%, white);
+  --color-purple-400: color-mix(in srgb, var(--accent) 75%, white);
+  --color-purple-500: var(--accent);
+  --color-purple-600: var(--accent-strong);
+  --color-purple-700: color-mix(in srgb, var(--accent-strong) 90%, black);
+  --color-purple-800: color-mix(in srgb, var(--accent-strong) 75%, black);
+  --color-purple-900: color-mix(in srgb, var(--accent-strong) 55%, black);
+  --color-purple-950: color-mix(in srgb, var(--accent-strong) 35%, black);
+}
+/* Historical section accents remain in Legacy. Modern uses the same control
+   palette; red/green status and destructive-action colors are not remapped. */
+html[data-settings-style='modern'] .settings-layer,
+html[data-settings-style='modern'] .backup-overlay {
+  --color-pink-100: color-mix(in srgb, var(--accent) 12%, white);
+  --color-pink-200: color-mix(in srgb, var(--accent) 25%, white);
+  --color-pink-300: color-mix(in srgb, var(--accent) 45%, white);
+  --color-pink-400: color-mix(in srgb, var(--accent) 75%, white);
+  --color-pink-500: color-mix(in srgb, var(--accent) 100%, white);
+  --color-pink-600: var(--accent-strong);
+  --color-cyan-100: color-mix(in srgb, var(--accent) 12%, white);
+  --color-cyan-200: color-mix(in srgb, var(--accent) 25%, white);
+  --color-cyan-300: color-mix(in srgb, var(--accent) 45%, white);
+  --color-cyan-400: color-mix(in srgb, var(--accent) 75%, white);
+  --color-cyan-500: color-mix(in srgb, var(--accent) 100%, white);
+  --color-cyan-600: var(--accent-strong);
+}
+html[data-settings-style='modern'] #setting-library-health,
+html[data-settings-style='modern'] #setting-storage-location {
+  background: #111118;
+  border-color: #292938;
+  border-radius: 12px;
+}
+html[data-settings-style='modern'] #setting-danbooru-access summary > div:first-child > span,
+html[data-settings-style='modern'] #setting-folder-sidecars > div > span {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--accent-light);
+}
+html[data-settings-style='legacy'] .backup-page,
+html[data-settings-style='legacy'] .backup-overlay {
+  --backup-accent: #f1d66a;
+}
+html[data-settings-style='legacy'] .backup-card {
+  border-color: #59491e;
+  background: linear-gradient(130deg, #211b12, #111118 75%);
+}
+
+:root {
+  --interface-accent: var(--accent);
+  --accent-glow: color-mix(in srgb, var(--interface-accent) 22%, transparent);
+  --accent-wash: color-mix(in srgb, var(--interface-accent) 18%, transparent);
+}
+html[data-settings-style='legacy'] { --interface-accent: #a855f7; }

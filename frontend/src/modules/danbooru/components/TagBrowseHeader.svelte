@@ -48,7 +48,7 @@
   const categoryColors: Record<string, string> = {
     artist: 'border-red-500/30 bg-red-500/20 text-red-200',
     character: 'border-green-500/30 bg-green-500/20 text-green-200',
-    copyright: 'border-purple-500/30 bg-purple-500/20 text-purple-200',
+    copyright: 'border-copyright-500/30 bg-copyright-500/20 text-copyright-200',
     general: 'border-blue-500/30 bg-blue-500/20 text-blue-200',
     meta: 'border-yellow-500/30 bg-yellow-500/20 text-yellow-200',
     unknown: 'border-gray-500/30 bg-gray-500/20 text-gray-300',

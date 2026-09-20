@@ -272,8 +272,8 @@
 
   @keyframes setting-highlight {
     0%, 20% {
-      box-shadow: 0 0 0 2px rgba(216, 180, 254, 0.78), 0 0 28px rgba(168, 85, 247, 0.22);
-      background-color: rgba(168, 85, 247, 0.11);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--interface-accent) 78%, transparent), 0 0 28px var(--accent-glow);
+      background-color: color-mix(in srgb, var(--interface-accent) 11%, transparent);
     }
     100% {
       box-shadow: 0 0 0 0 transparent;

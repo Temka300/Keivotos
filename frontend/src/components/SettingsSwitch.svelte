@@ -8,7 +8,7 @@
 </button>
 <style>
   .settings-switch{position:relative;width:46px;height:26px;flex-shrink:0;border-radius:999px;background:#2a2a3a;transition:background-color .15s;outline-offset:4px}
-  .settings-switch.checked{background:#a53cf0}
+  .settings-switch.checked{background:var(--accent, #a53cf0)}
   span{position:absolute;left:3px;top:3px;width:20px;height:20px;background:white;border-radius:50%;transition:transform .15s}
   .checked span{transform:translateX(20px)}
   button:disabled{opacity:.45;cursor:default}

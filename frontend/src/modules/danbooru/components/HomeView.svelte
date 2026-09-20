@@ -23,14 +23,14 @@
   const categoryColors: Record<string, string> = {
     artist: 'border-red-500/30 bg-red-500/15 text-red-200',
     character: 'border-green-500/30 bg-green-500/15 text-green-200',
-    copyright: 'border-purple-500/30 bg-purple-500/15 text-purple-200',
+    copyright: 'border-copyright-500/30 bg-copyright-500/15 text-copyright-200',
     general: 'border-blue-500/30 bg-blue-500/15 text-blue-200',
     meta: 'border-yellow-500/30 bg-yellow-500/15 text-yellow-200',
   };
   const categoryDotClasses: Record<string, string> = {
     artist: 'bg-red-400',
     character: 'bg-green-400',
-    copyright: 'bg-purple-400',
+    copyright: 'bg-copyright-400',
     general: 'bg-blue-400',
     meta: 'bg-yellow-400',
   };
@@ -39,7 +39,7 @@
     artist: 'border-red-400/35 bg-red-500/20 text-red-100',
     general: 'border-blue-400/35 bg-blue-500/20 text-blue-100',
     character: 'border-green-400/35 bg-green-500/20 text-green-100',
-    copyright: 'border-purple-400/35 bg-purple-500/20 text-purple-100',
+    copyright: 'border-copyright-400/35 bg-copyright-500/20 text-copyright-100',
   };
   const discoveryRailOrder = ['character', 'artist', 'copyright', 'favorites', 'general'];
   const spotlightCategories = ['character', 'copyright', 'artist', 'general'];
@@ -982,7 +982,7 @@
                     </div>
                   </button>
                 {:else}
-                  <div class="flex h-32 items-end bg-[radial-gradient(circle_at_20%_0%,rgba(168,85,247,.18),transparent_55%),#101018] p-4">
+                  <div class="flex h-32 items-end bg-[radial-gradient(circle_at_20%_0%,var(--accent-wash),transparent_55%),#101018] p-4">
                     <div><span class="h-1.5 w-1.5 rounded-full {categoryDotClasses[group.category] ?? 'bg-gray-400'}"></span><div class="mt-2 text-base font-semibold text-white">{categoryLabels[group.category] ?? group.category}</div></div>
                   </div>
                 {/if}

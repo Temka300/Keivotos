@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { settingsStyle, type SettingsStyle } from '../lib/appearance';
   import SettingsSwitch from '../components/SettingsSwitch.svelte';
   import { settingsError } from '../lib/http';
   import { onMount } from 'svelte';
@@ -42,6 +43,10 @@
         <button type="button" disabled={busy} on:click={() => open(item.target)} class="rounded-lg border border-[#303040] px-3 py-2 text-xs text-gray-200 hover:bg-[#1a1a23] disabled:opacity-50">{item.label}</button>
       {/each}
     </div>
+  </section>
+  <section id="setting-settings-style" class="flex items-center justify-between gap-5 rounded-xl border border-[#292938] bg-[#111118] px-4 py-3">
+    <label for="settings-style" class="text-sm text-gray-200">Settings style</label>
+    <select id="settings-style" class="rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200" value={$settingsStyle} on:change={event => settingsStyle.set(event.currentTarget.value as SettingsStyle)}><option value="modern">Modern</option><option value="legacy">Legacy</option></select>
   </section>
   {#if preferences}
     <section class="divide-y divide-[#22222e] overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">

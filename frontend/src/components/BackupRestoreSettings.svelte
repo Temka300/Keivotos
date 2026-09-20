@@ -98,11 +98,6 @@
     finally {busy = false;}
   }
 
-  function selectAll(selected: boolean) {
-    components = {...components, ...Object.fromEntries(availableChoices.filter(choice => choice.owner === dialog).map(choice => [choice.key, selected]))};
-    void refreshEstimate();
-  }
-
   async function refreshEstimate() {
     const request = ++estimateRequest;
     try {
@@ -315,7 +310,7 @@
     <button class="backup-selection" role="checkbox" aria-label="User data" aria-checked={components.user_database} disabled={blocked} on:click={userDataToggle}><span class="backup-check" class:checked={components.user_database} aria-hidden="true"></span><span>User data</span><span class="backup-selection-summary">{components.user_database ? 'Included' : 'Not included'}</span></button>
     {#each moduleOwners as owner}
       <div class="backup-selection module-selection">
-        <button class="module-checkbox" role="checkbox" aria-label={`${ownerLabel(owner)} backup inclusion`} aria-checked={ownerState(owner, components)} disabled={blocked} on:click={() => toggleOwner(owner)}><span class="backup-check" class:checked={ownerState(owner, components) !== false} class:mixed={ownerState(owner, components) === 'mixed'} aria-hidden="true"></span></button>
+        <button class="module-checkbox" role="checkbox" aria-label={`${ownerLabel(owner)} backup inclusion`} aria-checked={ownerState(owner, components)} disabled={blocked} on:click={() => toggleOwner(owner)}><span class="backup-check" class:checked={ownerState(owner, components) !== false} aria-hidden="true"></span></button>
         <button class="module-options" aria-label={ownerLabel(owner)} disabled={blocked} on:click={() => dialog = owner}><span>{ownerLabel(owner)}</span><span class="backup-selection-summary">{availableChoices.filter(choice => choice.owner === owner && components[choice.key]).length} selected</span><span class="backup-chevron" aria-hidden="true">›</span></button>
       </div>
     {/each}
@@ -331,7 +326,7 @@
 
 {#if dialog}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-  <div on:click|stopPropagation use:session.portal class="backup-overlay">
+  <div on:click|stopPropagation={(event) => { if (event.target === event.currentTarget) dismiss(); }} use:session.portal class="backup-overlay">
     <div role="dialog" aria-modal="true" aria-label={dialog === 'restore' ? 'Restore backup' : `${ownerLabel(dialog)} backups`} tabindex="-1" use:focusDialog class="backup-dialog">
       <header><div><h3>{dialog === 'restore' ? 'Restore backup' : `${ownerLabel(dialog)} backup options`}</h3><p class="backup-hint">{dialog === 'restore' ? 'Review before restoring.' : `Choose what to include from ${ownerLabel(dialog)}.`}</p></div><button class="backup-close" aria-label="Close backup dialog" disabled={blocked} on:click={dismiss}>×</button></header>
       <div class="backup-dialog-content">
@@ -354,7 +349,6 @@
       {/if}
       </div>
       <footer>
-        {#if dialog !== 'restore'}<div class="selection-actions"><button disabled={blocked} on:click={() => selectAll(true)}>Select all</button><button disabled={blocked} on:click={() => selectAll(false)}>Select none</button></div>{/if}
         <div class="backup-controls"><button class="backup-button" disabled={blocked} on:click={dismiss}>Cancel</button>{#if dialog === 'restore'}<button class="backup-button primary" disabled={blocked || !inspected} on:click={restoreSelected}>Restore</button>{:else}<button class="backup-button primary" disabled={blocked} on:click={finishSelection}>Done</button>{/if}</div>
       </footer>
     </div>
@@ -370,10 +364,10 @@
   .backup-segments{display:flex;border:1px solid #343749;border-radius:8px;overflow:hidden;background:#0d0e15}
   .backup-segments button{width:98px;min-height:32px;font-size:12px;color:#8e91a3}
   .backup-segments button+button{border-left:1px solid #2d3040}
-  .backup-segments .chosen{background:#351044;color:#f2e2ff;box-shadow:inset 0 0 0 1px #5f247e}
+  .backup-segments .chosen{background:color-mix(in srgb,var(--accent) 20%,#0d0e15);color:#ececf3;box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 40%,transparent)}
   .backup-button,select,.backup-close{border:1px solid #343749;border-radius:8px;background:#0d0e15;color:#ececf3;min-height:34px;padding:6px 14px;font-size:13px}
   .backup-button{white-space:nowrap;flex-shrink:0;min-width:110px}
-  .primary{background:#7d2dc2;border-color:#7d2dc2;color:#f7edff;font-weight:500}
+  .primary{background:var(--accent-strong, #7d2dc2);border-color:var(--accent-strong, #7d2dc2);color:#f7edff;font-weight:500}
   select{min-width:112px}
   #backup-frequency{width:156px}
   .location-controls{flex:0 1 512px}
@@ -387,9 +381,8 @@
   .module-checkbox{padding:18px 14px 18px 17px;display:flex;align-items:center}
   .module-options{display:flex;align-items:center;gap:14px;flex:1;align-self:stretch;text-align:left;padding:12px 17px 12px 0}
   .backup-check.checked::after{content:"";width:6px;height:10px;border:solid currentColor;border-width:0 2px 2px 0;transform:translateY(-1px) rotate(45deg)}
-  .backup-check.mixed::after{width:10px;height:0;border-width:2px 0 0;transform:none}
   .backup-check{height:18px;width:18px;flex-shrink:0;border-radius:4px;background:#15151e;border:1px solid #444454;color:transparent;display:grid;place-items:center;font-size:0;position:relative}
-  .backup-check.checked{background:#4b3908;border-color:#8f6e11;color:#f1d66a}
+  .backup-check.checked{background:color-mix(in srgb,var(--backup-accent,var(--accent)) 25%,#15151e);border-color:var(--backup-accent,var(--accent));color:var(--backup-accent,var(--accent))}
   .backup-selection-summary{margin-left:auto;font-size:12px;color:#a2a4b6}
   .backup-chevron{font-size:24px;line-height:18px;color:#a2a4b6}
   .backup-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:11px;color:#858899}
@@ -406,7 +399,6 @@
   .backup-options button+button{border-top:1px solid #292b39}
   .backup-options .backup-hint,.option-name{display:block}.option-name{font-size:14px;margin-bottom:3px}
   .backup-dialog footer{padding:16px 22px;border-top:1px solid #292b39;display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap}
-  .selection-actions{display:flex;gap:14px;margin-right:auto;font-size:12px;color:#a2a4b6}
   .restore-summary{padding:16px;border:1px solid #303242;border-radius:10px;background:#0d0e15}.restore-included{margin-top:14px;display:grid;gap:7px;font-size:13px}
   button:disabled,select:disabled{opacity:.45;cursor:default}
   button:focus-visible,select:focus-visible{outline:2px solid #b66aff;outline-offset:2px}

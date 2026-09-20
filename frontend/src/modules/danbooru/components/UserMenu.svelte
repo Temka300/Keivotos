@@ -67,7 +67,7 @@
 
 <div class="relative flex items-center gap-2">
   <button
-    class="group grid h-9 w-9 place-items-center overflow-hidden rounded-lg border border-[#343449] bg-[#15151f] transition-all hover:border-purple-400/70 hover:shadow-[0_0_18px_rgba(168,85,247,0.25)]"
+    class="group grid h-9 w-9 place-items-center overflow-hidden rounded-lg border border-[#343449] bg-[#15151f] transition-all hover:border-purple-400/70 hover:shadow-[0_0_18px_var(--accent-glow)]"
     type="button"
     title="User menu"
     aria-haspopup="menu"

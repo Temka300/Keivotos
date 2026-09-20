@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { settingsStyle } from '../../lib/appearance';
   import { getContext, onMount } from 'svelte';
   import { get } from 'svelte/store';
   import { SETTINGS_SESSION, type SettingsSession } from '../../lib/settingsSession';
@@ -234,7 +235,7 @@
                   <div class="flex items-center gap-2"><h4 class="text-sm font-semibold text-gray-200">Folders</h4><span class="rounded-full bg-cyan-500/10 px-2.5 py-1 text-[11px] text-cyan-300">{roleSources.length}</span></div>
                   <button class="rounded-lg border border-[#2a2a3a] bg-[#1e1e2e] px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-cyan-500/50 hover:text-white" type="button" on:click={openRoleManager}>Manage folders…</button>
                 </div>
-                <p class="mt-1 text-xs leading-relaxed text-gray-500">Folders registered with Files. Each is owned by Files or handed to a module; use <span class="text-gray-400">Manage folders…</span> to add, assign a role, rename, or hide one.</p>
+                <p class="mt-1 text-xs leading-relaxed text-gray-500">{#if $settingsStyle === 'modern'}Add folders and choose which module uses them.{:else}Folders registered with Files. Each is owned by Files or handed to a module; use <span class="text-gray-400">Manage folders…</span> to add, assign a role, rename, or hide one.{/if}</p>
                 {#if rescanMessage}<p class="mt-2 text-xs text-green-400">{rescanMessage}</p>{/if}
                 {#if rescanError}<p class="mt-2 text-xs text-red-400">{rescanError}</p>{/if}
               </div>
@@ -267,7 +268,7 @@
                   <p class="mt-0.5 text-xs leading-relaxed text-gray-500">Where images and videos you attach to a file's origin note are saved. Existing attachments stay where they are — this changes only where new ones go.</p>
                   {#if attachmentStore}
                     <div class="mt-3 flex divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">
-                      <button class={compactSegmentClass(attachmentModeView === 'managed')} type="button" on:click={() => (attachmentModeView = 'managed')} disabled={attachmentBusy}>Managed</button>
+                      <button class={compactSegmentClass(attachmentModeView === 'managed')} type="button" on:click={() => (attachmentModeView = 'managed')} disabled={attachmentBusy}>{$settingsStyle === 'modern' ? 'Default' : 'Managed'}</button>
                       <button class={compactSegmentClass(attachmentModeView === 'folder')} type="button" on:click={() => (attachmentModeView = 'folder')} disabled={attachmentBusy}>Choose a folder</button>
                     </div>
 

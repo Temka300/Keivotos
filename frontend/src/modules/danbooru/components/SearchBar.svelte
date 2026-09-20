@@ -181,7 +181,7 @@
   const categoryColors: Record<string, string> = {
     artist: 'text-red-400',
     character: 'text-green-400',
-    copyright: 'text-purple-400',
+    copyright: 'text-copyright-400',
     general: 'text-blue-400',
     meta: 'text-yellow-400',
   };
