@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+import http.client
 import json
 import os
 import re
@@ -10,11 +11,13 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import warnings
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing, nullcontext
 from datetime import datetime, timezone
@@ -33,6 +36,7 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from modules.danbooru.schema import create_data_indexes, ensure_data_schema  # noqa: E402
+from modules.danbooru.network import failure_kind, read_json, retry_delay
 from runtime_logging import redact_log_text  # noqa: E402
 from storage_layout import (  # noqa: E402
     LibraryRoot,
@@ -408,37 +412,11 @@ def request_json(
         token = base64.b64encode(f"{username}:{api_key}".encode("utf-8")).decode("ascii")
         headers["Authorization"] = f"Basic {token}"
 
-    for attempt in range(retries + 1):
-        request = urllib.request.Request(url, headers=headers)
-        context = f"GET {urllib.parse.urlsplit(endpoint).path} (attempt {attempt + 1}/{retries + 1})"
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-                print(f"Request: {context} succeeded", flush=True)
-                return payload
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404 and not_found_empty:
-                print(f"Request: {context}: HTTP 404, no matching post", flush=True)
-                return []
-            if exc.code == 429 and attempt < retries:
-                wait_seconds = min(60 * (attempt + 1), 300)
-                print(f"WARNING: {context}: HTTP 429, rate limited; retry in {wait_seconds}s", flush=True)
-                time.sleep(wait_seconds)
-                continue
-            print(f"ERROR: {context}: HTTP {exc.code}; request failed", flush=True)
-            raise
-        except urllib.error.URLError as exc:
-            detail = redact_log_text(str(exc.reason), (api_key or "",))
-            if attempt < retries:
-                print(f"WARNING: {context}: {detail}; retry in {2 * (attempt + 1)}s", flush=True)
-                time.sleep(2 * (attempt + 1))
-                continue
-            print(f"ERROR: {context}: {detail}; retries exhausted", flush=True)
-            raise
-        except (OSError, ValueError) as exc:
-            detail = redact_log_text(str(exc), (api_key or "",))
-            print(f"ERROR: {context}: {type(exc).__name__}: {detail}", flush=True)
-            raise
+    return read_json(
+        urllib.request.Request(url, headers=headers), timeout=30, retries=retries,
+        emit=lambda message: print(message, flush=True), secrets=(api_key or "",),
+        not_found_empty=not_found_empty,
+    )
 
 
 def first_post(data: Any) -> dict[str, Any] | None:
@@ -687,15 +665,29 @@ def write_sidecars(
     sidecar_dir = resolve_sidecar_dir(args)
     metadata_path = metadata_path_for(media_path, args.json_suffix, args.root, sidecar_dir)
     tags_path = metadata_path_for(media_path, args.tags_suffix, args.root, sidecar_dir)
+    if archive_dir is None and (metadata_path.exists() or tags_path.exists()):
+        archive_dir = sidecar_dir.parent / "sidecar_archive" / ("update-" + uuid.uuid4().hex)
     archived = archive_existing_sidecars(media_path, args, archive_dir)
 
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     tags_path.parent.mkdir(parents=True, exist_ok=True)
-    metadata_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False),
-        encoding="utf-8",
-    )
-    tags_path.write_text("\n".join(tags["all"]) + "\n", encoding="utf-8")
+    # JSON is the completion marker: replace it only after the tag file is ready.
+    for destination, contents in (
+        (tags_path, "\n".join(tags["all"]) + "\n"),
+        (metadata_path, json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False)),
+    ):
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=destination.parent,
+                                             prefix=".metadata-", suffix=".tmp", delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(contents)
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.replace(destination)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
     return archived
 
 
@@ -908,109 +900,139 @@ def run_backfill(args: argparse.Namespace) -> int:
 
     scan_paths = [path.resolve() for path in args.paths] if args.paths else default_backfill_paths(args.root)
     files = filter_media_files(media_files(scan_paths), args)
-    if args.limit:
-        files = files[: args.limit]
-
+    states = {}
+    if state_connection is not None:
+        states = {os.path.normcase(row[0]): row[1] for row in state_connection.execute(
+            "SELECT media_path, status FROM ingest_state")}
     need_processing = []
+    partial_payloads = {}
     skip_count = 0
     for media_path in files:
         metadata_path = existing_metadata_path_for(media_path, args.json_suffix, args.root, sidecar_dir)
+        previous = None
         if metadata_path is not None and not args.overwrite:
+            try:
+                candidate = json.loads(metadata_path.read_text(encoding="utf-8"))
+                if isinstance(candidate, dict) and candidate.get("metadata_pending") and candidate.get("post", {}).get("id"):
+                    previous = candidate
+            except (OSError, ValueError, AttributeError):
+                # An unreadable pre-existing sidecar is never overwritten by a routine run.
+                pass
+        state = states.get(os.path.normcase(str(media_path)))
+        if (metadata_path is not None and not args.overwrite and previous is None) or (
+            getattr(args, "retry_failed", False) and state == "no_match"
+        ):
             skip_count += 1
         else:
             need_processing.append(media_path)
+            if previous is not None:
+                partial_payloads[media_path] = previous
 
+    # A limit applies to work still needed, not already successful files.
+    if args.limit:
+        need_processing = need_processing[:args.limit]
     total = len(need_processing)
     print(f"Scanning {len(files)} media files ({total} need processing, {skip_count} already have metadata)")
     print("STAGE:metadata", flush=True)
     print(f"PROGRESS:0/{total}", flush=True)
-
     if args.dry_run:
         for media_path in need_processing[:20]:
             print("Would inspect:", media_path)
-        if len(need_processing) > 20:
-            print(f"... and {len(need_processing) - 20} more")
         if state_connection is not None:
             state_connection.close()
         return 0
 
-    matched = 0
-    skipped = skip_count
-    missed = 0
-    failed = 0
-    archived = 0
+    matched = missed = failed = partial = archived = consecutive_failures = 0
+    stopped = False
     archive_dir = None
     if args.overwrite and args.archive_replaced_sidecars:
         archive_dir = resolve_sidecar_archive_dir(args)
-        archive_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Archiving replaced sidecars to {archive_dir}")
-
-    index_context = open_index(args)
-    if index_context is None:
-        index_context = nullcontext(None)
-
+    index_context = open_index(args) or nullcontext(None)
     try:
         with index_context as index_file:
             for index, media_path in enumerate(need_processing, 1):
                 emit_file_status(media_path, "working", index, total)
-                print(f"[{index}/{total}] {media_path.name}")
+                print(f"[{index}/{total}] {media_path.name}", flush=True)
                 operation = "matching post"
+                network_error = None
                 try:
-                    post, matched_by, matched_md5 = find_post_by_md5(
-                        media_path,
-                        username,
-                        api_key,
-                        args.retries,
-                        args.delay,
-                        indexed_md5s.get(os.path.normcase(str(media_path))),
-                    )
+                    previous = partial_payloads.get(media_path)
+                    if previous:
+                        post = previous["post"]
+                        matched_by = previous.get("matched_by", "saved metadata")
+                        matched_md5 = previous.get("matched_md5", "")
+                    else:
+                        post, matched_by, matched_md5 = find_post_by_md5(
+                            media_path, username, api_key, args.retries, args.delay,
+                            indexed_md5s.get(os.path.normcase(str(media_path))))
                     if not post:
                         missed += 1
                         detail = "No Danbooru MD5 match"
                         update_metadata_ingest_state(state_connection, media_path, "no_match", detail)
                         emit_file_status(media_path, "no_match", index, total, detail)
-                        print("  no Danbooru md5 match")
                     else:
                         operation = "fetching extra metadata"
-                        post = add_extra_metadata(post, includes, username, api_key, args.retries, args.delay)
+                        pending_includes = previous["metadata_pending"]["includes"] if previous else includes
+                        try:
+                            post = add_extra_metadata(post, pending_includes, username, api_key, args.retries, args.delay)
+                        except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as exc:
+                            network_error = exc
+                            existing = existing_metadata_path_for(media_path, args.json_suffix, args.root, sidecar_dir)
+                            if previous is None and existing is not None:
+                                # Refresh must not erase old optional fields when enrichment fails.
+                                saved = json.loads(existing.read_text(encoding="utf-8"))
+                                post = {**saved.get("post", {}), **post}
                         operation = "preparing metadata"
-                        payload = build_payload(
-                            media_path,
-                            post,
-                            matched_by or "unknown",
-                            matched_md5 or "",
-                            indexed_md5s.get(os.path.normcase(str(media_path))),
-                        )
+                        payload = build_payload(media_path, post, matched_by or "unknown", matched_md5 or "",
+                                                indexed_md5s.get(os.path.normcase(str(media_path))))
+                        if previous:
+                            payload = {**previous, **payload}
+                        payload.pop("metadata_pending", None)
+                        detail = f"Post {post.get('id')} via {matched_by or 'unknown'}"
+                        status = "matched"
+                        if network_error is not None:
+                            status = "partial"
+                            detail += "; tags saved, extra details incomplete: " + failure_kind(network_error)
+                            payload["metadata_pending"] = {"includes": pending_includes, "error": failure_kind(network_error)}
                         operation = "saving metadata"
-                        archived += write_sidecars(media_path, payload, args, archive_dir)
+                        replacement_archive = archive_dir
+                        if previous and replacement_archive is None:
+                            replacement_archive = sidecar_dir.parent / "sidecar_archive" / ("retry-" + uuid.uuid4().hex)
+                        archived += write_sidecars(media_path, payload, args, replacement_archive)
                         if index_file:
                             index_file.write(json.dumps(payload, sort_keys=True, ensure_ascii=False) + "\n")
                             index_file.flush()
-                        matched += 1
-                        detail = f"Post {post.get('id')} via {matched_by or 'unknown'}"
-                        update_metadata_ingest_state(state_connection, media_path, "matched")
-                        emit_file_status(media_path, "matched", index, total, detail)
-                        print(f"  matched post {post.get('id')} by {matched_by}")
-                except Exception as exc:  # noqa: BLE001 - keep long batches moving.
+                        if status == "partial":
+                            partial += 1
+                        else:
+                            matched += 1
+                        update_metadata_ingest_state(state_connection, media_path, status, detail if status == "partial" else None)
+                        emit_file_status(media_path, status, index, total, detail)
+                except Exception as exc:  # Keep local failures separate from connection outages.
                     failed += 1
-                    detail = redact_log_text(f"{operation}: {exc}", (api_key or "",))
+                    network_error = exc if operation in {"matching post", "fetching extra metadata"} else None
+                    detail = redact_log_text(f"{operation}: {failure_kind(exc)}: {exc}", (api_key or "",))
                     update_metadata_ingest_state(state_connection, media_path, "error", detail)
                     emit_file_status(media_path, "error", index, total, detail)
                     print(f"ERROR: {media_path.name}: {detail}", file=sys.stderr, flush=True)
-                if state_connection is not None and (index % 25 == 0 or index == total):
+                kind = failure_kind(network_error) if network_error else None
+                consecutive_failures = consecutive_failures + 1 if kind in {"connection", "server", "rate limit"} else 0
+                if state_connection is not None:
                     state_connection.commit()
                 print(f"PROGRESS:{index}/{total}", flush=True)
+                long_server_wait = kind == "server" and retry_delay(network_error, 0) is None
+                if kind in {"authentication", "certificate", "rate limit"} or long_server_wait or consecutive_failures >= 3:
+                    stopped = True
+                    print(f"WARNING: Stopped network work after {kind} failures. Successful work is saved; retry unfinished items later.", flush=True)
+                    break
     finally:
         if state_connection is not None:
             state_connection.commit()
             state_connection.close()
-
-    print(
-        "Done: "
-        f"{matched} matched, {missed} missed, {skipped} skipped, {failed} failed, "
-        f"{archived} sidecars archived"
-    )
-    return 1 if failed else 0
+    print(f"Done: {matched} matched, {partial} incomplete, {missed} no match, {skip_count} skipped, {failed} failed, {archived} sidecars archived", flush=True)
+    if failed or partial or stopped:
+        return 3 if getattr(args, "report_incomplete", False) else 1
+    return 0
 
 
 def run_index(args: argparse.Namespace) -> int:
@@ -1766,18 +1788,20 @@ def run_import_finalize(args: argparse.Namespace) -> int:
     database_path = resolve_database_path(args.root, args.output)
     sidecar_dir = resolve_sidecar_dir(args)
     now = datetime.now(timezone.utc).isoformat()
+    incomplete = 0
     with closing(connect_sqlite_live(database_path)) as connection:
-        for row in connection.execute("SELECT media_path FROM ingest_state"):
+        for row in connection.execute("SELECT media_path, status FROM ingest_state"):
             if not _path_in_roots(row[0], roots):
                 continue
+            incomplete += row[1] in {"error", "partial"}
             media_path = Path(row[0])
             has_sidecar = existing_metadata_path_for(media_path, ".danbooru.json", args.root, sidecar_dir) is not None
             connection.execute(
                 """
                 UPDATE ingest_state
-                   SET phase=CASE WHEN status IN ('error', 'no_match') THEN phase ELSE 'finalized' END,
-                       status=CASE WHEN status IN ('error', 'no_match') THEN status ELSE 'done' END,
-                       error=CASE WHEN status IN ('error', 'no_match') THEN error ELSE NULL END,
+                   SET phase=CASE WHEN status IN ('error', 'no_match', 'partial') THEN phase ELSE 'finalized' END,
+                       status=CASE WHEN status IN ('error', 'no_match', 'partial') THEN status ELSE 'done' END,
+                       error=CASE WHEN status IN ('error', 'no_match', 'partial') THEN error ELSE NULL END,
                        metadata_at=CASE WHEN ? THEN COALESCE(metadata_at, ?) ELSE metadata_at END,
                        finalized_at=?
                  WHERE media_path=?
@@ -1785,7 +1809,7 @@ def run_import_finalize(args: argparse.Namespace) -> int:
                 (1 if has_sidecar else 0, now, now, row[0]),
             )
         connection.commit()
-    return 0
+    return 3 if incomplete and getattr(args, "report_incomplete", False) else 0
 
 
 def run_sync(args: argparse.Namespace) -> int:
@@ -2320,6 +2344,8 @@ def build_parser() -> argparse.ArgumentParser:
     backfill.add_argument("--limit", type=int, help="Only process the first N media files.")
     backfill.add_argument("--delay", type=float, default=1.0, help="Seconds to wait between Danbooru API requests.")
     backfill.add_argument("--retries", type=int, default=3)
+    backfill.add_argument("--retry-failed", action="store_true", help="Resume unfinished metadata; skip known misses and complete sidecars.")
+    backfill.add_argument("--report-incomplete", action="store_true", help="Return exit 3 for incomplete work so callers can still finalize successful files.")
     backfill.add_argument("--json-suffix", default=".danbooru.json")
     backfill.add_argument("--tags-suffix", default=".tags.txt")
     backfill.add_argument("--overwrite", action="store_true", help="Rewrite existing sidecars.")
@@ -2473,6 +2499,7 @@ def build_parser() -> argparse.ArgumentParser:
     import_finalize.add_argument("--output", type=path_arg, default=Path("data") / "danbooru.sqlite")
     import_finalize.add_argument("--json-suffix", default=".danbooru.json")
     import_finalize.add_argument("--no-raw-json", action="store_true")
+    import_finalize.add_argument("--report-incomplete", action="store_true", help="Return exit 3 when indexed items still need attention.")
     import_finalize.set_defaults(func=run_import_finalize)
 
     clean_sidecars = subparsers.add_parser(

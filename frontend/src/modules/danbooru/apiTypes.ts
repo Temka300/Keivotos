@@ -416,7 +416,7 @@ export interface AutomationStatus {
   candidate_count: number;
 }
 
-export type ImportPhase = 'discover' | 'enrich' | 'metadata' | 'finalize' | 'all';
+export type ImportPhase = 'discover' | 'enrich' | 'metadata' | 'finalize' | 'all' | 'update' | 'retry';
 
 export interface ImportPipelineStatus {
   phases: {
@@ -472,7 +472,7 @@ export interface ToolStatus {
 export interface ToolFileResult {
   filename: string;
   path: string;
-  status: 'matched' | 'no_match' | 'error';
+  status: 'matched' | 'partial' | 'no_match' | 'error';
   detail: string;
   index?: number;
   total?: number;

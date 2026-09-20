@@ -139,7 +139,7 @@ def _import_enrich_command(paths: list[str]) -> list[str]:
 def _import_finalize_command(paths: list[str]) -> list[str]:
     return [
         *_tool_base_command(),
-        "import-finalize", "--output", str(DATA_DB_PATH), "--no-raw-json",
+        "import-finalize", "--output", str(DATA_DB_PATH), "--no-raw-json", "--report-incomplete",
         *paths,
     ]
 
@@ -167,6 +167,7 @@ def _launch_tool(
     environment: dict[str, str] | None = None,
     stage_names: list[str] | None = None,
     on_success: Callable[[], str | None] | None = None,
+    incomplete_steps: set[int] | None = None,
 ) -> dict[str, Any]:
     with _tool_operation_lock:
         if maintenance._module_transition:
@@ -189,11 +190,12 @@ def _launch_tool(
                 "current_file_path": None,
                 "current_file_status": None,
                 "file_results": [],
-                "result_counts": {"matched": 0, "no_match": 0, "error": 0},
+                "result_counts": {"matched": 0, "partial": 0, "no_match": 0, "error": 0},
             }
 
     def _run():
         secrets: tuple[str, ...] = ()
+        incomplete = False
         try:
             child_environment = environment if environment is not None else credential_environment()
             username = child_environment.get("DANBOORU_USERNAME", "")
@@ -253,7 +255,11 @@ def _launch_tool(
                     if line.startswith("STAGE:"):
                         _logger.info("%s: stage %s", tool_id, line.strip().split(":", 1)[1])
                         with _tool_state_lock:
-                            _running_tasks[tool_id]["stage"] = line.strip().split(":", 1)[1].replace("_", " ").title()
+                            value = line.strip().split(":", 1)[1]
+                            _running_tasks[tool_id]["stage"] = {
+                                "discover": "Finding files", "enrich": "Reading file information",
+                                "metadata": "Fetching Danbooru tags", "finalize": "Updating library",
+                            }.get(value, value.replace("_", " ").title())
                         continue
                     if line.startswith("PROGRESS:"):
                         parts = line.strip().split(":", 1)[1].split("/")
@@ -285,7 +291,7 @@ def _launch_tool(
                             task["current_file"] = filename or None
                             task["current_file_path"] = str(event.get("path") or "") or None
                             task["current_file_status"] = status
-                            if status in {"matched", "no_match", "error"}:
+                            if status in {"matched", "partial", "no_match", "error"}:
                                 result = {
                                     "filename": filename,
                                     "path": str(event.get("path") or ""),
@@ -300,8 +306,8 @@ def _launch_tool(
                                     del results[:-250]
                                 counts = task.setdefault("result_counts", {})
                                 counts[status] = int(counts.get(status, 0)) + 1
-                        if status in {"matched", "no_match", "error"}:
-                            level = logging.ERROR if status == "error" else logging.INFO
+                        if status in {"matched", "partial", "no_match", "error"}:
+                            level = logging.ERROR if status == "error" else logging.WARNING if status == "partial" else logging.INFO
                             _logger.log(level, "%s: %s | %s | %s", tool_id, filename,
                                         status, str(event.get("detail") or ""))
                         continue
@@ -323,6 +329,10 @@ def _launch_tool(
                         _logger.info("%s: cancelled", tool_id)
                         return
                     if proc.returncode != 0:
+                        if proc.returncode == 3 and step_index in (incomplete_steps or set()):
+                            incomplete = True
+                            _logger.warning("%s: some items need attention; preserving successful results", tool_id)
+                            continue
                         task.update({"status": "error", "output": "".join(lines), "cancellable": False})
                         _logger.error("%s: %s failed (exit %s); results: %s", tool_id,
                                       stage, proc.returncode, task["result_counts"])
@@ -345,7 +355,7 @@ def _launch_tool(
             clear_home_caches()
             with _tool_state_lock:
                 _running_tasks[tool_id].update(
-                    {"status": "done", "output": "".join(lines), "cancellable": False}
+                    {"status": "partial" if incomplete else "done", "output": "".join(lines), "cancellable": False}
                 )
                 counts = dict(_running_tasks[tool_id]["result_counts"])
             _logger.info("%s: completed; results: %s", tool_id, counts)

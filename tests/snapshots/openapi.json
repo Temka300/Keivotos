@@ -2813,6 +2813,11 @@
             "title": "Confirm Network",
             "type": "boolean"
           },
+          "fetch_metadata": {
+            "default": false,
+            "title": "Fetch Metadata",
+            "type": "boolean"
+          },
           "folder": {
             "anyOf": [
               {
@@ -4045,6 +4050,7 @@
           "status": {
             "enum": [
               "matched",
+              "partial",
               "no_match",
               "error"
             ],

@@ -13,7 +13,8 @@ implementation behind its own boundary (SUITE_MODULE_CONTRACT.md section 13).
 from __future__ import annotations
 
 import base64
-import json
+import logging
+import http.client
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,6 +24,7 @@ from fastapi import HTTPException
 
 from config import DANBOORU_MODULE
 from modules.danbooru.credentials import effective_credentials
+from modules.danbooru.network import read_json
 from product import DISPLAY_NAME, VERSION
 
 
@@ -49,14 +51,16 @@ def danbooru_json(endpoint: str, params: dict[str, str | int], timeout: float = 
         token = base64.b64encode(f"{username}:{api_key}".encode("utf-8")).decode("ascii")
         headers["Authorization"] = f"Basic {token}"
     request = urllib.request.Request(url, headers=headers)
+    def emit(message: str) -> None:
+        level = logging.ERROR if message.startswith("ERROR:") else logging.WARNING if message.startswith("WARNING:") else logging.INFO
+        logging.getLogger("keivotos.danbooru.requests").log(level, "%s", message)
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+        return read_json(request, timeout=timeout, retries=2, emit=emit, secrets=(api_key or "",))
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             raise HTTPException(404, "Danbooru metadata not found") from exc
         raise HTTPException(502, f"Failed to fetch Danbooru metadata: {exc}") from exc
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+    except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as exc:
         raise HTTPException(502, f"Failed to fetch Danbooru metadata: {exc}") from exc
 
 

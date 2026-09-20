@@ -148,11 +148,35 @@ print(json.dumps([str(runtime), str(access)]))
                     with self.assertRaises(urllib.error.HTTPError):
                         pipeline.request_json("/posts.json", {}, None, None, 1)
                 self.assertIn(f"HTTP {status}", output.getvalue())
-                self.assertEqual(request.call_count, 2 if status == 429 else 1)
+                self.assertEqual(request.call_count, 2 if status in (429, 500) else 1)
                 if status == 429:
                     sleep.assert_called_once_with(60)
+                elif status == 500:
+                    sleep.assert_called_once_with(2)
                 else:
                     sleep.assert_not_called()
+
+    def test_unhandled_thread_failure_reaches_runtime_log(self):
+        with tempfile.TemporaryDirectory() as directory:
+            code = """
+import json, logging, sys, threading
+sys.path.insert(0, sys.argv[1])
+from runtime_logging import configure_runtime_logging
+runtime, access = configure_runtime_logging()
+def fail():
+    raise RuntimeError('background fixture failed')
+worker = threading.Thread(target=fail, name='fixture-worker')
+worker.start()
+worker.join()
+logging.shutdown()
+print(json.dumps(str(runtime)))
+"""
+            result = subprocess.run([sys.executable, "-c", code, str(ROOT / "backend")],
+                env={**os.environ, "KEIVOTOS_HOME": directory}, text=True, capture_output=True, check=True)
+            saved = Path(json.loads(result.stdout)).read_text()
+            self.assertIn("Unhandled background error in fixture-worker", saved)
+            self.assertIn("background fixture failed", saved)
+            self.assertIn("Traceback", saved)
 
     def test_redaction_preserves_useful_error_details(self):
         result = redact_log_text(

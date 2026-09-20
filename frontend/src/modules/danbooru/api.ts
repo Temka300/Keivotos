@@ -265,12 +265,13 @@ getImportPipeline: () => get<ImportPipelineStatus>('/import-pipeline'),
 getImportTask: (afterIndex?: number) =>
     get<ToolStatus>('/import-pipeline/task', { after_index: afterIndex }),
 
-runImport: (phase: ImportPhase, folder?: string, limit?: number, confirmNetwork = false) =>
+runImport: (phase: ImportPhase, folder?: string, limit?: number, confirmNetwork = false, fetchMetadata = false) =>
     post<ToolRunResult>('/import-pipeline/run', {
       phase,
       folder: folder || null,
       limit: limit && limit > 0 ? limit : null,
       confirm_network: confirmNetwork,
+      fetch_metadata: fetchMetadata,
     }),
 
 cancelImport: () => post<ToolRunResult>('/import-pipeline/cancel'),

@@ -94,7 +94,7 @@ def _import_phase_counts() -> dict[str, int]:
                 COALESCE(SUM(enriched_at IS NOT NULL), 0) AS enriched,
                 COALESCE(SUM(metadata_at IS NOT NULL), 0) AS metadata,
                 COALESCE(SUM(finalized_at IS NOT NULL), 0) AS finalized,
-                COALESCE(SUM(status = 'error'), 0) AS errors,
+                COALESCE(SUM(status IN ('error', 'partial')), 0) AS errors,
                 COALESCE(SUM(status = 'no_match'), 0) AS no_match
             FROM ingest_state
             """
@@ -126,30 +126,36 @@ def import_pipeline_task(after_index: int | None = Query(None, ge=0)):
 @router.post("/api/import-pipeline/run")
 def run_import(request: ImportRunRequest):
     phase = request.phase.strip().lower()
-    if phase not in {"discover", "enrich", "metadata", "finalize", "all"}:
+    if phase not in {"discover", "enrich", "metadata", "finalize", "all", "update", "retry"}:
         raise HTTPException(400, "Unknown import phase")
-    if phase in {"metadata", "all"} and not request.confirm_network:
+    needs_network = phase in {"metadata", "all", "retry"} or (phase == "update" and request.fetch_metadata)
+    if needs_network and not request.confirm_network:
         raise HTTPException(400, "Confirm the Danbooru metadata phase before starting network requests")
     paths = [str(_resolve_tool_folder(request.folder))] if request.folder else _sync_scan_paths()
     if not paths:
         raise HTTPException(400, "Register a media folder first")
     phase_commands = {
-        "discover": (_import_discover_command(paths), "Phase 1 · Discover paths"),
-        "enrich": (_import_enrich_command(paths), "Phase 2 · Hash and inspect"),
+        "discover": (_import_discover_command(paths), "Finding files"),
+        "enrich": (_import_enrich_command(paths), "Reading file information"),
         "metadata": ([
             *_tool_base_command(), "backfill", "--delay", "1.0",
             "--use-indexed-md5", "--database", str(DATA_DB_PATH),
+            "--report-incomplete",
+            *(["--retry-failed"] if phase == "retry" else []),
             *(["--limit", str(request.limit)] if request.limit else []),
             *paths,
-        ], "Phase 3 · Match Danbooru metadata"),
-        "finalize": (_import_finalize_command(paths), "Phase 4 · Finalize index"),
+        ], "Fetching Danbooru tags"),
+        "finalize": (_import_finalize_command(paths), "Updating library"),
     }
     ordered = ["discover", "enrich", "metadata", "finalize"] if phase == "all" else [phase]
+    if phase in {"update", "retry"}:
+        ordered = ["discover", "enrich", *(["metadata"] if needs_network else []), "finalize"]
     return _launch_tool(
         "import",
         [phase_commands[item][0] for item in ordered],
         environment=credential_environment(),
         stage_names=[phase_commands[item][1] for item in ordered],
+        incomplete_steps={index for index, item in enumerate(ordered, 1) if item in {"metadata", "finalize"}},
     )
 
 

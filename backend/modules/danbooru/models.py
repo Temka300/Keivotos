@@ -459,6 +459,7 @@ class ImportRunRequest(BaseModel):
     folder: str | None = None
     limit: int | None = Field(default=None, ge=1, le=1000000)
     confirm_network: bool = False
+    fetch_metadata: bool = False
 
 
 class DanbooruCredentialStatus(BaseModel):
@@ -485,7 +486,7 @@ class ToolRunResult(BaseModel):
 class ToolFileResult(BaseModel):
     filename: str
     path: str
-    status: Literal["matched", "no_match", "error"]
+    status: Literal["matched", "partial", "no_match", "error"]
     detail: str = ""
     index: int | None = None
     total: int | None = None

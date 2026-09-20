@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
+import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from urllib.parse import quote, quote_plus
@@ -34,6 +36,22 @@ def redact_log_text(value: str, secrets: tuple[str, ...] = ()) -> str:
 class _SafeFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         return redact_log_text(super().format(record))
+
+
+def _unhandled_exception(kind, value, traceback) -> None:
+    if issubclass(kind, KeyboardInterrupt):
+        sys.__excepthook__(kind, value, traceback)
+        return
+    logging.getLogger("keivotos.crash").critical(
+        "Unhandled application error", exc_info=(kind, value, traceback))
+
+
+def _unhandled_thread_exception(arguments) -> None:
+    if arguments.exc_type is SystemExit:
+        return
+    logging.getLogger("keivotos.crash").critical(
+        "Unhandled background error in %s", arguments.thread.name if arguments.thread else "unknown thread",
+        exc_info=(arguments.exc_type, arguments.exc_value, arguments.exc_traceback))
 
 
 class _UsefulRuntimeAccessFilter(logging.Filter):
@@ -117,4 +135,6 @@ def configure_runtime_logging() -> tuple[Path, Path]:
     access_logger.addHandler(console)
     access_logger.addHandler(runtime_handler)
     access_logger.addHandler(access_handler)
+    sys.excepthook = _unhandled_exception
+    threading.excepthook = _unhandled_thread_exception
     return RUNTIME_LOG_FILE, ACCESS_LOG_FILE

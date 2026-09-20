@@ -1,31 +1,31 @@
 <script lang="ts">
-  import { onDestroy, onMount } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import { suiteDataApi } from '../../../lib/suiteDataApi';
   import { danbooruApi } from '../api';
-  import { type AutomationStatus, type ImportPhase, type ImportPipelineStatus, type ToolFileResult } from '../apiTypes';
+  import { imageRefreshToken } from '../stores';
+  import { type AutomationStatus, type ToolFolder, type ImportPipelineStatus, type ToolFileResult } from '../apiTypes';
   import { type StorageConfiguration } from '../../../lib/suiteApiTypes';
 
   export let toolRunning = false;
   export let surface: 'storage' | 'metadata' = 'metadata';
+
+  const dispatch = createEventDispatcher<{ status: string }>();
+  $: if (pipeline) dispatch('status', pipeline.task.status);
 
   let storage: StorageConfiguration | null = null;
   let pipeline: ImportPipelineStatus | null = null;
   let automation: AutomationStatus | null = null;
   let intervalMinutes = 15;
   let metadataLimit = 0;
+  let folders: ToolFolder[] = [];
+  let folder = '';
+  let fetchMetadata = false;
+  let destroyed = false;
   let busy = false;
   let message = '';
   let error = '';
   let pollTimer: ReturnType<typeof setTimeout> | null = null;
   let pollRequestActive = false;
-
-  type PhaseCountKey = 'discovered' | 'enriched' | 'metadata' | 'finalized';
-  const phases: { id: Exclude<ImportPhase, 'all'>; counter: PhaseCountKey; number: number; label: string; description: string; network?: boolean }[] = [
-    { id: 'discover', counter: 'discovered', number: 1, label: 'Discover', description: 'Inventory paths, sizes, and dates without opening image contents.' },
-    { id: 'enrich', counter: 'enriched', number: 2, label: 'Enrich locally', description: 'Hash once and read dimensions with three bounded workers.' },
-    { id: 'metadata', counter: 'metadata', number: 3, label: 'Match metadata', description: 'Use stored hashes for rate-limited Danbooru lookups.', network: true },
-    { id: 'finalize', counter: 'finalized', number: 4, label: 'Finalize', description: 'Import sidecars, reconcile removals, and finish the incremental index.' },
-  ];
 
   $: importRunning = pipeline?.task.status === 'running' || pipeline?.task.status === 'cancelling';
   $: recentResults = [...(pipeline?.task.file_results ?? [])].reverse();
@@ -40,7 +40,7 @@
   }
 
   function schedulePipelinePoll(delay = 1200) {
-    if (surface !== 'metadata' || pollTimer || !pipelineTaskRunning()) return;
+    if (destroyed || surface !== 'metadata' || pollTimer || !pipelineTaskRunning()) return;
     pollTimer = setTimeout(() => {
       pollTimer = null;
       void pollPipelineTask();
@@ -50,12 +50,13 @@
   function resultLabel(result: ToolFileResult): string {
     if (result.status === 'matched') return 'Matched';
     if (result.status === 'no_match') return 'No match';
+    if (result.status === 'partial') return 'Incomplete';
     return 'Failed';
   }
 
   function resultClass(status: ToolFileResult['status']): string {
     if (status === 'matched') return 'border-green-400/15 bg-green-500/[0.05] text-green-300';
-    if (status === 'no_match') return 'border-amber-400/15 bg-amber-500/[0.05] text-amber-300';
+    if (status === 'no_match' || status === 'partial') return 'border-amber-400/15 bg-amber-500/[0.05] text-amber-300';
     return 'border-red-400/15 bg-red-500/[0.05] text-red-300';
   }
 
@@ -64,7 +65,7 @@
       if (surface === 'storage') {
         storage = await suiteDataApi.getStorageConfiguration();
       } else {
-        [pipeline, automation] = await Promise.all([danbooruApi.getImportPipeline(), danbooruApi.getAutomation()]);
+        [pipeline, automation, folders] = await Promise.all([danbooruApi.getImportPipeline(), danbooruApi.getAutomation(), danbooruApi.getToolFolders()]);
         intervalMinutes = automation.interval_minutes;
         schedulePipelinePoll();
       }
@@ -90,12 +91,14 @@
       const previousResults = pipeline.task.file_results ?? [];
       const afterIndex = previousResults.reduce((highest, result) => Math.max(highest, result.index ?? 0), 0);
       const task = await danbooruApi.getImportTask(afterIndex || undefined);
+      if (destroyed) return;
       const fileResults = [...previousResults, ...(task.file_results ?? [])].slice(-250);
       pipeline = { ...pipeline, task: { ...task, file_results: fileResults } };
       if (task.status === 'running' || task.status === 'cancelling') {
         schedulePipelinePoll();
       } else {
-        // Phase totals only need a full database recount when the job stops.
+        imageRefreshToken.update(value => value + 1);
+        // Totals only need a full database recount when the job stops.
         await refreshPipeline();
       }
     } catch {
@@ -106,20 +109,24 @@
     }
   }
 
-  async function runPhase(phase: ImportPhase) {
+  async function updateLibrary(retry = false) {
     if (busy || importRunning || toolRunning) return;
-    const needsNetwork = phase === 'metadata' || phase === 'all';
-    if (needsNetwork && !confirm('Phase 3 sends rate-limited MD5 metadata requests to Danbooru. No images are downloaded. Continue?')) return;
+    const needsNetwork = retry || fetchMetadata;
+    if (retry && !fetchMetadata && !confirm('Retry unfinished Danbooru tag requests using the network? Original media is not downloaded or changed.')) return;
     busy = true;
     error = '';
     message = '';
     try {
-      await danbooruApi.runImport(phase, undefined, metadataLimit || undefined, needsNetwork);
+      const result = await danbooruApi.runImport(retry ? 'retry' : 'update', folder, metadataLimit || undefined, needsNetwork, needsNetwork);
+      if (result.status === 'busy') {
+        error = 'Another task is running. Wait for it to finish before updating the library.';
+        return;
+      }
       await refreshPipeline();
       schedulePipelinePoll(250);
-      message = phase === 'all' ? 'All four import phases started.' : `${phases.find(item => item.id === phase)?.label ?? phase} started.`;
+      message = retry ? 'Retrying unfinished items. Complete metadata and known misses are skipped.' : needsNetwork ? 'Updating the library and fetching missing tags.' : 'Updating the local library. No network requests.';
     } catch (caught) {
-      error = caught instanceof Error ? caught.message : 'Could not start the import phase.';
+      error = caught instanceof Error ? caught.message : 'Could not start the library update.';
     } finally {
       busy = false;
     }
@@ -158,6 +165,7 @@
   });
 
   onDestroy(() => {
+    destroyed = true;
     stopPipelinePolling();
   });
 </script>
@@ -192,23 +200,32 @@
   <section id="setting-import-pipeline" class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
     <div class="border-b border-[#242432] p-4">
       <div class="flex flex-wrap items-start justify-between gap-4">
-        <h4 class="text-sm font-semibold text-gray-200">Four-phase import pipeline</h4>
-        <button class="rounded-xl bg-purple-500/20 px-3.5 py-2 text-xs font-semibold text-purple-100 ring-1 ring-inset ring-purple-300/15 hover:bg-purple-500/30 disabled:opacity-40" type="button" disabled={busy || importRunning || toolRunning} on:click={() => runPhase('all')}>Run all four phases</button>
+        <h4 class="text-sm font-semibold text-gray-200">Library update</h4>
+        <button class="rounded-xl bg-purple-500/20 px-3.5 py-2 text-xs font-semibold text-purple-100 ring-1 ring-inset ring-purple-300/15 hover:bg-purple-500/30 disabled:opacity-40" type="button" disabled={busy || importRunning || toolRunning} on:click={() => updateLibrary()}>Update library</button>
       </div>
     </div>
 
     {#if pipeline}
-      <div class="grid gap-2 p-3 sm:grid-cols-2">
-        {#each phases as phase}
-          <div class="rounded-xl border border-white/5 bg-black/15 p-3">
-            <div class="flex items-start gap-3"><span class="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-purple-500/10 text-xs font-bold text-purple-300">{phase.number}</span><div class="min-w-0 flex-1"><div class="flex items-center gap-2 text-sm font-semibold text-gray-200">{phase.label}{#if phase.network}<span class="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] text-amber-300">NETWORK</span>{/if}</div><p class="mt-0.5 text-xs leading-relaxed text-gray-500">{phase.description}</p></div></div>
-            <div class="mt-3 flex items-center justify-between"><span class="text-[10px] text-gray-600">{pipeline.phases[phase.counter].toLocaleString()} complete</span><button class="rounded-lg border border-purple-400/15 px-2.5 py-1.5 text-[11px] text-purple-200 hover:bg-purple-500/10 disabled:opacity-40" type="button" disabled={busy || importRunning || toolRunning} on:click={() => runPhase(phase.id)}>Run phase</button></div>
-          </div>
-        {/each}
-      </div>
-      <div class="flex flex-wrap items-center justify-between gap-3 border-t border-[#242432] bg-black/10 px-4 py-3">
-        <label class="flex items-center gap-2 text-xs text-gray-500"><span>Phase 3 limit</span><input class="w-24 rounded-lg border border-[#303040] bg-[#0d0d13] px-2 py-1.5 text-xs text-gray-200" type="number" min="0" max="1000000" title="0 means every missing sidecar" bind:value={metadataLimit} /></label>
-        {#if importRunning}<button class="rounded-lg border border-red-400/20 px-3 py-2 text-xs text-red-300 hover:bg-red-500/10" type="button" on:click={cancelImport}>Cancel</button>{/if}
+      <div class="space-y-4 p-4">
+        <label class="flex items-center justify-between gap-3 text-sm text-gray-300">
+          <span>Folders</span>
+          <select aria-label="Update folders" class="max-w-[65%] rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs" bind:value={folder} disabled={busy || importRunning}>
+            <option value="">All Danbooru folders</option>
+            {#each folders as item}<option value={item.path}>{item.name}</option>{/each}
+          </select>
+        </label>
+        <label class="flex items-start gap-3 text-sm text-gray-200">
+          <input type="checkbox" class="mt-1 accent-purple-500" bind:checked={fetchMetadata} disabled={busy || importRunning} />
+          <span>Fetch missing Danbooru tags<span class="mt-1 block text-xs text-gray-500">Uses the network. Original images stay unchanged; existing complete metadata is kept.</span></span>
+        </label>
+        {#if fetchMetadata}
+          <label class="flex items-center justify-between gap-3 text-xs text-gray-400"><span>Maximum files to fetch (0 = all unfinished)</span><input aria-label="Maximum files to fetch" class="w-24 rounded-lg border border-[#303040] bg-[#0d0d13] px-2 py-1.5 text-gray-200" type="number" min="0" max="1000000" bind:value={metadataLimit} disabled={busy || importRunning} /></label>
+        {/if}
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <span class="text-xs text-gray-500">{pipeline.phases.total.toLocaleString()} indexed files · {pipeline.phases.errors.toLocaleString()} need attention</span>
+          {#if importRunning}<button class="rounded-lg border border-[#303040] px-3 py-2 text-xs text-gray-300 disabled:opacity-40" type="button" disabled={pipeline.task.status === 'cancelling'} on:click={cancelImport}>{pipeline.task.status === 'cancelling' ? 'Cancelling…' : 'Cancel update'}</button>
+          {:else if pipeline.phases.errors || pipeline.task.status === 'partial' || pipeline.task.status === 'error' || pipeline.task.status === 'cancelled'}<button class="rounded-lg border border-[#303040] px-3 py-2 text-xs text-gray-300 disabled:opacity-40" type="button" disabled={busy || toolRunning} on:click={() => updateLibrary(true)}>Retry unfinished items</button>{/if}
+        </div>
       </div>
 
       {#if pipeline.task.status !== 'idle'}
@@ -219,9 +236,9 @@
               <div class="mt-1 truncate font-mono text-xs text-purple-100" title={pipeline.task.current_file_path ?? pipeline.task.current_file}>{pipeline.task.current_file}</div>
             </div>
           {/if}
-          <div class="flex items-center justify-between gap-3 text-xs"><span class="font-semibold {pipeline.task.status === 'error' ? 'text-red-300' : pipeline.task.status === 'done' ? 'text-green-300' : pipeline.task.status === 'cancelled' ? 'text-amber-300' : 'text-purple-200'}">{pipeline.task.stage ?? 'Import'} · {pipeline.task.status}</span><span class="text-gray-500">{pipeline.task.progress ?? 0} / {pipeline.task.total ?? 0}</span></div>
+          <div class="flex items-center justify-between gap-3 text-xs"><span class="font-semibold {pipeline.task.status === 'error' ? 'text-red-300' : pipeline.task.status === 'done' ? 'text-green-300' : pipeline.task.status === 'cancelled' ? 'text-amber-300' : 'text-purple-200'}">{pipeline.task.stage ?? 'Library update'} · {pipeline.task.status === 'partial' ? 'Finished with incomplete results' : pipeline.task.status === 'done' ? 'Complete' : pipeline.task.status}</span><span class="text-gray-500">{pipeline.task.progress ?? 0} / {pipeline.task.total ?? 0}</span></div>
           {#if pipeline.task.total}<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-[#20202b]"><div class="h-full rounded-full bg-purple-400 transition-all" style="width: {Math.min(100, ((pipeline.task.progress ?? 0) / pipeline.task.total) * 100)}%"></div></div>{/if}
-          <div class="mt-3 flex flex-wrap gap-2 text-[10px]"><span class="rounded-full bg-green-500/10 px-2 py-1 text-green-300">{pipeline.task.result_counts?.matched ?? 0} matched</span><span class="rounded-full bg-amber-500/10 px-2 py-1 text-amber-300">{pipeline.task.result_counts?.no_match ?? 0} no match</span><span class="rounded-full bg-red-500/10 px-2 py-1 text-red-300">{pipeline.task.result_counts?.error ?? 0} failed</span></div>
+          <div class="mt-3 flex flex-wrap gap-2 text-[10px]"><span class="rounded-full bg-green-500/10 px-2 py-1 text-green-300">{pipeline.task.result_counts?.matched ?? 0} matched</span><span class="rounded-full bg-amber-500/10 px-2 py-1 text-amber-300">{pipeline.task.result_counts?.partial ?? 0} incomplete</span><span class="rounded-full bg-amber-500/10 px-2 py-1 text-amber-300">{pipeline.task.result_counts?.no_match ?? 0} no match</span><span class="rounded-full bg-red-500/10 px-2 py-1 text-red-300">{pipeline.task.result_counts?.error ?? 0} failed</span></div>
           {#if recentResults.length}
             <div class="mt-3 max-h-64 space-y-1.5 overflow-y-auto pr-1">
               {#each recentResults as result (`${result.path}:${result.index ?? ''}:${result.status}`)}
@@ -229,11 +246,11 @@
               {/each}
             </div>
           {/if}
-          {#if pipeline.task.output}<details class="mt-3 border-t border-white/5 pt-2"><summary class="cursor-pointer text-[10px] text-gray-600 hover:text-gray-400">Console details</summary><pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-gray-600">{pipeline.task.output}</pre></details>{/if}
+          {#if pipeline.task.output}<details class="mt-3 border-t border-white/5 pt-2"><summary class="cursor-pointer text-[10px] text-gray-600 hover:text-gray-400">Logs for this update</summary><pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-gray-600">{pipeline.task.output}</pre></details>{/if}
         </div>
       {/if}
     {:else}
-      <div class="p-4 text-sm text-gray-500">Loading import pipeline…</div>
+      <div class="p-4 text-sm text-gray-500">Loading library status…</div>
     {/if}
   </section>
 

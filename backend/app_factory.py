@@ -10,11 +10,14 @@ No ``core`` import.
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import http_exception_handler
+from starlette.exceptions import HTTPException
 
 from lifecycle import lifespan
 from product import DISPLAY_NAME, VERSION
@@ -46,3 +49,11 @@ async def add_server_timing_header(request: Request, call_next):
     duration_ms = (time.perf_counter() - started_at) * 1000
     response.headers["Server-Timing"] = f'app;dur={duration_ms:.2f};desc="{DISPLAY_NAME}"'
     return response
+
+
+@app.exception_handler(HTTPException)
+async def log_http_error(request: Request, exception):
+    logging.getLogger("keivotos.requests").warning(
+        "%s %s: HTTP %s: %s", request.method, request.url.path,
+        exception.status_code, exception.detail)
+    return await http_exception_handler(request, exception)

@@ -44,7 +44,9 @@
   );
   $: syncRunning = syncStatus?.status === 'running';
   $: toolRunning = activeToolStatus?.status === 'running' || activeToolStatus?.status === 'cancelling';
-  $: syncTool = tools.find(tool => tool.id === 'sync');
+  let importStatus = 'idle';
+  $: libraryUpdating = syncRunning || importStatus === 'running' || importStatus === 'cancelling';
+  $: refreshTool = tools.find(tool => tool.id === 'refresh-tags');
   $: safetyTools = tools.filter(tool => ['clean-sidecars', 'sqlite'].includes(tool.id));
   $: totalIndexedImages = libraryFolders.reduce((total, folder) => total + folder.count, 0);
 
@@ -229,6 +231,7 @@
 
   async function runMaintenanceTool(tool: ToolInfo) {
     if (tool.id === 'clean-sidecars' && !confirm('Clean sidecars whose media files are missing? This removes orphan metadata files.')) return;
+    if (tool.id === 'refresh-tags' && !confirm('Fetch fresh Danbooru metadata for existing files? This uses the network and archives any metadata it replaces.')) return;
     if (tool.id === 'sqlite' && !confirm('Rebuild the regenerable image database from sidecars? User data is kept separately.')) return;
     await beginTool(tool.id, () => api.runTool(tool.id));
   }
@@ -551,15 +554,13 @@
             <section id="setting-library-health" class="overflow-hidden rounded-2xl border border-cyan-400/20 bg-[radial-gradient(circle_at_82%_0%,rgba(34,211,238,.14),transparent_38%),linear-gradient(135deg,#101a20,#101017_72%)] p-4">
               <div class="flex flex-wrap items-center justify-between gap-4">
                 <div class="flex flex-wrap items-center gap-3">
-                  <div class="flex items-center gap-2 text-sm font-semibold text-cyan-100"><span class="h-2 w-2 rounded-full {syncRunning ? 'animate-pulse bg-cyan-300' : 'bg-green-400'}"></span>Library: {!foldersLoaded || !toolsLoaded ? 'Loading' : syncRunning ? 'Indexing' : 'Ready'}</div>
+                  <div class="flex items-center gap-2 text-sm font-semibold text-cyan-100"><span class="h-2 w-2 rounded-full {libraryUpdating ? 'animate-pulse bg-cyan-300' : 'bg-green-400'}"></span>Library: {!foldersLoaded || !toolsLoaded ? 'Loading' : libraryUpdating ? 'Updating' : 'Ready'}</div>
                   <div class="flex flex-wrap gap-2">
                     <span class="rounded-full border border-cyan-300/10 bg-cyan-500/[0.07] px-2.5 py-1 text-[11px] text-cyan-100">{foldersLoaded ? `${libraryFolders.length} root${libraryFolders.length === 1 ? '' : 's'}` : 'Loading roots…'}</span>
                     <span class="rounded-full border border-white/5 bg-black/15 px-2.5 py-1 text-[11px] text-gray-300">{foldersLoaded ? `${totalIndexedImages.toLocaleString()} indexed images` : 'Loading image count…'}</span>
                   </div>
                 </div>
-                {#if syncTool}
-                  <button id="setting-rescan" class="shrink-0 rounded-xl bg-cyan-500/15 px-4 py-2 text-xs font-semibold text-cyan-100 ring-1 ring-inset ring-cyan-300/15 hover:bg-cyan-500/25 disabled:opacity-50" type="button" disabled={toolRunning} on:click={() => runMaintenanceTool(syncTool)}>{syncTool.status === 'running' ? 'Re-scanning…' : 'Re-scan library'}</button>
-                {/if}
+
               </div>
               {#if syncStatus && syncStatus.status !== 'idle'}
                 <div class="mt-4 rounded-xl border border-white/5 bg-black/15 px-3 py-2.5">
@@ -569,12 +570,18 @@
               {/if}
             </section>
 
-            <LibraryImportSettings {toolRunning} surface="metadata" />
+            <LibraryImportSettings {toolRunning} surface="metadata" on:status={event => importStatus = event.detail} />
           </div>
 {:else if selectedSection === 'maintenance'}
           <div class="mx-auto max-w-3xl space-y-4">
             <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
               <div class="border-b border-[#242432] px-4 py-3"><h4 class="text-sm font-semibold text-gray-200">Recovery maintenance</h4></div>
+              {#if refreshTool}
+                <div id="setting-refresh-tags" class="flex items-center justify-between gap-4 border-b border-[#22222e] px-4 py-3.5">
+                  <div><h4 class="text-sm text-gray-200">Refresh existing tags</h4><p class="mt-1 text-xs text-gray-500">Fetch current metadata from Danbooru. Replaced metadata is archived.</p></div>
+                  <button class="shrink-0 rounded-lg border border-[#303040] px-3 py-2 text-xs text-gray-300 disabled:opacity-40" type="button" disabled={toolRunning} on:click={() => runMaintenanceTool(refreshTool!)}>Refresh tags…</button>
+                </div>
+              {/if}
               <div class="divide-y divide-[#22222e]">
                 {#each safetyTools as tool (tool.id)}
                   <div id={tool.id === 'sqlite' ? 'setting-rebuild' : 'setting-clean-sidecars'} class="flex items-start justify-between gap-4 px-4 py-3.5">
