@@ -86,7 +86,8 @@ class SuiteMaintenanceRouteTests(unittest.TestCase):
             backups, "inspect_backup_bundle", return_value={"valid": True},
         ) as inspect:
             self.assertEqual(backups.inspect_metadata_backup("../fixture.zip"), {"valid": True})
-            inspect.assert_called_once_with(Path("/fixture/backups/fixture.zip"))
+            # Resolution also supplies the current drive on Windows.
+            inspect.assert_called_once_with(Path("/fixture/backups/fixture.zip").resolve())
 
     def test_checkpoint_preserves_conflict_response(self):
         with patch.object(recovery, "create_local_recovery_checkpoint", return_value={"created": True}) as create:

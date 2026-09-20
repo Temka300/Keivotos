@@ -100,7 +100,8 @@ class MetadataRecoveryTests(unittest.TestCase):
         original = self.sidecar(first).read_bytes()
         with patch.object(pipeline, "find_post_by_md5", return_value=(None, None, None)) as find:
             self.assertEqual(self.run_backfill(["--limit", "1"]), 0)
-            self.assertEqual(find.call_args.args[0], second)
+            # Windows temporary paths may use the RUNNER~1 short-name alias.
+            self.assertEqual(find.call_args.args[0].resolve(), second.resolve())
         with patch.object(pipeline, "find_post_by_md5", side_effect=AssertionError("no work remains")):
             self.assertEqual(self.run_backfill(["--retry-failed"]), 0)
         self.assertEqual(self.sidecar(first).read_bytes(), original)
