@@ -31,7 +31,8 @@ const report = {checks: [], errors: []};
  const check = text => { report.checks.push(text); console.log('PASS: '+text); };
  async function openModules() {
   await page.getByRole('button',{name:'Open Keivotos menu',exact:true}).click();
-  await page.getByRole('button',{name:'Manage modules',exact:true}).click();
+  await page.getByRole('button', {name:'Settings',exact:true}).click();
+  await page.getByRole('navigation', {name:'Settings sections'}).getByRole('button', {name:'Modules',exact:true}).click();
   await dialog.waitFor();
  }
  async function toggle(expected) {

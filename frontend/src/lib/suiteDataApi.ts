@@ -4,7 +4,7 @@ import type { BackupOptions, DiagnosticsPreferences, UserSetting, StorageConfigu
 export const suiteDataApi = {
 getDiagnostics: () => get<DiagnosticsPreferences>('/diagnostics'),
 configureDiagnostics: (preferences: DiagnosticsPreferences) => put<DiagnosticsPreferences>('/diagnostics', preferences),
-openDiagnostics: (target: 'data' | 'logs' | 'runtime' | 'access') => post<{ status: string }>(`/diagnostics/open/${target}`),
+openDiagnostics: (target: 'data' | 'logs' | 'runtime' | 'access' | 'backups') => post<{ status: string }>(`/diagnostics/open/${target}`),
 getUserSetting: (key: string) =>
     get<UserSetting>(`/user-settings/${encodeURIComponent(key)}`),
 

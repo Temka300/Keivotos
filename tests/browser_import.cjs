@@ -42,7 +42,8 @@ const report = { checks: [], errors: [], requests: [] };
  try {
   await page.goto(config.url);
   await page.getByRole('button',{name:'Open Keivotos menu',exact:true}).click();
-  await page.getByRole('button', {name:'Manage modules',exact:true}).click();
+  await page.getByRole('button', {name:'Settings',exact:true}).click();
+  await page.getByRole('navigation', {name:'Settings sections'}).getByRole('button', {name:'Modules',exact:true}).click();
   await page.getByRole('switch', {name:'Danbooru module',exact:true}).click();
   await page.waitForFunction(() => document.querySelector('[data-module-id="danbooru"] [role="switch"]')?.getAttribute('aria-checked') === 'true');
   await page.getByRole('button', {name:'Close settings',exact:true}).click();

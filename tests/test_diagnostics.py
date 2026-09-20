@@ -79,3 +79,22 @@ def test_log_symlink_cannot_open_outside_log_directory(tmp_path):
             storage.open_diagnostics('runtime')
         assert caught.value.status_code == 409
         launch.assert_not_called()
+
+
+def test_open_backup_folder_resolves_configured_destination(tmp_path):
+    destination = tmp_path / 'backups'
+    with patch.object(config, 'get_backup_config', return_value={'destination': str(destination)}), \
+         patch.object(storage.sys, 'platform', 'linux'), patch.object(storage.subprocess, 'Popen') as launch:
+        assert storage.open_diagnostics('backups') == {'status': 'opened'}
+        assert destination.is_dir()
+        assert launch.call_args.args[0] == ['xdg-open', str(destination.resolve())]
+
+
+def test_planned_modules_cannot_be_enabled_as_empty_modules():
+    from routers import suite
+    planned = suite.planned_modules()
+    assert {entry['id'] for entry in planned} == {'video', 'manga', 'youtube'}
+    for entry in planned:
+        with pytest.raises(HTTPException) as caught:
+            suite.enable_module(entry['id'])
+        assert caught.value.status_code == 404

@@ -5977,7 +5977,8 @@
                 "data",
                 "logs",
                 "runtime",
-                "access"
+                "access",
+                "backups"
               ],
               "title": "Target",
               "type": "string"
@@ -8999,6 +9000,22 @@
           }
         },
         "summary": "List Modules"
+      }
+    },
+    "/api/suite/modules/planned": {
+      "get": {
+        "operationId": "planned_modules_api_suite_modules_planned_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Planned Modules"
       }
     },
     "/api/suite/modules/{module_id}/disable": {

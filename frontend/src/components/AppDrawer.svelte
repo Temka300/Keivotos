@@ -111,7 +111,10 @@
         </button>
       {/each}
 
-      <button type="button" class="w-full rounded-lg px-2 py-2 text-left text-sm text-gray-400 hover:bg-[#15151e]" on:click={() => openSettings('modules')}>Manage modules</button>
+      <div class="flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm font-semibold text-gray-600">
+        <span class="grid h-9 w-9 place-items-center rounded-lg bg-[#15151e] text-gray-700" aria-hidden="true">◷</span>
+        <span>Coming Soon</span>
+      </div>
     </nav>
 
     <footer class="border-t border-[#292937] p-3">

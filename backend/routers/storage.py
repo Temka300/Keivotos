@@ -39,11 +39,19 @@ def update_diagnostics(preferences: DiagnosticsPreferences):
 
 
 @router.post("/api/diagnostics/open/{target}")
-def open_diagnostics(target: Literal["data", "logs", "runtime", "access"]):
+def open_diagnostics(target: Literal["data", "logs", "runtime", "access", "backups"]):
     # Fixed destinations only: never accept a caller-supplied filesystem path.
     paths = {"data": config.SUITE_HOME, "logs": config.LOG_DIR,
              "runtime": config.RUNTIME_LOG_FILE, "access": config.ACCESS_LOG_FILE}
-    path = paths[target]
+    if target == "backups":
+        try:
+            path = config.validate_backup_destination(config.get_backup_config()["destination"])
+            path.mkdir(parents=True, exist_ok=True)
+        except (OSError, ValueError) as exc:
+            logger.exception("Could not open backup location")
+            raise HTTPException(503, "Could not access the backup location. Check Logs for details.") from exc
+    else:
+        path = paths[target]
     if not path.exists():
         raise HTTPException(404, "This location is not available yet")
     if target in {"runtime", "access"} and not path.resolve().is_relative_to(config.LOG_DIR.resolve()):

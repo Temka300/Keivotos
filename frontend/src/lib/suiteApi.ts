@@ -1,3 +1,4 @@
+import { apiError } from './http';
 // Suite module registry client (V1.1.0). Isolated, like filesApi.ts.
 
 const BASE = '/api/suite';
@@ -74,17 +75,6 @@ export function normalizedPath(path: string): string {
   return path.replace(/[\\/]+/g, '/').replace(/\/+$/, '').toLocaleLowerCase();
 }
 
-async function apiError(res: Response): Promise<Error> {
-  let detail = '';
-  try {
-    const data = await res.json();
-    if (typeof data?.detail === 'string') detail = data.detail;
-  } catch {
-    // Non-JSON error body; fall back to the status line.
-  }
-  return new Error(detail || `API ${res.status}: ${res.statusText}`);
-}
-
 async function getJson<T>(path: string): Promise<T> {
   const res = await fetch(BASE + path);
   if (!res.ok) throw await apiError(res);
@@ -120,6 +110,7 @@ async function putJson<T>(path: string, body: unknown): Promise<T> {
 export const suiteApi = {
   moduleStatus: (id: string) => getJson<ModuleStatus>(`/modules/${encodeURIComponent(id)}/status`),
   retryModule: (id: string) => post<ModuleStatus>(`/modules/${encodeURIComponent(id)}/retry`),
+  plannedModules: () => getJson<{id:string; name:string; experimental:boolean}[]>('/modules/planned'),
   listModules: () => getJson<SuiteModule[]>('/modules'),
   enableModule: (id: string) => post<SuiteModule>(`/modules/${encodeURIComponent(id)}/enable`),
   disableModule: (id: string) => post<SuiteModule>(`/modules/${encodeURIComponent(id)}/disable`),

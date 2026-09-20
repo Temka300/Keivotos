@@ -17,6 +17,17 @@ export async function get<T>(
   return res.json();
 }
 
+export class ApiError extends Error {
+  constructor(public status: number, message: string) { super(message); this.name = 'ApiError'; }
+}
+
+export function settingsError(error: unknown, feature: string): string {
+  if (error instanceof ApiError && error.status === 404) {
+    return `${feature} is unavailable in the running app. Close older Keivotos instances and restart the current build, then retry.`;
+  }
+  return `${feature}: ${error instanceof Error ? error.message : 'Could not connect. Please retry.'}`;
+}
+
 export async function apiError(res: Response): Promise<Error> {
   let detail = '';
   try {
@@ -26,7 +37,7 @@ export async function apiError(res: Response): Promise<Error> {
   } catch {
     // Non-JSON error body; fall back to the status line.
   }
-  return new Error(detail || `API ${res.status}: ${res.statusText}`);
+  return new ApiError(res.status, detail || `API ${res.status}: ${res.statusText}`);
 }
 
 export async function post<T>(path: string, body?: unknown): Promise<T> {

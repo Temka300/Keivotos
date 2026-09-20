@@ -37,7 +37,7 @@ uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
-    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'absence'), default='modularization')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'absence'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:

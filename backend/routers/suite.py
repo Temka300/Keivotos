@@ -142,6 +142,13 @@ class FolderRelocateResult(BaseModel):
     files_updated: int = 0
 
 
+@router.get("/api/suite/modules/planned")
+def planned_modules():
+    from module_registry import PLANNED_MODULES
+    installed = {descriptor.slug for descriptor in suite_modules.descriptors()}
+    return [entry for entry in PLANNED_MODULES if entry["id"] not in installed]
+
+
 @router.get("/api/suite/modules", response_model=list[SuiteModule])
 def list_modules() -> list[SuiteModule]:
     with get_user_db() as user_conn:

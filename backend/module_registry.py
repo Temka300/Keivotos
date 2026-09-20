@@ -100,3 +100,12 @@ def build_registry(suite_home: Path, version: str) -> ModuleRegistry:
     return ModuleRegistry(
         tuple(factory(resolved_home, version) for factory in _DESCRIPTOR_FACTORIES)
     )
+
+
+# Catalog entries are discoverable plans, not installed/runnable descriptors.
+# Promote an entry to an actual descriptor when its implementation is delivered.
+PLANNED_MODULES = (
+    {"id": "video", "name": "Video", "experimental": False},
+    {"id": "manga", "name": "Manga", "experimental": False},
+    {"id": "youtube", "name": "YouTube", "experimental": True},
+)
