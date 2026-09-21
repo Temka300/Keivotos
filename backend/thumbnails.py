@@ -19,7 +19,7 @@ THUMBNAIL_TIERS = (300, 600, 1200)
 THUMB_CACHE_VERSION = "v4"
 WEBP_QUALITY = 88
 SUPPORTED_IMAGES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".jfif"}
-SUPPORTED_VIDEOS = {".mp4", ".webm"}
+SUPPORTED_VIDEOS = {".mp4", ".m4v", ".webm"}
 # Audio tiles are drawn from the track's embedded cover art (FLAC PICTURE, ID3
 # APIC, MP4 covr, …). Mirrors the frontend AUDIO set in filePreview.ts.
 SUPPORTED_AUDIO = {".mp3", ".flac", ".ogg", ".oga", ".m4a", ".wav"}

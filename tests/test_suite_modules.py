@@ -78,7 +78,7 @@ class SuiteApiRouteTests(unittest.TestCase):
 
     def test_list_defaults_to_disabled(self) -> None:
         modules = self.suite.list_modules()
-        self.assertEqual([m.id for m in modules], ["files", "danbooru"])
+        self.assertEqual([m.id for m in modules], ["files", "danbooru", "video"])
         self.assertTrue(modules[0].enabled)
         self.assertTrue(modules[0].is_base)
         self.assertFalse(modules[0].disableable)

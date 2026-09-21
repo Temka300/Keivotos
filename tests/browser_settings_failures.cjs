@@ -29,7 +29,7 @@ const config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   await page.getByRole('button',{name:'Settings',exact:true}).click();await section('Modules').click();
   await page.getByText(/Experimental module preferences is unavailable/).waitFor();
   assert.equal(await page.getByRole('switch',{name:'Danbooru module'}).isEnabled(),true);
-  assert.equal(await page.getByRole('switch',{name:'Video module'}).isDisabled(),true);
+  assert.equal(await page.getByRole('switch',{name:'Video module'}).isEnabled(),true);
   assert.equal(await page.getByRole('switch',{name:'Manga module'}).isDisabled(),true);
   assert.equal(await page.getByRole('switch',{name:'YouTube module'}).count(),0);
   await page.screenshot({path:path.join(config.output,'modules-missing-service.png')});

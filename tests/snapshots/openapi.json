@@ -3102,6 +3102,39 @@
         "title": "PickResult",
         "type": "object"
       },
+      "PlaybackFailure": {
+        "properties": {
+          "path": {
+            "maxLength": 4096,
+            "title": "Path",
+            "type": "string"
+          },
+          "reason": {
+            "enum": [
+              "unsupported_format",
+              "network",
+              "decode",
+              "unsupported_codec",
+              "playback",
+              "fullscreen"
+            ],
+            "title": "Reason",
+            "type": "string"
+          },
+          "source_id": {
+            "maxLength": 256,
+            "title": "Source Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_id",
+          "path",
+          "reason"
+        ],
+        "title": "PlaybackFailure",
+        "type": "object"
+      },
       "PopularityPeriod": {
         "properties": {
           "average_score": {
@@ -10127,6 +10160,104 @@
           }
         },
         "summary": "Put User Setting"
+      }
+    },
+    "/api/video/library": {
+      "get": {
+        "operationId": "library_api_video_library_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 120,
+              "maximum": 240,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Library"
+      }
+    },
+    "/api/video/playback-error": {
+      "post": {
+        "operationId": "playback_error_api_video_playback_error_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PlaybackFailure"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Playback Error"
       }
     }
   }

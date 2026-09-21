@@ -85,6 +85,9 @@ class ThumbnailTests(unittest.TestCase):
         self.assertTrue(result.exists())
         with Image.open(result) as image:
             self.assertEqual(image.format, "WEBP")
+        m4v = self.root / "sample.m4v"
+        m4v.write_bytes(video.read_bytes())
+        self.assertIsNotNone(thumbnails.ensure_thumbnail(str(m4v), 300, content_md5))
 
     def _make_flac(self, name: str, *, cover: bool) -> Path:
         import imageio_ffmpeg

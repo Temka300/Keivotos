@@ -16,12 +16,18 @@ except ModuleNotFoundError as exc:
     danbooru_helper = None
     danbooru_delivery = None
 from modules.files import descriptor as files_descriptor
+try:
+    from modules.video import descriptor as video_descriptor
+except ModuleNotFoundError as exc:
+    if exc.name != "modules.video":
+        raise
+    video_descriptor = None
 
 
 # One import/factory entry is the registration boundary for each module.
 _DESCRIPTOR_FACTORIES = (
     files_descriptor,
-) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ())
+) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ()) + ((video_descriptor,) if video_descriptor is not None else ())
 
 
 _DELIVERY_PROVIDERS = (danbooru_delivery,) if danbooru_delivery is not None else ()
