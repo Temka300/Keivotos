@@ -23,11 +23,18 @@ except ModuleNotFoundError as exc:
         raise
     video_descriptor = None
 
+try:
+    from modules.manga import descriptor as manga_descriptor
+except ModuleNotFoundError as exc:
+    if exc.name != "modules.manga":
+        raise
+    manga_descriptor = None
+
 
 # One import/factory entry is the registration boundary for each module.
 _DESCRIPTOR_FACTORIES = (
     files_descriptor,
-) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ()) + ((video_descriptor,) if video_descriptor is not None else ())
+) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ()) + ((video_descriptor,) if video_descriptor is not None else ()) + ((manga_descriptor,) if manga_descriptor is not None else ())
 
 
 _DELIVERY_PROVIDERS = (danbooru_delivery,) if danbooru_delivery is not None else ()

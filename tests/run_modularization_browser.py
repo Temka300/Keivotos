@@ -37,7 +37,7 @@ uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
-    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'absence'), default='modularization')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'absence'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
@@ -55,16 +55,19 @@ def main() -> int:
         if args.script == 'video':
             from browser_video_fixture import seed_videos
             seed_videos(base / 'media')
+        if args.script == 'manga':
+            from browser_manga_fixture import seed_manga
+            seed_manga(base / 'media')
         project = ROOT
         if args.script == 'absence':
             project = base / 'source'
             project.mkdir()
             shutil.copytree(ROOT / 'backend', project / 'backend',
-                            ignore=shutil.ignore_patterns('danbooru', 'video', '__pycache__'))
+                            ignore=shutil.ignore_patterns('danbooru', 'video', 'manga', '__pycache__'))
             for name in ('app.py', 'config.json'):
                 shutil.copy2(ROOT / name, project / name)
             shutil.copytree(ROOT / 'frontend', project / 'frontend',
-                            ignore=shutil.ignore_patterns('node_modules', 'dist', 'danbooru', 'video'))
+                            ignore=shutil.ignore_patterns('node_modules', 'dist', 'danbooru', 'video', 'manga'))
             (project / 'frontend/node_modules').symlink_to(ROOT / 'frontend/node_modules', target_is_directory=True)
             media = base / 'media'
             media.mkdir()

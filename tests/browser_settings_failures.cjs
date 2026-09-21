@@ -30,7 +30,7 @@ const config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   await page.getByText(/Experimental module preferences is unavailable/).waitFor();
   assert.equal(await page.getByRole('switch',{name:'Danbooru module'}).isEnabled(),true);
   assert.equal(await page.getByRole('switch',{name:'Video module'}).isEnabled(),true);
-  assert.equal(await page.getByRole('switch',{name:'Manga module'}).isDisabled(),true);
+  assert.equal(await page.getByRole('switch',{name:'Manga module'}).isEnabled(),true);
   assert.equal(await page.getByRole('switch',{name:'YouTube module'}).count(),0);
   await page.screenshot({path:path.join(config.output,'modules-missing-service.png')});
   check('missing diagnostics does not disable installed modules; upcoming entries are explicit and sidebar Coming Soon is restored');
