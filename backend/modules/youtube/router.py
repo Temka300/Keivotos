@@ -72,3 +72,21 @@ def settings():
 def save_settings(payload:Preferences):
     try:return jobs.save_preferences(payload.mode,payload.path)
     except (ValueError,OSError) as exc:raise HTTPException(400,str(exc)) from exc
+
+
+class YouTubePlaybackFailure(BaseModel):
+    id:str=Field(max_length=64)
+    reason:Literal['unsupported_format','network','decode','unsupported_codec','playback','fullscreen']
+
+
+@router.post('/api/youtube/playback-error')
+def playback_error(payload:YouTubePlaybackFailure):
+    item=jobs.get(payload.id)
+    if not item or item['status']!='complete':
+        raise HTTPException(404,'Completed download not found.')
+    try:jobs.destination(item['source_id'],item['root'])
+    except (ValueError,OSError,serving.ServeDenied) as exc:
+        raise HTTPException(404,'Download folder is unavailable.') from exc
+    jobs.logger.warning('Playback failed: job=%s source=%r file=%r reason=%s',
+                        item['id'],item['source_id'],item['path'],payload.reason)
+    return {'status':'logged'}

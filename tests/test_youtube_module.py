@@ -218,3 +218,19 @@ def test_engine_requires_only_ytdlp_and_existing_ffmpeg(monkeypatch):
     monkeypatch.setattr(engine.shutil,'which',lambda name: '/existing/ffmpeg' if name=='ffmpeg' else pytest.fail('Unexpected runtime lookup: '+name))
     assert engine.dependencies()=={'ready':True,'missing':[],'ffmpeg':'/existing/ffmpeg'}
     assert checked==['yt_dlp']
+
+
+def test_playback_diagnostics_only_accept_completed_available_jobs(local,caplog):
+    from fastapi import HTTPException
+    from pydantic import ValidationError
+    source,media,connect=local
+    job=jobs.create(URL,source.source_id)
+    payload=router.YouTubePlaybackFailure(id=job['id'],reason='decode')
+    with pytest.raises(HTTPException):router.playback_error(payload)
+    jobs.update(job['id'],status='complete',path='YouTube/fixture.mp4')
+    assert router.playback_error(payload)=={'status':'logged'}
+    assert 'Playback failed' in caplog.text and job['id'] in caplog.text
+    with pytest.raises(ValidationError):router.YouTubePlaybackFailure(id=job['id'],reason='arbitrary log text')
+    with connect() as db:sources.update_source(db,source.source_id,visible=False)
+    with pytest.raises(HTTPException):router.playback_error(payload)
+    with pytest.raises(HTTPException):router.playback_error(router.YouTubePlaybackFailure(id='missing',reason='network'))

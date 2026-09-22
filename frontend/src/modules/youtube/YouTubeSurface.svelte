@@ -1,12 +1,35 @@
 <script lang="ts">
- import {onMount,onDestroy} from 'svelte';
+ import {onMount,onDestroy,tick} from 'svelte';
  import {slide} from 'svelte/transition';
+ import MediaPlayer from '../../components/MediaPlayer.svelte';
  import AppDrawer from '../../components/AppDrawer.svelte';
  import {filesApi} from '../../lib/filesApi';
  import {youtubeApi,type Download,type EngineStatus} from './api';
  let drawer=false,query='',video='best',audio='best',optionsOpen=false;
  let status:EngineStatus|null=null,items:Download[]=[],total=0,error='',busy=false,loading=false;
  let request:AbortController|null=null,timer:ReturnType<typeof setTimeout>,debounce:ReturnType<typeof setTimeout>,alive=true;
+ let selected:Download|null=null,returnFocus:HTMLElement|null=null,navigating=false,navigationNotice='';
+ const isAudio=(item:Download)=>['mp3','m4a','aac','ogg','opus','wav','flac'].includes(item.path.split('.').pop()?.toLowerCase()||'');
+ $: playable=items.filter(item=>item.status==='complete'&&!isAudio(item));
+ $: selectedIndex=selected?playable.findIndex(item=>item.id===selected?.id):-1;
+ $: playback=selected?{src:filesApi.fileUrl(selected.source_id,selected.path),ext:selected.path.split('.').pop()?.toLowerCase()||''}:null;
+ function open(item:Download){if(!selected)returnFocus=document.activeElement as HTMLElement;selected=item;navigationNotice='';optionsOpen=false;}
+ async function close(){selected=null;await tick();returnFocus?.focus();}
+ async function adjacent(direction:-1|1){
+  if(!selected||navigating)return;
+  const current=selected,index=selectedIndex+direction;
+  if(index<0)return;
+  navigating=true;navigationNotice='';
+  try{
+   let choices=playable;
+   while(direction===1&&index>=choices.length&&items.length<total){
+    const count=items.length;await load(true);
+    choices=items.filter(item=>item.status==='complete'&&!isAudio(item));
+    if(items.length<=count){navigationNotice='Could not load the next video. Try again.';break;}
+   }
+   if(alive&&selected===current&&choices[index])open(choices[index]);
+  }finally{navigating=false;}
+ }
  let motion=200;
  function escape(event:KeyboardEvent){if(event.key==='Escape')optionsOpen=false;}
  function isVideoUrl(value:string){
@@ -43,12 +66,12 @@
   error='';try{const updated=await(retry?youtubeApi.retry(item.id):youtubeApi.cancel(item.id));items=retry?[updated,...items]:items.map(row=>row.id===updated.id?updated:row);await load();}
   catch(e){error=e instanceof Error?e.message:'Could not update download.';}
  }
- async function poll(){if(items.some(active))await load(false,true);if(alive)timer=setTimeout(poll,1000);}
+ async function poll(){if(!selected&&items.some(active))await load(false,true);if(alive)timer=setTimeout(poll,1000);}
  onMount(()=>{motion=document.documentElement.dataset.motion==='reduced'||window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:200;void engine();void load();timer=setTimeout(poll,1000);});
  onDestroy(()=>{alive=false;request?.abort();clearTimeout(timer);clearTimeout(debounce);});
 </script>
 <svelte:window on:keydown={escape}/>
-<div class="youtube-surface">
+<div class="youtube-surface" inert={!!selected}>
  <header><button class="menu" aria-label="Open Keivotos menu" on:click={()=>drawer=true}>☰</button><span class="module-title">YouTube</span><div class="search-controls"><div class="options-anchor"><button class="options-toggle" aria-label="Download options" title="Download options" aria-expanded={optionsOpen} aria-controls="download-options" on:click={()=>optionsOpen=!optionsOpen}><svg class:opened={optionsOpen} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m6 15 6-6 6 6"/></svg></button>
  {#if optionsOpen}
  <div id="download-options" class="download-options" transition:slide={{duration:motion}}>
@@ -63,10 +86,17 @@
     <article>
      <div class="thumbnail">
       {#if item.status==='complete'}
+       {#if isAudio(item)}
        <a href={filesApi.fileUrl(item.source_id,item.path)} target="_blank" rel="noreferrer" aria-label={`Open ${item.title}`}>
         {#if item.thumbnail}<img alt="" loading="lazy" src={filesApi.thumbnailUrl(item.source_id,item.thumbnail,600,item.id)} on:error={e=>(e.currentTarget as HTMLImageElement).style.display='none'}/>{/if}
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>
        </a>
+       {:else}
+       <button class="play-download" on:click={()=>open(item)} aria-label={`Open ${item.title}`}>
+        {#if item.thumbnail}<img alt="" loading="lazy" src={filesApi.thumbnailUrl(item.source_id,item.thumbnail,600,item.id)} on:error={e=>(e.currentTarget as HTMLImageElement).style.display='none'}/>{/if}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg>
+       </button>
+       {/if}
       {/if}
       {#if active(item)}<button class="job-action" aria-label={`Cancel ${item.title||'download'}`} title="Cancel download" on:click={()=>action(item)}>×</button>
       {:else if item.status!=='complete'}<button class="job-action" aria-label={`Retry ${item.title||'download'}`} title="Retry download" on:click={()=>action(item,true)}>↻</button>{/if}
@@ -81,6 +111,12 @@
  </main>
 </div>
 {#if drawer}<AppDrawer on:close={()=>drawer=false}/>{/if}
+{#if selected && playback}
+ <MediaPlayer media={playback} label="YouTube player" backLabel="Back to downloads"
+  hasPrevious={selectedIndex>0} hasNext={selectedIndex>=0&&(selectedIndex<playable.length-1||items.length<total)}
+  {navigating} {navigationNotice} onClose={close} onPrevious={()=>adjacent(-1)} onNext={()=>adjacent(1)}
+  onFailure={(_media,reason)=>youtubeApi.playbackError(selected!.id,reason)}/>
+{/if}
 <style>
  .youtube-surface{display:flex;flex:1;min-height:0;flex-direction:column;background:#0f0f14;color:#e0e0e8}
  header{display:flex;align-items:center;gap:16px;min-height:60px;border-bottom:1px solid #2a2a3a;padding:8px 16px}
@@ -93,7 +129,7 @@
  .download{background:var(--accent);color:#111118;padding:9px 18px;border-radius:20px;font-size:13px;font-weight:600;flex-shrink:0}.download:disabled{opacity:.4}.download-options p{grid-column:1/-1;font-size:12px;color:#aaa;padding:0 8px}
  @media(max-width:700px){.module-title{display:none}}
  main{overflow:auto;flex:1;padding:24px;min-height:0}.download-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:24px 18px}
- article{min-width:0}.thumbnail{aspect-ratio:16/9;background:#1a1a24;border-radius:10px;position:relative;overflow:hidden}.thumbnail a{display:grid;place-items:center;width:100%;height:100%}.thumbnail img{width:100%;height:100%;object-fit:cover;position:absolute}.thumbnail svg{width:28px;height:28px;fill:none;stroke:#ddd;stroke-width:1.5;position:relative;opacity:.7}
+ article{min-width:0}.thumbnail{aspect-ratio:16/9;background:#1a1a24;border-radius:10px;position:relative;overflow:hidden}.thumbnail a,.thumbnail .play-download{display:grid;place-items:center;width:100%;height:100%}.thumbnail img{width:100%;height:100%;object-fit:cover;position:absolute}.thumbnail svg{width:28px;height:28px;fill:none;stroke:#ddd;stroke-width:1.5;position:relative;opacity:.7}
  .job-action{position:absolute;right:8px;top:8px;background:#292933;width:28px;height:28px;border-radius:50%;font-size:20px;display:grid;place-items:center}.download-title{padding-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.job-error{font-size:12px;color:#aaa;margin-top:4px}
  .progress{height:6px;overflow:hidden;border-radius:999px;background:#20202b;margin-top:8px}.progress>div{height:100%;border-radius:999px;background:var(--accent);transition:width .2s ease}.pending{opacity:.65}.more{display:block;margin:24px auto;padding:8px 12px}
  button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
