@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / 'backend'))
 def test_specs_and_frozen_checks_with_physical_module_absence(tmp_path, installed, target):
     source = tmp_path / 'source'
     source.mkdir()
-    omitted = ('__pycache__',) if installed else ('__pycache__', 'danbooru')
+    omitted = ('__pycache__',) if installed else ('__pycache__', 'danbooru', 'youtube')
     shutil.copytree(ROOT / 'backend', source / 'backend', ignore=shutil.ignore_patterns(*omitted))
     shutil.copytree(ROOT / 'packaging', source / 'packaging')
     shutil.copy2(ROOT / 'app.py', source / 'app.py')
@@ -42,7 +42,9 @@ target, installed = sys.argv[1], sys.argv[2] == 'True'
 plan = delivery_plan(target)
 assert [t.name for t in plan.tools] == (['gallery-dl', 'ffmpeg'] if installed else ['ffmpeg'])
 assert ('modules.danbooru.pipeline' in plan.hidden_imports) == installed
-assert bool(plan.metadata_packages) == (installed and target == 'linux')
+assert bool(plan.metadata_packages) == installed
+assert ('yt_dlp' in plan.collect_packages) == installed
+assert 'yt_dlp_ejs' not in plan.collect_packages
 assert bool(plan.configured_paths) == installed
 assert 'modules.danbooru.credentials' not in sys.modules
 assert 'modules.danbooru.pipeline' not in sys.modules

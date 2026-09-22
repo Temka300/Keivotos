@@ -49,7 +49,7 @@
   }
 
   function roleModules(draft: FolderDraft): SuiteModule[] {
-    return modules.filter((module) => module.is_base || module.enabled || module.slug === draft.original_role);
+    return modules.filter((module) => module.is_base || module.slug === draft.original_role || (module.enabled && module.accepts_folders !== false));
   }
 
   function moduleName(slug: string): string {

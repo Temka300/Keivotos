@@ -50,6 +50,7 @@ async def run():
             assert '/api/stats' not in app.openapi()['paths']
             assert '/api/video/library' not in app.openapi()['paths']
             assert '/api/manga/library' not in app.openapi()['paths']
+            assert '/api/youtube/library' not in app.openapi()['paths']
         import backup_bundle, zipfile
         created = backup_bundle.create_backup_bundle()
         manifest = backup_bundle.inspect_backup_bundle(Path(created['path']))
@@ -81,7 +82,7 @@ class ConditionalInitializationTests(unittest.TestCase):
             backend = ROOT / 'backend'
             if mode == 'absent':
                 backend = root / 'backend'
-                shutil.copytree(ROOT/'backend', backend, ignore=shutil.ignore_patterns('__pycache__','*.pyc','video','manga'))
+                shutil.copytree(ROOT/'backend', backend, ignore=shutil.ignore_patterns('__pycache__','*.pyc','video','manga','youtube'))
                 # Only the disposable copy is omitted; repository and user data are untouched.
                 shutil.rmtree(backend/'modules/danbooru')
             home = root/'home'

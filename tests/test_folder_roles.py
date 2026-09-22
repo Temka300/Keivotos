@@ -44,6 +44,14 @@ class FolderRoleServiceTests(unittest.TestCase):
             patcher.stop()
         shutil.rmtree(self.temp, ignore_errors=True)
 
+    def test_non_folder_module_rejected_before_registering(self) -> None:
+        descriptor = replace(config.MODULE_REGISTRY.require('youtube'), adopt_hook=None)
+        with patch.object(folder_roles.MODULE_REGISTRY, 'get', return_value=descriptor), self.assertRaises(folder_roles.FolderRegistryError) as caught:
+            folder_roles._validate_role('youtube', {'youtube'})
+        self.assertEqual(caught.exception.status_code, 400)
+        with database.get_user_db() as connection:
+            self.assertEqual(sources.list_sources(connection), [])
+
     def test_add_rename_hide_preview_and_forget_preserve_originals(self) -> None:
         added = folder_roles.apply_changes([
             folder_roles.FolderChange(

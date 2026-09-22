@@ -1407,6 +1407,54 @@
         "title": "DiagnosticsPreferences",
         "type": "object"
       },
+      "Download": {
+        "properties": {
+          "audio": {
+            "default": "best",
+            "enum": [
+              "best",
+              "192",
+              "128"
+            ],
+            "title": "Audio",
+            "type": "string"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
+          "url": {
+            "maxLength": 2048,
+            "title": "Url",
+            "type": "string"
+          },
+          "video": {
+            "default": "best",
+            "enum": [
+              "best",
+              "1080",
+              "720",
+              "480",
+              "audio"
+            ],
+            "title": "Video",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "Download",
+        "type": "object"
+      },
       "DuplicateGroup": {
         "properties": {
           "content_hash": {
@@ -3183,6 +3231,35 @@
         "title": "PopularityPeriod",
         "type": "object"
       },
+      "Preferences": {
+        "properties": {
+          "mode": {
+            "enum": [
+              "default",
+              "custom"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "Preferences",
+        "type": "object"
+      },
       "RelatedImageInfo": {
         "properties": {
           "created_at": {
@@ -3632,6 +3709,11 @@
       },
       "SuiteModule": {
         "properties": {
+          "accepts_folders": {
+            "default": false,
+            "title": "Accepts Folders",
+            "type": "boolean"
+          },
           "api_prefix": {
             "title": "Api Prefix",
             "type": "string"
@@ -7090,7 +7172,7 @@
     },
     "/api/files/info/copy": {
       "post": {
-        "description": "Copy one subject's origin note onto another \u2014 the unzip workflow.\n\nExtracting an archive loses the provenance you recorded against it, so this\ncarries the description, links and screenshots over to the extracted folder\nwithout retyping them.\n\n**Additive, never destructive.** Links merge as a union keyed by url+kind\nand attachments by content hash, so re-running it is a no-op rather than a\npile of duplicates. A description is only replaced when the caller passes\n``overwrite_description``; otherwise a target that already has text is a 409\nand the UI asks first. Nothing is ever removed from the target.\n\nAttachment **bytes are not copied** \u2014 the store is content-addressed, so the\nnew row points at the blob that already exists.",
+        "description": "Copy one subject's origin note onto another — the unzip workflow.\n\nExtracting an archive loses the provenance you recorded against it, so this\ncarries the description, links and screenshots over to the extracted folder\nwithout retyping them.\n\n**Additive, never destructive.** Links merge as a union keyed by url+kind\nand attachments by content hash, so re-running it is a no-op rather than a\npile of duplicates. A description is only replaced when the caller passes\n``overwrite_description``; otherwise a target that already has text is a 409\nand the UI asks first. Nothing is ever removed from the target.\n\nAttachment **bytes are not copied** — the store is content-addressed, so the\nnew row points at the blob that already exists.",
         "operationId": "copy_info_api_files_info_copy_post",
         "requestBody": {
           "content": {
@@ -7403,7 +7485,7 @@
     },
     "/api/files/thumbnail": {
       "get": {
-        "description": "Return a cached WebP thumbnail for one browsed file.\n\nContainment is the same chain ``serve_file`` uses \u2014 ``resolve_subject``\nrejects absolute and ``..`` paths before touching disk, re-checks that the\ntarget is still inside the source *after* resolving symlinks and junctions,\nand denies Keivotos's own tree.\n\nPrecedence is: an **origin attachment** the user chose, then a **folder\ncover** from the subtree, then the file itself. The attachment wins outright\nbecause it is a deliberate choice and the only way an unrenderable subject \u2014\na 3D model, an archive, a document \u2014 gets a picture at all.\n\nA **directory** without an attachment answers with a cover drawn from the\nfirst thumbnailable file in its subtree, so a folder of manga or screenshots\nis recognisable at a glance. Whatever is chosen carries its own cache\nidentity, so replacing it changes the tile.\n\nUnrenderable types are a deliberate 404 rather than a placeholder image:\nthe placeholder is module-owned presentation, and the base falls back to its\nown type glyph in the grid instead.\n\n``v`` exists because the response is ``immutable``. The server ignores it;\nthe client varies it (from mtime/size) so replacing a file in place shows\nthe new thumbnail instead of a cached stale one.",
+        "description": "Return a cached WebP thumbnail for one browsed file.\n\nContainment is the same chain ``serve_file`` uses — ``resolve_subject``\nrejects absolute and ``..`` paths before touching disk, re-checks that the\ntarget is still inside the source *after* resolving symlinks and junctions,\nand denies Keivotos's own tree.\n\nPrecedence is: an **origin attachment** the user chose, then a **folder\ncover** from the subtree, then the file itself. The attachment wins outright\nbecause it is a deliberate choice and the only way an unrenderable subject —\na 3D model, an archive, a document — gets a picture at all.\n\nA **directory** without an attachment answers with a cover drawn from the\nfirst thumbnailable file in its subtree, so a folder of manga or screenshots\nis recognisable at a glance. Whatever is chosen carries its own cache\nidentity, so replacing it changes the tile.\n\nUnrenderable types are a deliberate 404 rather than a placeholder image:\nthe placeholder is module-owned presentation, and the base falls back to its\nown type glyph in the grid instead.\n\n``v`` exists because the response is ``immutable``. The server ignores it;\nthe client varies it (from mtime/size) so replacing a file in place shows\nthe new thumbnail instead of a cached stale one.",
         "operationId": "serve_file_thumbnail_api_files_thumbnail_get",
         "parameters": [
           {
@@ -10516,6 +10598,244 @@
           }
         },
         "summary": "Playback Error"
+      }
+    },
+    "/api/youtube/downloads": {
+      "post": {
+        "operationId": "download_api_youtube_downloads_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Download"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download"
+      }
+    },
+    "/api/youtube/downloads/{job_id}/cancel": {
+      "post": {
+        "operationId": "cancel_api_youtube_downloads__job_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cancel"
+      }
+    },
+    "/api/youtube/downloads/{job_id}/retry": {
+      "post": {
+        "operationId": "retry_api_youtube_downloads__job_id__retry_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Retry"
+      }
+    },
+    "/api/youtube/library": {
+      "get": {
+        "operationId": "library_api_youtube_library_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "default": "",
+              "maxLength": 256,
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 60,
+              "maximum": 120,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Library"
+      }
+    },
+    "/api/youtube/settings": {
+      "get": {
+        "operationId": "settings_api_youtube_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Settings"
+      },
+      "post": {
+        "operationId": "save_settings_api_youtube_settings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Preferences"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Save Settings"
+      }
+    },
+    "/api/youtube/status": {
+      "get": {
+        "operationId": "status_api_youtube_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Status"
       }
     }
   }

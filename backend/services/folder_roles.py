@@ -66,6 +66,8 @@ def _validate_role(role: str, enabled: set[str]) -> str:
     descriptor = MODULE_REGISTRY.get(canonical)
     if descriptor is None:
         raise FolderRegistryError(400, f"Unknown folder role: {role}")
+    if not descriptor.is_base and descriptor.adopt_hook is None:
+        raise FolderRegistryError(400, f"{descriptor.name} does not accept folder assignments")
     if descriptor.disableable and descriptor.slug not in enabled:
         raise FolderRegistryError(409, f"Enable {descriptor.name} before assigning folders to it")
     suite_modules.require_enabled(descriptor.slug)

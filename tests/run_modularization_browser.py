@@ -30,6 +30,10 @@ server.FRONTEND_DIST = Path(sys.argv[1])
 for route in server.app.routes:
     if getattr(route, 'name', None) == 'frontend':
         route.app = StaticFiles(directory=sys.argv[1], html=True)
+if len(sys.argv)>3 and sys.argv[3]=='youtube':
+    sys.path.insert(0, str(Path.cwd() / 'tests'))
+    from browser_youtube_fixture import install
+    install(Path(sys.argv[4]))
 uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 """
 
@@ -37,7 +41,7 @@ uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
-    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'absence'), default='modularization')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'absence'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
@@ -58,16 +62,19 @@ def main() -> int:
         if args.script == 'manga':
             from browser_manga_fixture import seed_manga
             seed_manga(base / 'media')
+        if args.script == 'youtube':
+            from browser_youtube_fixture import seed
+            seed(base / 'media')
         project = ROOT
         if args.script == 'absence':
             project = base / 'source'
             project.mkdir()
             shutil.copytree(ROOT / 'backend', project / 'backend',
-                            ignore=shutil.ignore_patterns('danbooru', 'video', 'manga', '__pycache__'))
+                            ignore=shutil.ignore_patterns('danbooru', 'video', 'manga', 'youtube', '__pycache__'))
             for name in ('app.py', 'config.json'):
                 shutil.copy2(ROOT / name, project / name)
             shutil.copytree(ROOT / 'frontend', project / 'frontend',
-                            ignore=shutil.ignore_patterns('node_modules', 'dist', 'danbooru', 'video', 'manga'))
+                            ignore=shutil.ignore_patterns('node_modules', 'dist', 'danbooru', 'video', 'manga', 'youtube'))
             (project / 'frontend/node_modules').symlink_to(ROOT / 'frontend/node_modules', target_is_directory=True)
             media = base / 'media'
             media.mkdir()
@@ -84,7 +91,7 @@ def main() -> int:
         context.write_text(json.dumps({'url': url, 'home': str(home), 'output': str(output), 'media': str(base / 'media')}))
         env = {**os.environ, 'KEIVOTOS_HOME': str(home)}
         with (output / 'server.log').open('w') as log:
-            server = subprocess.Popen([sys.executable, '-c', SERVER, str(dist), str(port)],
+            server = subprocess.Popen([sys.executable, '-c', SERVER, str(dist), str(port), args.script, str(base / 'media')],
                                       cwd=project, env=env, stdout=log, stderr=subprocess.STDOUT)
             try:
                 deadline = time.monotonic() + 30

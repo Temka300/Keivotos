@@ -29,6 +29,7 @@ class SuiteModule(BaseModel):
     api_prefix: str
     description: str = ""
     experimental: bool = False
+    accepts_folders: bool = False
 
 
 class ModuleStatus(BaseModel):
@@ -165,6 +166,7 @@ def list_modules() -> list[SuiteModule]:
             api_prefix=descriptor.api_prefix,
             description=descriptor.description,
             experimental=descriptor.experimental,
+            accepts_folders=descriptor.is_base or descriptor.adopt_hook is not None,
         )
         for descriptor in suite_modules.descriptors()
     ]
@@ -209,6 +211,7 @@ def _set_enabled(module_id: str, enabled: bool) -> SuiteModule:
         api_prefix=descriptor.api_prefix,
         description=descriptor.description,
         experimental=descriptor.experimental,
+        accepts_folders=descriptor.is_base or descriptor.adopt_hook is not None,
     )
 
 

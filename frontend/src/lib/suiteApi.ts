@@ -13,6 +13,7 @@ export interface SuiteModule {
   api_prefix: string;
   description: string;
   experimental: boolean;
+  accepts_folders?: boolean;
 }
 
 export interface ModuleStatus {
