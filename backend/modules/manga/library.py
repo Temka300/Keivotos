@@ -108,9 +108,10 @@ def open_archive(path):
             pages = []
             for info in infos:
                 name = info.filename
+                original_name = info.orig_filename
                 parts = name.rstrip('/').split('/')
                 mode = info.external_attr >> 16
-                if (not name or '\\' in name or '\x00' in info.orig_filename
+                if (not name or '\\' in original_name or '\x00' in original_name
                         or PurePosixPath(name).is_absolute() or PureWindowsPath(name).drive
                         or any(p in ('', '.', '..') for p in parts)
                         or stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR))

@@ -82,8 +82,32 @@ def test_missing_hidden_and_traversal_rejected(library):
 @pytest.mark.parametrize('name',['../page.png','/page.png','C:/page.png','C:page.png','a\\page.png','a/./page.png','a//page.png'])
 def test_hostile_archive_names(tmp_path,name):
     path=tmp_path/'bad.cbz'
-    with zipfile.ZipFile(path,'w') as z:z.writestr(name,picture())
+    stored_name='a/page.png' if name=='a\\page.png' else name
+    with zipfile.ZipFile(path,'w') as z:z.writestr(stored_name,picture())
+    if name=='a\\page.png':
+        raw=path.read_bytes()
+        assert raw.count(b'a/page.png')==2
+        path.write_bytes(raw.replace(b'a/page.png',b'a\\page.png'))
     with pytest.raises(ValueError):
+        with engine.open_archive(path):pass
+
+
+
+def test_raw_backslash_rejected_after_windows_name_normalization(tmp_path,monkeypatch):
+    path=tmp_path/'windows.cbz'
+    with zipfile.ZipFile(path,'w') as z:z.writestr('a/page.png',picture())
+    path.write_bytes(path.read_bytes().replace(b'a/page.png',b'a\\page.png'))
+    original=zipfile.ZipInfo
+    class WindowsZipInfo(original):
+        def __init__(self,*args,**kwargs):
+            super().__init__(*args,**kwargs)
+            self.filename=self.filename.replace('\\','/')
+    monkeypatch.setattr(zipfile,'ZipInfo',WindowsZipInfo)
+    with zipfile.ZipFile(path) as archive:
+        info=archive.infolist()[0]
+        assert info.filename=='a/page.png'
+        assert info.orig_filename=='a\\page.png'
+    with pytest.raises(ValueError,match='Unsafe'):
         with engine.open_archive(path):pass
 
 
