@@ -47,8 +47,8 @@ const report={checks:[],errors:[],requests:[]};
   assert.equal(await page.getByText('Danbooru',{exact:true}).count(),0);
   await page.getByRole('button',{name:'Settings',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Settings',exact:true});await dialog.waitFor();
-  assert.deepEqual(await dialog.locator('nav button').allTextContents(),['Modules','Appearance','Startup','Storage','Backup','Advanced','Folders','Attachments']);
-  for(const name of ['Startup','Storage','Backup','Folders','Attachments','Appearance']){
+  assert.deepEqual(await dialog.locator('nav button').allTextContents(),['Modules','Appearance','Startup','Data & storage','Backup','Advanced','Folders','Attachments']);
+  for(const name of ['Startup','Data & storage','Backup','Folders','Attachments','Appearance']){
    await dialog.getByRole('navigation',{name:'Settings sections'}).getByRole('button',{name,exact:true}).click();
   }
   await page.getByRole('button',{name:'Close settings',exact:true}).click();

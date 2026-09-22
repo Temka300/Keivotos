@@ -1,7 +1,15 @@
 import { get, post, put } from './http';
 import type { BackupOptions, DiagnosticsPreferences, UserSetting, StorageConfiguration, BackupComponents, BackupEstimateDetail, BackupEstimate, BackupListItem, BackupConfiguration, BackupResult, BackupManifest, BackupRestoreResult, ThumbnailCacheStatus } from './suiteApiTypes';
 
+export interface StorageUsage {
+ data_location:string;total_bytes:number;categories:Record<string,number>;
+ modules:{id:string;name:string}[];
+ thumbnails:ThumbnailCacheStatus & {tier_bytes:Record<string,number>};
+ cleanup_on_startup:boolean;unreadable:number;
+}
 export const suiteDataApi = {
+ getStorageUsage:()=>get<StorageUsage>('/storage/usage'),
+ setCacheStartup:(enabled:boolean)=>put('/storage/cache-preferences',{cleanup_on_startup:enabled}),
 getDiagnostics: () => get<DiagnosticsPreferences>('/diagnostics'),
 configureDiagnostics: (preferences: DiagnosticsPreferences) => put<DiagnosticsPreferences>('/diagnostics', preferences),
 openDiagnostics: (target: 'data' | 'logs' | 'runtime' | 'access' | 'backups') => post<{ status: string }>(`/diagnostics/open/${target}`),

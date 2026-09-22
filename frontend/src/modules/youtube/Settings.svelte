@@ -1,12 +1,14 @@
 <script lang="ts">
- import {getContext,onMount} from 'svelte';
+ import {getContext} from 'svelte';
  import {SETTINGS_SESSION,type SettingsSession} from '../../lib/settingsSession';
  import {youtubeApi,type SaveLocation} from './api';
  export let selectedSection:string;
  export let query='';
  const session=getContext<SettingsSession>(SETTINGS_SESSION);
  let location:SaveLocation|null=null,busy=false,error='';
- onMount(async()=>{try{location=await youtubeApi.settings();}catch(e){error=String(e);}});
+ let loaded=false;
+ $: if(selectedSection==='youtube-downloads'&&!loaded)void load();
+ async function load(){loaded=true;try{location=await youtubeApi.settings();}catch(e){error=String(e);}}
  async function save(mode:'default'|'custom',path?:string){
   busy=true;error='';
   try{location=await youtubeApi.saveSettings(mode,path);}

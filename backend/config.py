@@ -888,3 +888,7 @@ def validate_backup_destination(value: str) -> Path:
     if any(path.is_relative_to(source.resolve(strict=False)) for source in protected):
         raise ValueError("Backup location cannot be inside protected data or recovery history")
     return path
+
+
+def get_thumbnail_cleanup_on_startup() -> bool:
+    return _cfg.get('thumbnail_cleanup_on_startup', False) is True

@@ -816,6 +816,20 @@
         "title": "BackupRestoreRequest",
         "type": "object"
       },
+      "CachePreferences": {
+        "additionalProperties": false,
+        "properties": {
+          "cleanup_on_startup": {
+            "title": "Cleanup On Startup",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "cleanup_on_startup"
+        ],
+        "title": "CachePreferences",
+        "type": "object"
+      },
       "CollectionCreate": {
         "properties": {
           "description": {
@@ -9218,6 +9232,58 @@
           }
         },
         "summary": "Storage Configuration"
+      }
+    },
+    "/api/storage/cache-preferences": {
+      "put": {
+        "operationId": "cache_preferences_api_storage_cache_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CachePreferences"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cache Preferences"
+      }
+    },
+    "/api/storage/usage": {
+      "get": {
+        "operationId": "storage_usage_api_storage_usage_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Storage Usage"
       }
     },
     "/api/suite/folders/apply": {

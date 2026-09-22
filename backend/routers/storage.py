@@ -67,3 +67,20 @@ def open_diagnostics(target: Literal["data", "logs", "runtime", "access", "backu
         raise HTTPException(503, "Could not open this location with your desktop application") from exc
     logger.info("Opened diagnostics target %s", target)
     return {"status": "opened"}
+
+
+@router.get('/api/storage/usage')
+def storage_usage():
+    from services.storage_usage import usage
+    return usage()
+
+
+class CachePreferences(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    cleanup_on_startup: StrictBool
+
+
+@router.put('/api/storage/cache-preferences')
+def cache_preferences(preferences:CachePreferences):
+    config.save_config({'thumbnail_cleanup_on_startup':preferences.cleanup_on_startup})
+    return {'cleanup_on_startup':config.get_thumbnail_cleanup_on_startup()}

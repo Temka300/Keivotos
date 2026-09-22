@@ -47,7 +47,7 @@ const report = { checks: [], errors: [], requests: [] };
   await page.goto(config.url);
   await open();
   assert.equal(await section('Account').count(),0);
-  for(const name of ['Startup','Storage','Backup','Folders','Attachments','Appearance'])await section(name).click();
+  for(const name of ['Startup','Data & storage','Backup','Folders','Attachments','Appearance'])await section(name).click();
   assert.equal(credentialReads,0);
   await page.getByRole('button',{name:'Close settings',exact:true}).click();
   await page.getByRole('button', {name:'Settings',exact:true}).click();
@@ -58,7 +58,7 @@ const report = { checks: [], errors: [], requests: [] };
   await page.getByRole('dialog', {name:'Settings',exact:true}).waitFor({state:'detached'});
   await page.locator('.app-drawer').getByRole('button', {name:'Danbooru',exact:true}).click();
   await open();
-  assert.deepEqual(await dialog.locator('nav button').allTextContents(),['Modules','Appearance','Startup','Storage','Backup','Advanced','Folders','Attachments','Account','Browsing','Display','Library','Advanced']);
+  assert.deepEqual(await dialog.locator('nav button').allTextContents(),['Modules','Appearance','Startup','Data & storage','Backup','Advanced','Folders','Attachments','Account','Browsing','Display','Library','Advanced']);
   await section('Account').click();
   await dialog.locator('#setting-danbooru-access > summary').click();
   await dialog.getByRole('textbox',{name:'Username',exact:true}).fill('unsaved_fixture');
@@ -77,7 +77,7 @@ const report = { checks: [], errors: [], requests: [] };
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('keivotos:home-layout'))),'classic');
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('keivotos:media-autoplay'))),'always');
   check('General and Danbooru preferences retain their existing storage keys');
-  for(const name of ['Library','Advanced','Folders','Attachments','Storage','Backup']) {await section(name).click();await page.waitForTimeout(150);}
+  for(const name of ['Library','Advanced','Folders','Attachments','Data & storage','Backup']) {await section(name).click();await page.waitForTimeout(150);}
   await dialog.getByRole('searchbox').fill('animated media');
   await dialog.getByRole('button').filter({hasText:'Animated media'}).click();
   await page.locator('#setting-media-playback.setting-flash').waitFor();

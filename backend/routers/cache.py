@@ -2,20 +2,17 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 from config import save_config
-from database import get_data_db
 from models import ThumbnailCacheLimitUpdate
 from thumbnails import cleanup_thumbnail_cache, clear_thumbnail_cache, prune_thumbnail_cache, thumbnail_cache_status, thumbnail_cache_token
 
 router = APIRouter()
 
 
-def _valid_thumbnail_keys() -> set[str]:
-    with get_data_db() as connection:
-        rows = connection.execute("SELECT path, local_md5 FROM files").fetchall()
-    return {
-        (str(row["local_md5"]).lower() if row["local_md5"] and len(str(row["local_md5"])) == 32 else thumbnail_cache_token(row["path"]))
-        for row in rows
-    }
+def _valid_thumbnail_keys() -> None:
+    # Files covers and attachments can create content-keyed thumbnails without a
+    # corresponding Danbooru row. Retain current versions across all owners.
+    # Only obsolete format/size variants are provably stale without rehashing media.
+    return None
 
 
 @router.get("/api/thumbnails/cache")

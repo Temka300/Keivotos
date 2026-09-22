@@ -236,21 +236,40 @@ def ensure_thumbnail(
                 return None
 
 
+def cache_entries():
+    """Only engine-named regular files; never traverse links or foreign content."""
+    root = THUMB_DIR.absolute()
+    if (any(part.is_symlink() for part in (root, *root.parents))
+            or os.path.normcase(str(root.resolve())) != os.path.normcase(str(root))
+            or not root.is_dir()):
+        return []
+    return [path for path in root.iterdir()
+            if re.fullmatch(r'[0-9a-f]{32}(?:_v[0-9]+)?(?:_[0-9]+)?\.webp', path.name, re.I)
+            and not path.is_symlink() and path.is_file()]
+
+
 def clear_thumbnail_cache() -> int:
-    if not THUMB_DIR.exists():
-        return 0
-    count = sum(1 for _ in THUMB_DIR.glob("*.webp"))
-    shutil.rmtree(THUMB_DIR, ignore_errors=True)
-    return count
+    removed = 0
+    with _cache_lock:
+        for path in cache_entries():
+            try:
+                path.unlink()
+                removed += 1
+            except OSError:
+                continue
+    logger.info('Cleared %s thumbnail cache files', removed)
+    return removed
 
 
 def thumbnail_cache_status() -> dict:
     count = size = legacy = 0
     tiers = {str(tier): 0 for tier in THUMBNAIL_TIERS}
+    tier_bytes = {str(tier): 0 for tier in THUMBNAIL_TIERS}
     if THUMB_DIR.exists():
-        for path in THUMB_DIR.glob("*.webp"):
+        for path in cache_entries():
             try:
-                size += path.stat().st_size
+                entry_size = path.stat().st_size
+                size += entry_size
                 count += 1
             except OSError:
                 continue
@@ -259,25 +278,27 @@ def thumbnail_cache_status() -> dict:
                 legacy += 1
             else:
                 tiers[match.group(2) or "300"] += 1
+                tier_bytes[match.group(2) or "300"] += entry_size
     return {
         "files": count,
         "bytes": size,
         "legacy_files": legacy,
         "tiers": tiers,
+        "tier_bytes": tier_bytes,
         "limit_bytes": get_thumbnail_cache_limit_bytes(),
     }
 
 
-def cleanup_thumbnail_cache(valid_keys: set[str]) -> dict:
+def cleanup_thumbnail_cache(valid_keys: set[str] | None) -> dict:
     """Remove stale versions, noncanonical sizes, and thumbnails no longer indexed."""
     removed = removed_bytes = 0
     if not THUMB_DIR.exists():
         return {**thumbnail_cache_status(), "removed": 0, "removed_bytes": 0}
-    normalized_keys = {key.lower() for key in valid_keys}
+    normalized_keys = None if valid_keys is None else {key.lower() for key in valid_keys}
     with _cache_lock:
-        for path in THUMB_DIR.glob("*.webp"):
+        for path in cache_entries():
             match = _CURRENT_CACHE_RE.match(path.name)
-            if match and match.group(1).lower() in normalized_keys:
+            if match and (normalized_keys is None or match.group(1).lower() in normalized_keys):
                 continue
             try:
                 size = path.stat().st_size
@@ -295,7 +316,7 @@ def prune_thumbnail_cache(limit_bytes: int) -> dict:
         return {**thumbnail_cache_status(), "removed": 0, "removed_bytes": 0}
     entries: list[tuple[float, int, Path]] = []
     total = 0
-    for path in THUMB_DIR.glob("*.webp"):
+    for path in cache_entries():
         try:
             stat = path.stat()
         except OSError:

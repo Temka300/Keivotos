@@ -238,6 +238,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from automatic_backups import automatic_backup_loop
     backup_stop = asyncio.Event()
     backup_task = asyncio.create_task(automatic_backup_loop(backup_stop), name="suite-automatic-backup")
+    if config.get_thumbnail_cleanup_on_startup():
+        from thumbnails import cleanup_thumbnail_cache
+        try:
+            await asyncio.to_thread(cleanup_thumbnail_cache, None)
+        except OSError:
+            logger.exception("Startup thumbnail cleanup failed")
     try:
         yield
     finally:

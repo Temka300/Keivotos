@@ -41,7 +41,7 @@ uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
-    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'absence'), default='modularization')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'storage', 'absence'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
@@ -53,6 +53,12 @@ def main() -> int:
         home = base / 'home'
         home.mkdir()
         (home / 'config.json').write_text(json.dumps({'default_library_created': True}))
+        if args.script == 'storage':
+            thumbnails=home/'base/thumbnails';thumbnails.mkdir(parents=True)
+            for suffix in ('','_600','_1200'):
+                (thumbnails/('a'*32+'_v4'+suffix+'.webp')).write_bytes(b'x'*1048576)
+            (thumbnails/('b'*32+'_v3.webp')).write_bytes(b'x'*1048576)
+            (thumbnails/'keep.json').write_text('preserved')
         if args.script == 'danbooru':
             from browser_library import seed_library
             seed_library(home)
