@@ -11,12 +11,16 @@ const report = {checks: [], errors: []};
  const page = await context.newPage();
  page.setDefaultTimeout(12000);
  page.on('pageerror', e => report.errors.push(e.message));
- let opened = [], experimental = false;
+ let opened = [], experimental = false, startupDelay = 0, startupFailOnce = false;
  await page.route('**/*', async route => {
   const url = new URL(route.request().url());
   if(url.origin !== config.url) {report.errors.push('Unexpected external request');return route.abort();}
   if(url.pathname.startsWith('/api/diagnostics/open/')) {
    opened.push(url.pathname.split('/').pop()); return route.fulfill({json:{status:'opened'}});
+  }
+  if(url.pathname === '/api/suite/modules' && route.request().method() === 'GET') {
+   if(startupDelay) await new Promise(resolve=>setTimeout(resolve,startupDelay));
+   if(startupFailOnce){startupFailOnce=false;return route.fulfill({status:503,json:{detail:'Fixture module failure'}});}
   }
   if(experimental && url.pathname === '/api/suite/modules' && route.request().method() === 'GET') {
    const response = await route.fetch(); const modules = await response.json();
@@ -76,6 +80,29 @@ const report = {checks: [], errors: []};
   await page.getByRole('switch',{name:'Fixture experimental module'}).waitFor();
   assert.equal(await page.getByRole('switch',{name:'Danbooru module'}).getAttribute('aria-checked'),'false');
   check('experimental visibility and module enablement survive reload independently');
+  await toggle('true');
+  await page.getByRole('button',{name:'Close settings',exact:true}).click();
+  await page.locator('.app-drawer').getByRole('button',{name:'Danbooru',exact:true}).click();
+  await page.evaluate(()=>localStorage.setItem('keivotos:startup-module',JSON.stringify('last')));
+  await page.addInitScript(()=>{
+   window.__filesMounts=0;
+   document.addEventListener('DOMContentLoaded',()=>new MutationObserver(()=>{
+    if(document.querySelector('input[placeholder="Search this folder…"]'))window.__filesMounts++;
+   }).observe(document,{childList:true,subtree:true}));
+  });
+  startupDelay=500;
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.getByText('Opening Keivotos…').waitFor();
+  assert.equal(await page.getByPlaceholder('Search this folder…').count(),0);
+  await page.waitForFunction(()=>document.title==='Keivotos - Danbooru');
+  assert.equal(await page.evaluate(()=>window.__filesMounts),0);
+  startupDelay=0;
+  startupFailOnce=true;
+  await page.reload({waitUntil:'domcontentloaded'});
+  await page.getByRole('alert').filter({hasText:'Could not load modules'}).getByRole('button',{name:'Retry'}).click();
+  await page.waitForFunction(()=>document.title==='Keivotos - Danbooru');
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('keivotos:active-module'))),'danbooru');
+  check('delayed and failed module loading never mounts Files or erases the remembered module');
   await page.screenshot({path:path.join(config.output,'modules.png')});
   assert.deepEqual(report.errors,[]);
  } finally {
