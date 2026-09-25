@@ -118,6 +118,32 @@ class MetadataRecoveryTests(unittest.TestCase):
             self.assertEqual(find.call_count, 5)
         self.assertIn("Stopped network work", self.output.getvalue())
 
+    def test_245_file_batch_preserves_79_sidecars_during_reset_and_resume(self):
+        saved: dict[Path, bytes] = {}
+        for index in range(245):
+            media = self.media / f"{index:03d}__88a41d15221a8e9536d94b7c1b6c665a.jpg"
+            media.write_bytes(b"synthetic fixture")
+            if index < 79:
+                sidecar = self.sidecar(media)
+                sidecar.parent.mkdir(parents=True, exist_ok=True)
+                contents = json.dumps({"post": {"id": index + 1}}).encode()
+                sidecar.write_bytes(contents)
+                saved[sidecar] = contents
+        with patch.object(pipeline, "find_post_by_md5", side_effect=urllib.error.URLError("reset")) as find:
+            self.assertEqual(self.run_backfill(), 3)
+            self.assertEqual(find.call_count, 3)
+        self.assertIn("Scanning 245 media files (166 need processing, 79 already have metadata)", self.output.getvalue())
+        self.assertIn("0 no match, 79 skipped, 3 failed", self.output.getvalue())
+        self.assertEqual(len(list(self.sidecars.rglob("*.danbooru.json"))), 79)
+        for sidecar, contents in saved.items():
+            self.assertEqual(sidecar.read_bytes(), contents)
+        with patch.object(pipeline, "find_post_by_md5", return_value=(POST, "filename_md5", "88a41d15221a8e9536d94b7c1b6c665a")) as find:
+            self.assertEqual(self.run_backfill(["--retry-failed"]), 0)
+            self.assertEqual(find.call_count, 166)
+        self.assertEqual(len(list(self.sidecars.rglob("*.danbooru.json"))), 245)
+        for sidecar, contents in saved.items():
+            self.assertEqual(sidecar.read_bytes(), contents)
+
     def test_authentication_stops_immediately_without_marking_untried_files_failed(self):
         self.file("a.png")
         self.file("b.png")

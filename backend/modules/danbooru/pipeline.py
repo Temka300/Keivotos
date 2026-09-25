@@ -22,7 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import closing, nullcontext
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 def project_root() -> Path:
     # The implementation moved from scripts into the module. Frozen Python
@@ -382,17 +382,17 @@ def filename_post_id(path: Path) -> int | None:
     return int(match.group(1))
 
 
-def md5_candidates(path: Path) -> list[tuple[str, str]]:
-    candidates: list[tuple[str, str]] = []
+def md5_candidates(path: Path) -> Iterator[tuple[str, str]]:
     seen: set[str] = set()
     for value in filename_md5s(path):
-        candidates.append(("filename_md5", value))
+        yield "filename_md5", value
         seen.add(value)
 
+    # Only open media after every filename hash has been tried. A successful
+    # lookup or an exhausted network request must not read the file needlessly.
     file_hash = md5_file(path)
     if file_hash.lower() not in seen:
-        candidates.append(("file_md5", file_hash))
-    return candidates
+        yield "file_md5", file_hash
 
 
 def request_json(

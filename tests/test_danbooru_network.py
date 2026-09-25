@@ -74,5 +74,29 @@ class DanbooruNetworkTests(unittest.TestCase):
         self.assertEqual(from_cache.call_args.args[2], "connection failed")
         save.assert_not_called()
 
+    def test_filename_md5_lookup_does_not_read_media_before_the_request(self):
+        name = "__amamiya_ren_akechi_goro_joker_arsene_and_crow_persona_and_2_more_drawn_by_doran_doran7280__88a41d15221a8e9536d94b7c1b6c665a.jpg"
+        with tempfile.TemporaryDirectory() as directory:
+            media = Path(directory) / name
+            media.write_bytes(b"synthetic test bytes, not the user's image")
+            with patch.object(pipeline, "md5_file", side_effect=AssertionError("media was opened")), \
+                 patch.object(pipeline, "request_json", return_value={"id": 123}) as request:
+                post, matched_by, digest = pipeline.find_post_by_md5(media, None, None, 0, 0)
+        self.assertEqual(post, {"id": 123})
+        self.assertEqual(matched_by, "filename_md5")
+        self.assertEqual(digest, "88a41d15221a8e9536d94b7c1b6c665a")
+        self.assertEqual(request.call_args.args[0], "/posts.json")
+        self.assertEqual(request.call_args.args[1]["md5"], digest)
+
+    def test_filename_md5_reset_does_not_fall_through_to_a_false_miss(self):
+        with tempfile.TemporaryDirectory() as directory:
+            media = Path(directory) / "__sample__88a41d15221a8e9536d94b7c1b6c665a.jpg"
+            media.write_bytes(b"synthetic bytes")
+            with patch.object(pipeline, "md5_file", side_effect=AssertionError("media was opened")), \
+                 patch.object(pipeline, "request_json", side_effect=urllib.error.URLError("reset")):
+                with self.assertRaises(urllib.error.URLError):
+                    pipeline.find_post_by_md5(media, None, None, 0, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
