@@ -427,7 +427,7 @@
 
 <DirectoryPicker bind:this={directoryPicker} />
 
-<!-- Files owns one compact bar: drawer, breadcrumb, then the source tools. -->
+<!-- Files keeps Search and source tools in one compact bar. -->
 <header class="flex shrink-0 items-center gap-3 border-b border-[#2a2a3a] bg-[#16161e] px-4 py-2">
   <button
     class="rounded p-1.5 transition-colors hover:bg-[#2a2a3a]"
@@ -440,34 +440,6 @@
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
     </svg>
   </button>
-
-  <div class="flex w-[17rem] min-w-0 max-w-[38%] shrink-0 items-center gap-1 overflow-x-auto text-sm">
-    {#if selectedSource}
-      {#if moduleUi(selectedRole).iconSrc}
-        <img src={moduleUi(selectedRole).iconSrc ?? ''} alt="" class="mr-1 h-7 w-7 shrink-0 rounded-md" />
-      {:else}
-        <span class="mr-1 grid h-7 w-7 shrink-0 place-items-center rounded-md bg-white/5 text-base">🗂️</span>
-      {/if}
-      {#each breadcrumbSources as source, i}
-        {#if i > 0}<span class="shrink-0 text-gray-600">/</span>{/if}
-        <button
-          type="button"
-          class="shrink-0 text-gray-300 hover:text-white"
-          on:click={() => source.source_id === selectedSourceId ? navigate('') : selectSource(source.source_id)}
-        >{source.display_name}</button>
-      {/each}
-      {#each crumbs as crumb, i}
-        <span class="shrink-0 text-gray-600">/</span>
-        <button
-          type="button"
-          class="shrink-0 text-gray-300 hover:text-white"
-          on:click={() => navigate(crumbs.slice(0, i + 1).join('/'))}
-        >{crumb}</button>
-      {/each}
-    {:else}
-      <span class="text-gray-500">Select or add a folder</span>
-    {/if}
-  </div>
 
   <div class="relative ml-4 mr-2 min-w-64 flex-1 max-w-xl">
       <input
@@ -565,6 +537,35 @@
        same problem better: dragging it wider moves its left edge toward the
        grid without stranding any space. -->
   <section class="flex flex-col flex-1 min-w-0">
+    <!-- Folder ancestry stays between Search and the browsed files. -->
+    <nav class="flex min-h-12 min-w-0 items-center gap-1 overflow-x-auto border-b border-white/5 px-4 text-sm" aria-label="Current folder">
+      {#if selectedSource}
+        {#if moduleUi(selectedRole).iconSrc}
+          <img src={moduleUi(selectedRole).iconSrc ?? ''} alt="" class="mr-1 h-7 w-7 shrink-0 rounded-md" />
+        {:else}
+          <span class="mr-1 grid h-7 w-7 shrink-0 place-items-center rounded-md bg-white/5 text-base">🗂️</span>
+        {/if}
+        {#each breadcrumbSources as source, i}
+          {#if i > 0}<span class="shrink-0 text-gray-600">/</span>{/if}
+          <button
+            type="button"
+            class="shrink-0 text-gray-300 hover:text-white"
+            on:click={() => source.source_id === selectedSourceId ? navigate('') : selectSource(source.source_id)}
+          >{source.display_name}</button>
+        {/each}
+        {#each crumbs as crumb, i}
+          <span class="shrink-0 text-gray-600">/</span>
+          <button
+            type="button"
+            class="shrink-0 text-gray-300 hover:text-white"
+            on:click={() => navigate(crumbs.slice(0, i + 1).join('/'))}
+          >{crumb}</button>
+        {/each}
+      {:else}
+        <span class="text-gray-500">Select or add a folder</span>
+      {/if}
+    </nav>
+
     {#if error}
       <div class="mx-4 mt-3 px-3 py-2 text-xs rounded bg-red-500/10 border border-red-500/30 text-red-300">{error}</div>
     {/if}
