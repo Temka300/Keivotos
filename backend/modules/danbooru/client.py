@@ -24,7 +24,7 @@ from fastapi import HTTPException
 
 from config import DANBOORU_MODULE
 from modules.danbooru.credentials import effective_credentials
-from modules.danbooru.network import read_json
+from modules.danbooru.network import failure_kind, read_json
 from product import DISPLAY_NAME, VERSION
 
 
@@ -59,9 +59,22 @@ def danbooru_json(endpoint: str, params: dict[str, str | int], timeout: float = 
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
             raise HTTPException(404, "Danbooru metadata not found") from exc
-        raise HTTPException(502, f"Failed to fetch Danbooru metadata: {exc}") from exc
+        if exc.code in (401, 403):
+            detail = f"Danbooru authentication failed (HTTP {exc.code}); check the saved credentials."
+        elif exc.code == 429:
+            detail = "Danbooru rate limited this request (HTTP 429); retry later."
+        else:
+            detail = f"Danbooru request failed (HTTP {exc.code})."
+        raise HTTPException(502, detail) from exc
     except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as exc:
-        raise HTTPException(502, f"Failed to fetch Danbooru metadata: {exc}") from exc
+        kind = failure_kind(exc)
+        if kind == "connection":
+            detail = "Connection to Danbooru failed; check access to danbooru.donmai.us and retry."
+        elif kind == "certificate":
+            detail = "Danbooru certificate verification failed; check this device's TLS configuration."
+        else:
+            detail = f"Danbooru request failed: {kind}."
+        raise HTTPException(502, detail) from exc
 
 
 def normalize_danbooru_post_payload(data: Any) -> dict[str, Any]:
