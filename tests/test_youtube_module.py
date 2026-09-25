@@ -150,6 +150,29 @@ def test_library_count_and_literal_search_use_named_rows(local):
     assert 'root' not in router.library('',0,60)['items'][0]
 
 
+def test_cancelled_jobs_leave_records_and_partial_files_but_not_library_cards(local):
+    source,media,connect=local
+    completed=jobs.create(URL,source.source_id)
+    jobs.update(completed['id'],status='complete',title='Fixture complete')
+    cancelled=jobs.create(URL,source.source_id)
+    jobs.update(cancelled['id'],title='Fixture cancelled')
+    staging=media/'.keivotos/youtube'/cancelled['id']
+    staging.mkdir(parents=True)
+    partial=staging/'unfinished.part'
+    partial.write_bytes(b'preserved partial')
+    jobs.cancel(cancelled['id'])
+    failed=jobs.create(URL,source.source_id)
+    jobs.update(failed['id'],status='failed',title='Fixture failed')
+
+    page=router.library('',0,1)
+    assert page['total']==2
+    ids={page['items'][0]['id'],router.library('',1,1)['items'][0]['id']}
+    assert ids=={failed['id'],completed['id']}
+    assert router.library('cancelled',0,60)=={'items':[],'total':0}
+    assert jobs.get(cancelled['id'])['status']=='cancelled'
+    assert partial.read_bytes()==b'preserved partial'
+
+
 def test_background_failure_retains_partial_files_and_can_retry(local,monkeypatch,caplog):
     source,media,connect=local
     async def fail(job):

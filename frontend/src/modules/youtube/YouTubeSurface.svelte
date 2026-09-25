@@ -51,7 +51,7 @@
  async function engine(){try{status=await youtubeApi.status();}catch(e){error=String(e);}}
  async function load(more=false,refresh=false){
    request?.abort();const current=new AbortController();request=current;loading=true;
-   try{const result=await youtubeApi.library(searchQuery,more?items.length:0,current.signal);if(!alive||current.signal.aborted)return;items=more?[...items,...result.items]:refresh?[...result.items,...items.slice(60)]:result.items;total=result.total;}
+   try{const result=await youtubeApi.library(searchQuery,more?items.length:0,current.signal);if(!alive||current.signal.aborted)return;items=more?[...items,...result.items]:refresh?[...result.items,...items.slice(60).filter(item=>item.status!=='cancelled')]:result.items;total=result.total;}
    catch(e){if(!current.signal.aborted&&alive)error=e instanceof Error?e.message:'Could not load downloads.';}
    finally{if(current===request)loading=false;}
  }
@@ -63,7 +63,7 @@
   finally{busy=false;}
  }
  async function action(item:Download,retry=false){
-  error='';try{const updated=await(retry?youtubeApi.retry(item.id):youtubeApi.cancel(item.id));items=retry?[updated,...items]:items.map(row=>row.id===updated.id?updated:row);await load();}
+  error='';try{const updated=await(retry?youtubeApi.retry(item.id):youtubeApi.cancel(item.id));items=retry?[updated,...items]:items.filter(row=>row.id!==updated.id);if(!retry)total=Math.max(0,total-1);await load();}
   catch(e){error=e instanceof Error?e.message:'Could not update download.';}
  }
  async function poll(){if(!selected&&items.some(active))await load(false,true);if(alive)timer=setTimeout(poll,1000);}
@@ -83,7 +83,7 @@
   {#if error}<p role="alert">{error}</p>{/if}
   <div class="download-grid" aria-busy={loading}>
    {#each items as item (item.id)}
-    <article>
+    <article data-job-id={item.id}>
      <div class="thumbnail">
       {#if item.status==='complete'}
        {#if isAudio(item)}

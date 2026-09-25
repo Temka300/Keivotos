@@ -91,12 +91,19 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
 
 
   await input.fill(url);await toggle.click();await page.waitForTimeout(250);await page.getByRole('button',{name:'Download',exact:true}).click();
-  await page.getByRole('button',{name:/^Cancel /}).click();await page.getByText('Cancelled',{exact:true}).waitFor();
-  await page.getByRole('button',{name:/^Retry /}).click();await page.getByRole('progressbar').waitFor();
+  const pending=(await api('/api/youtube/library')).data.items.find(item=>item.status==='queued'||item.status==='downloading');assert(pending);
+  await page.getByRole('button',{name:/^Cancel /}).click();
+  await page.waitForFunction(id=>!document.querySelector(`[data-job-id="${id}"]`),pending.id);
+  assert.equal((await api('/api/youtube/library')).data.items.some(item=>item.id===pending.id),false);
+  await page.reload();await page.getByRole('button',{name:'Open Keivotos menu'}).click();await page.locator('.app-drawer').getByRole('button',{name:'YouTube',exact:true}).click();
+  assert.equal(await page.getByText('Cancelled',{exact:true}).count(),0);
+  const retried=await api(`/api/youtube/downloads/${pending.id}/retry`,'POST');assert.equal(retried.status,200);
+  await page.reload();await page.getByRole('button',{name:'Open Keivotos menu'}).click();await page.locator('.app-drawer').getByRole('button',{name:'YouTube',exact:true}).click();
+  await page.getByRole('progressbar').waitFor();
   await api('/api/suite/modules/youtube/disable','POST');assert.equal((await api('/api/youtube/library')).status,409);
   await api('/api/suite/modules/youtube/enable','POST');
   const restored=(await api('/api/youtube/library')).data.items;assert(restored.some(x=>x.status==='interrupted'));assert(restored.some(x=>x.status==='complete'));
-  check('cancel and retry work; disable drains the queue, preserves completed media and prevents automatic restart');
+  check('cancelled cards stay hidden after refresh and reload; retry remains possible, disable drains the queue and preserves completed media');
   await page.reload();await page.getByRole('button',{name:'Open Keivotos menu'}).click();await page.getByRole('button',{name:'Settings',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Settings',exact:true});
   await page.setViewportSize({width:1440,height:600});

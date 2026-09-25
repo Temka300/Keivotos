@@ -31,7 +31,7 @@ def status():
 @router.get('/api/youtube/library')
 def library(q:str=Query('',max_length=256),offset:int=Query(0,ge=0),limit:int=Query(60,ge=1,le=120)):
     with get_user_db() as db:
-        where='instr(lower(title),lower(?))>0'
+        where="status != 'cancelled' AND instr(lower(title),lower(?))>0"
         total=db.execute('SELECT count(*) AS total FROM youtube_downloads WHERE '+where,(q,)).fetchone()['total']
         rows=db.execute('SELECT * FROM youtube_downloads WHERE '+where+' ORDER BY created_at DESC,id LIMIT ? OFFSET ?',(q,limit,offset)).fetchall()
     return {'items':[public(dict(row)) for row in rows],'total':total}
