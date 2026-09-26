@@ -30,6 +30,12 @@
       "icon": "window"
     },
     {
+      "id": "player",
+      "group": "general",
+      "label": "Player",
+      "icon": "window"
+    },
+    {
       "id": "storage",
       "group": "general",
       "label": "Storage",
@@ -119,6 +125,18 @@
         "last used",
         "launch",
         "open"
+      ]
+    },
+    {
+      "id": "hide-controls-seconds",
+      "section": "player",
+      "label": "Hide controls after",
+      "description": "Set the player idle time from one to ten seconds.",
+      "keywords": [
+        "video",
+        "player",
+        "timer",
+        "controls"
       ]
     },
     {

@@ -6,6 +6,7 @@
   import { SETTINGS_SESSION, type SettingsSession } from '../lib/settingsSession';
   import { compactSegmentClass } from '../lib/settingsControls';
   import { SUITE_NAME } from '../lib/product';
+  import { hideControlsSeconds } from '../lib/playbackPreferences';
   import { enabledModules, interfaceScale, motionPreference, startupModule, suiteModules } from '../lib/suiteStores';
   import type { InterfaceScale, MotionPreference, StartupModule } from '../lib/suiteStores';
   import BackupRestoreSettings from '../components/BackupRestoreSettings.svelte';
@@ -78,6 +79,17 @@
 {:else if selectedSection === 'storage'}
           <div class="mx-auto max-w-3xl space-y-4">
             <ThumbnailCacheSettings />
+          </div>
+{:else if selectedSection === 'player'}
+          <div class="mx-auto max-w-3xl space-y-4">
+            <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">
+              <div id="setting-hide-controls-seconds" class="flex items-center justify-between gap-5 px-4 py-3">
+                <label for="hide-controls-seconds" class="text-sm font-medium text-gray-200">Hide controls after</label>
+                <select id="hide-controls-seconds" class="rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-xs text-gray-200" value={$hideControlsSeconds} on:change={event => hideControlsSeconds.set(Number(event.currentTarget.value))}>
+                  {#each Array.from({length:10},(_,index)=>index+1) as seconds}<option value={seconds}>{seconds} {seconds===1?'second':'seconds'}</option>{/each}
+                </select>
+              </div>
+            </section>
           </div>
 {:else if selectedSection === 'backup'}
           <div class="mx-auto max-w-3xl space-y-4">

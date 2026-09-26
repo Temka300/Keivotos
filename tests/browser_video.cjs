@@ -110,6 +110,25 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await back();
   check('next fetches another page within filtered results; first/last controls disable without wrapping');
 
+
+  await page.getByRole('button',{name:'Open Keivotos menu'}).click();
+  await page.getByRole('button',{name:'Settings',exact:true}).click();
+  const settings=page.getByRole('dialog',{name:'Settings',exact:true});
+  await settings.getByRole('navigation',{name:'Settings sections'}).getByRole('button',{name:'Player',exact:true}).click();
+  const delay=settings.getByLabel('Hide controls after');
+  assert.equal(await delay.inputValue(),'5');
+  await delay.selectOption('1');
+  await settings.getByRole('button',{name:'Close settings'}).click();
+  await page.locator('.app-drawer').getByRole('button',{name:'Video',exact:true}).click();
+  await page.getByRole('button',{name:'sample.mp4',exact:true}).click();
+  await page.locator('video').evaluate(video=>video.loop=true);
+  await page.mouse.move(700,400);await page.waitForTimeout(1200);
+  assert.equal(await page.locator('.player-controls').evaluate(node=>getComputedStyle(node).opacity),'0');
+  await page.mouse.move(710,405);
+  await page.waitForFunction(()=>getComputedStyle(document.querySelector('.player-controls')).opacity==='1');
+  await page.locator('video').evaluate(video=>video.loop=false);
+  check('Player setting persists and controls hide after one idle second, then return on pointer movement');
+
   assert.deepEqual(report.errors,[]);
  }finally{fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));await context.tracing.stop({path:path.join(config.output,'trace.zip')});await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});
