@@ -7,7 +7,7 @@
   let items:Manga[]=[], total=0;
   let selected:Manga|null=null, chapters:Chapter[]=[], chapter:Chapter|null=null;
   let chapterLoading=false, chapterError='', readerError='', pageCount=0;
-  let mode='paged', pageIndex=0;
+  let mode='paged', pageIndex=0, controlsVisible=true;
   let dialog:HTMLDivElement, reader:HTMLDivElement;
   let tileFocus:HTMLElement|null=null, chapterFocus:HTMLElement|null=null;
   let libraryRequest:AbortController|null=null, detailRequest:AbortController|null=null, pageRequest:AbortController|null=null;
@@ -36,7 +36,7 @@
   async function close(){detailRequest?.abort();selected=null;await tick();tileFocus?.focus();}
   async function read(item:Chapter){
     if(!selected)return;
-    chapterFocus=document.activeElement as HTMLElement;chapter=item;pageCount=0;pageIndex=0;readerError='';visible=new Set();ratios={};
+    chapterFocus=document.activeElement as HTMLElement;chapter=item;pageCount=0;pageIndex=0;controlsVisible=true;readerError='';visible=new Set();ratios={};
     pageRequest?.abort();const current=new AbortController();pageRequest=current;
     await tick();reader?.focus();
     try{const result=await mangaApi.pages(selected,item,current.signal);if(!current.signal.aborted)pageCount=result.count;}
@@ -53,6 +53,11 @@
   }
   function turnPage(direction:-1|1){pageIndex=Math.max(0,Math.min(pageCount-1,pageIndex+direction));}
   function readerKeys(event:KeyboardEvent){
+    if(event.key==='Tab'&&!controlsVisible){
+      event.preventDefault();controlsVisible=true;
+      void tick().then(()=>reader?.querySelector<HTMLElement>(event.shiftKey?'.reader-controls select':'.reader-controls button')?.focus());
+      return;
+    }
     if(mode==='paged'&&pageCount&&!(event.target as HTMLElement).closest('.reader-controls')&&['ArrowLeft','ArrowUp','PageUp','ArrowRight','ArrowDown','PageDown',' '].includes(event.key)){
       event.preventDefault();turnPage(['ArrowLeft','ArrowUp','PageUp'].includes(event.key)?-1:1);return;
     }
@@ -85,6 +90,10 @@
     const bounds=reader.getBoundingClientRect(),position=(event.clientY-bounds.top)/bounds.height;
     if(mode==='paged'&&position<=.25)turnPage(-1);
     else if(mode==='paged'&&position>=.75)turnPage(1);
+    else if(position>.25&&position<.75){
+      controlsVisible=!controlsVisible;
+      if(!controlsVisible&&reader.contains(document.activeElement))reader.focus();
+    }
   }
   onMount(()=>{void load();});
   onDestroy(()=>{clearTimeout(debounce);libraryRequest?.abort();detailRequest?.abort();pageRequest?.abort();observer?.disconnect();});
@@ -129,7 +138,7 @@
 {#if selected&&chapter}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
   <div class="reader" class:vertical={mode==='vertical'} bind:this={reader} role="dialog" aria-label="Manga reader" aria-modal="true" tabindex="-1" on:keydown={readerKeys} on:pointerdown={pointerDown} on:pointermove={pointerMove} on:click={readerClick}>
-    <div class="reader-controls" >
+    <div class="reader-controls" class:hidden={!controlsVisible} inert={!controlsVisible} aria-hidden={!controlsVisible}>
       <button class="back" aria-label="Back to chapters" on:click={back}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
       <select aria-label="Reading layout" bind:value={mode} on:change={changeMode}><option value="paged">Paged</option><option value="vertical">Vertical scroll</option></select>
     </div>
@@ -172,7 +181,8 @@
  .chapter-dialog>.back{position:absolute;top:16px;left:16px}
  .reader{position:fixed;inset:0;z-index:120;overflow:hidden;overscroll-behavior:contain;background:#080808;color:#eee}
  .reader.vertical{overflow-y:auto}
- .reader-controls{position:fixed;top:16px;left:16px;z-index:1;display:flex;align-items:center;gap:8px}
+ .reader-controls{position:fixed;top:16px;left:16px;z-index:1;display:flex;align-items:center;gap:8px;transition:opacity .18s ease,transform .18s ease}
+ .reader-controls.hidden{opacity:0;transform:translateY(-10px);pointer-events:none}
  .reader-controls select{border:0;border-radius:20px;background:#26262d;color:#ddd;padding:9px 12px;font-size:13px;cursor:pointer}
  .paged-page{height:100dvh;width:100%;display:grid;place-items:center;overflow:hidden}
  .paged-page img{width:100%;height:100%;object-fit:contain}
@@ -182,7 +192,7 @@
  .reader-error{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:#26262d;padding:10px 16px;border-radius:8px;z-index:1;font-size:14px}
  .muted{color:#9292a5}.loading{padding:80px 24px}
  button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
- :global(html[data-motion='reduced']) .back{transition:none}
- @media(prefers-reduced-motion:reduce){.back{transition:none}}
+ :global(html[data-motion='reduced']) .back,:global(html[data-motion='reduced']) .reader-controls{transition:none}
+ @media(prefers-reduced-motion:reduce){.back,.reader-controls{transition:none}}
  @media(max-width:560px){.chapter-dialog{grid-template-columns:minmax(0,110px) minmax(0,1fr);gap:16px;padding:64px 16px 16px}.scrim{padding:12px}.manga-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
 </style>
