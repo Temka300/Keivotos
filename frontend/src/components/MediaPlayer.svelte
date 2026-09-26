@@ -1,17 +1,18 @@
 <script lang="ts">
   import {onMount,onDestroy,tick} from 'svelte';
   import type {PlaybackMedia,PlaybackFailure} from '../lib/playback';
-  import {hideControlsSeconds} from '../lib/playbackPreferences';
+  import {hideControlsSeconds,loopModeFor,type LoopMode,type PlaybackOwner} from '../lib/playbackPreferences';
   export let media:PlaybackMedia;
+  export let owner:PlaybackOwner;
   export let label='Video player';
   export let backLabel='Back to videos';
   export let hasPrevious=false;
   export let hasNext=false;
+  export let canWrap=false;
   export let navigating=false;
   export let navigationNotice='';
   export let onClose:()=>void;
-  export let onPrevious:()=>void;
-  export let onNext:()=>void;
+  export let onNavigate:(direction:-1|1,wrap:boolean)=>Promise<boolean>;
   export let onFailure:(item:PlaybackMedia,reason:PlaybackFailure)=>Promise<unknown>;
   let player:HTMLVideoElement;
   let viewer:HTMLDivElement;
@@ -22,7 +23,26 @@
   let idleSeconds=5;
   let idleTimer:ReturnType<typeof setTimeout>|undefined;
   let stopPreference:()=>void=()=>{};
-  function ended(){playing=false;controlsVisible=true;clearIdle();}
+  let stopLoop:()=>void=()=>{};
+  let loopMode:LoopMode='off';
+  let endBusy=false;
+  const loopOrder:LoopMode[]=['off','all','one'];
+  function cycleLoop(){loopModeFor(owner).set(loopOrder[(loopOrder.indexOf(loopMode)+1)%loopOrder.length]);reveal();}
+  async function navigate(direction:-1|1){
+    try{await onNavigate(direction,loopMode==='all');}
+    catch{notice='Could not load another video. Try again.';controlsVisible=true;clearIdle();}
+  }
+  async function replay(){
+    if(!player||failure)return;
+    player.currentTime=0;
+    try{await player.play();}
+    catch{failure='Could not replay this video. See Logs.';controlsVisible=true;clearIdle();void report('playback');}
+  }
+  async function ended(){
+    playing=false;controlsVisible=true;clearIdle();
+    if(endBusy||failure||loopMode!=='one')return;
+    endBusy=true;try{await replay();}finally{endBusy=false;}
+  }
   function clearIdle(){if(idleTimer!==undefined){clearTimeout(idleTimer);idleTimer=undefined;}}
   function scheduleIdle(){
     clearIdle();
@@ -52,6 +72,7 @@
     player?.pause();
     playing = false; position = 0; duration = 0; failure = ''; notice = ''; reported = new Set();
     clearIdle();controlsVisible=true;keyboardActive=false;pointerOverControls=false;
+    endBusy=false;
     await tick(); if (!alive || media !== item) return; viewer?.focus();
     if (!['mp4','m4v','webm'].includes(item.ext)) {
       failure = 'This format cannot play here. See Logs.'; void report('unsupported_format'); return;
@@ -91,8 +112,8 @@
   function seek(event: Event) {
     if (player && Number.isFinite(duration)) player.currentTime = Number((event.currentTarget as HTMLInputElement).value);
   }
-  onMount(()=>{stopPreference=hideControlsSeconds.subscribe(seconds=>{idleSeconds=seconds;scheduleIdle();});mounted=true;});
-  onDestroy(()=>{alive=false;clearIdle();stopPreference();player?.pause();if(document.fullscreenElement===viewer)void document.exitFullscreen().catch(()=>{});});
+  onMount(()=>{stopPreference=hideControlsSeconds.subscribe(seconds=>{idleSeconds=seconds;scheduleIdle();});stopLoop=loopModeFor(owner).subscribe(value=>loopMode=value);mounted=true;});
+  onDestroy(()=>{alive=false;clearIdle();stopPreference();stopLoop();player?.pause();if(document.fullscreenElement===viewer)void document.exitFullscreen().catch(()=>{});});
 </script>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
   <div class="video-viewer" bind:this={viewer} role="dialog" aria-modal="true" aria-label={label} tabindex="-1" on:keydown={playerKeys} on:pointerdown={() => keyboardActive=false} on:pointermove={pointerMove} on:touchstart={reveal} on:focusin={controlFocus} on:focusout={controlBlur}>
@@ -105,9 +126,10 @@
     <div class="player-controls" role="group" aria-label="Playback controls" class:controls-hidden={!controlsVisible} inert={!controlsVisible} on:pointerenter={() => {pointerOverControls=true;clearIdle();}} on:pointerleave={() => {pointerOverControls=false;scheduleIdle();}}>
       <input aria-label="Seek" type="range" min="0" max={duration || 0} step="0.1" value={position} style={`--progress:${duration ? position / duration * 100 : 0}%`} disabled={!duration || !!failure} on:input={seek} />
       <div class="control-row">
-        <button aria-label="Previous video" disabled={navigating || !hasPrevious} on:click={() => onPrevious()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5 8 12l11 7Z" /></svg></button>
+        <button aria-label="Previous video" disabled={navigating || !(hasPrevious||(loopMode==='all'&&canWrap))} on:click={() => navigate(-1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5 8 12l11 7Z" /></svg></button>
         <button aria-label={playing ? 'Pause' : 'Play'} disabled={!!failure} on:click={togglePlay}><svg viewBox="0 0 24 24" aria-hidden="true">{#if playing}<path d="M8 5v14M16 5v14" />{:else}<path d="m7 4 13 8-13 8Z" />{/if}</svg></button>
-        <button aria-label="Next video" disabled={navigating || !hasNext} on:click={() => onNext()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l11 7-11 7Z" /></svg></button>
+        <button aria-label="Next video" disabled={navigating || !(hasNext||(loopMode==='all'&&canWrap))} on:click={() => navigate(1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l11 7-11 7Z" /></svg></button>
+        <button class="loop-button" class:off={loopMode==='off'} class:all={loopMode==='all'} class:one={loopMode==='one'} aria-label={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} title={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} aria-pressed={loopMode!=='off'} on:click={cycleLoop}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M3 11V9a4 4 0 0 1 4-4h13"/><path d="M7 22l-3-3 3-3"/><path d="M21 13v2a4 4 0 0 1-4 4H4"/></svg>{#if loopMode==='one'}<span class="loop-one-mark">1</span>{/if}</button>
         <button class="fullscreen" aria-label="Fullscreen" on:click={fullscreen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" /></svg></button>
       </div>
     </div>
@@ -124,7 +146,11 @@
  .control-row{display:flex;align-items:center;gap:12px}
  .player-controls button{display:grid;place-items:center;width:40px;height:40px;border:0;background:transparent;color:#eee;border-radius:50%;transition:background-color .15s ease}
  .player-controls button:hover:not(:disabled){background:#ffffff20}
- .fullscreen{margin-left:auto}
+ .loop-button{position:relative;margin-left:auto}
+ .loop-button.off{color:#8a8a92}
+ .loop-button.all,.loop-button.one{color:#fff}
+ .loop-one-mark{position:absolute;top:7px;left:8px;font-size:10px;line-height:1;font-weight:800;color:#fff;pointer-events:none;z-index:2;text-shadow:-1px 0 0 #111,1px 0 0 #111,0 -1px 0 #111,0 1px 0 #111,-1px -1px 0 #111,1px -1px 0 #111,-1px 1px 0 #111,1px 1px 0 #111}
+ .loop-one-mark::before{content:"";position:absolute;z-index:-1;left:-2px;right:-2px;top:5px;height:5px;border-radius:3px;background:#151515}
  .player-controls input{appearance:none;width:100%;height:20px;margin:0;padding:0;border:0;border-radius:0;background:transparent;cursor:pointer}
  .player-controls input::-webkit-slider-runnable-track{height:3px;border:0;background:linear-gradient(to right,var(--accent) var(--progress),#ffffff55 var(--progress))}
  .player-controls input::-moz-range-track{height:3px;border:0;background:linear-gradient(to right,var(--accent) var(--progress),#ffffff55 var(--progress))}

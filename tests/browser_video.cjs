@@ -129,6 +129,20 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.locator('video').evaluate(video=>video.loop=false);
   check('Player setting persists and controls hide after one idle second, then return on pointer movement');
 
+  const loop=()=>page.getByRole('button',{name:/^Loop (off|all|one)$/});
+  assert.equal(await loop().getAttribute('aria-label'),'Loop off');
+  await loop().click();assert.equal(await loop().getAttribute('aria-label'),'Loop all');
+  await loop().click();assert.equal(await loop().getAttribute('aria-label'),'Loop one');
+  const badge=await page.locator('.loop-one-mark').boundingBox(),button=await loop().boundingBox();
+  assert(badge.x>=button.x&&badge.x<button.x+button.width/2&&badge.y<button.y+button.height/2);
+  await loop().click();assert.equal(await loop().getAttribute('aria-label'),'Loop off');
+  const current=await page.locator('video').getAttribute('src');
+  await page.locator('video').evaluate(video=>video.currentTime=video.duration-.15);
+  await page.waitForFunction(()=>document.querySelector('video')?.ended);
+  assert.equal(await page.locator('video').getAttribute('src'),current);
+  await back();
+  check('Loop cycles Off, All and One with its top-left badge');
+
   assert.deepEqual(report.errors,[]);
  }finally{fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));await context.tracing.stop({path:path.join(config.output,'trace.zip')});await browser.close();}
 })().catch(e=>{console.error(e);process.exitCode=1;});

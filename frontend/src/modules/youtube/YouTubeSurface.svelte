@@ -15,19 +15,23 @@
  $: playback=selected?{src:filesApi.fileUrl(selected.source_id,selected.path),ext:selected.path.split('.').pop()?.toLowerCase()||''}:null;
  function open(item:Download){if(!selected)returnFocus=document.activeElement as HTMLElement;selected=item;navigationNotice='';optionsOpen=false;}
  async function close(){selected=null;await tick();returnFocus?.focus();}
- async function adjacent(direction:-1|1){
-  if(!selected||navigating)return;
-  const current=selected,index=selectedIndex+direction;
-  if(index<0)return;
+ async function adjacent(direction:-1|1,wrap=false):Promise<boolean>{
+  if(!selected||navigating)return false;
+  const current=selected;
+  let index=selectedIndex+direction;
+  if(index<0&&!wrap)return false;
   navigating=true;navigationNotice='';
   try{
    let choices=playable;
-   while(direction===1&&index>=choices.length&&items.length<total){
+   while((direction===1&&index>=choices.length||direction===-1&&index<0&&wrap)&&items.length<total){
     const count=items.length;await load(true);
     choices=items.filter(item=>item.status==='complete'&&!isAudio(item));
-    if(items.length<=count){navigationNotice='Could not load the next video. Try again.';break;}
+    if(items.length<=count)throw new Error('Could not load the next video.');
    }
-   if(alive&&selected===current&&choices[index])open(choices[index]);
+   if(wrap&&index<0)index=choices.length-1;
+   if(wrap&&index>=choices.length)index=0;
+   if(alive&&selected===current&&choices[index]){open(choices[index]);return true;}
+   return false;
   }finally{navigating=false;}
  }
  let motion=200;
@@ -112,9 +116,10 @@
 </div>
 {#if drawer}<AppDrawer on:close={()=>drawer=false}/>{/if}
 {#if selected && playback}
- <MediaPlayer media={playback} label="YouTube player" backLabel="Back to downloads"
+ <MediaPlayer media={playback} owner="youtube" label="YouTube player" backLabel="Back to downloads"
   hasPrevious={selectedIndex>0} hasNext={selectedIndex>=0&&(selectedIndex<playable.length-1||items.length<total)}
-  {navigating} {navigationNotice} onClose={close} onPrevious={()=>adjacent(-1)} onNext={()=>adjacent(1)}
+  canWrap={playable.length>1||items.length<total}
+  {navigating} {navigationNotice} onClose={close} onNavigate={adjacent}
   onFailure={(_media,reason)=>youtubeApi.playbackError(selected!.id,reason)}/>
 {/if}
 <style>

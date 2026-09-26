@@ -10,3 +10,15 @@ export const hideControlsSeconds = persistedWritable(
   5,
   normalizeHideControlsSeconds,
 );
+
+export type PlaybackOwner = 'video' | 'youtube';
+export type LoopMode = 'off' | 'all' | 'one';
+export function normalizeLoopMode(value: unknown): LoopMode {
+  return value === 'all' || value === 'one' ? value : 'off';
+}
+
+const loopModes = {
+  video: persistedWritable(persistentStorageKey('video-loop-mode'), 'off' as LoopMode, normalizeLoopMode),
+  youtube: persistedWritable(persistentStorageKey('youtube-loop-mode'), 'off' as LoopMode, normalizeLoopMode),
+};
+export function loopModeFor(owner: PlaybackOwner) { return loopModes[owner]; }

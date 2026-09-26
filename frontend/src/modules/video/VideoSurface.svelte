@@ -41,18 +41,25 @@
     if(!selected)returnFocus=document.activeElement as HTMLElement;
     selected=item;notice='';
   }
-  async function adjacent(direction: -1 | 1) {
-    if (!selected || navigating) return;
+  async function adjacent(direction: -1 | 1, wrap = false): Promise<boolean> {
+    if (!selected || navigating) return false;
     const current = selected;
-    const nextIndex = selectedIndex + direction;
-    if (nextIndex < 0 || nextIndex >= total) return;
+    let nextIndex = selectedIndex + direction;
+    if (wrap && nextIndex < 0) nextIndex = total - 1;
+    if (wrap && nextIndex >= total) nextIndex = 0;
+    if (nextIndex < 0 || nextIndex >= total) return false;
     navigating = true;
     try {
-      if (nextIndex >= items.length) await load(true);
+      while (nextIndex >= items.length && items.length < total) {
+        const previousCount = items.length;
+        await load(true);
+        if (items.length <= previousCount) throw new Error('Could not load the next video.');
+      }
       if (alive && selected === current) {
-        if (items[nextIndex]) await open(items[nextIndex]);
+        if (items[nextIndex]) {open(items[nextIndex]);return true;}
         else notice = 'Could not load the next video. Try again.';
       }
+      return false;
     } finally { navigating = false; }
   }
   async function close() {
@@ -85,10 +92,11 @@
 </div>
 {#if drawer}<AppDrawer on:close={() => drawer = false} />{/if}
 {#if selected && playback}
-  <MediaPlayer media={playback}
+  <MediaPlayer media={playback} owner="video"
     hasPrevious={selectedIndex>0} hasNext={selectedIndex>=0&&selectedIndex<total-1}
+    canWrap={total>1}
     {navigating} navigationNotice={notice} onClose={close}
-    onPrevious={()=>adjacent(-1)} onNext={()=>adjacent(1)}
+    onNavigate={adjacent}
     onFailure={(_media,reason)=>videoApi.error(selected!,reason)} />
 {/if}
 
