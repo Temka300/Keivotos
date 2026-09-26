@@ -1,7 +1,8 @@
 <script lang="ts">
   import {onMount,onDestroy,tick} from 'svelte';
   import type {PlaybackMedia,PlaybackFailure} from '../lib/playback';
-  import {hideControlsSeconds,loopModeFor,type LoopMode,type PlaybackOwner} from '../lib/playbackPreferences';
+  import {hideControlsSeconds,loopModeFor,autoNextFor,type LoopMode,type PlaybackOwner} from '../lib/playbackPreferences';
+  import SettingsSwitch from './SettingsSwitch.svelte';
   export let media:PlaybackMedia;
   export let owner:PlaybackOwner;
   export let label='Video player';
@@ -24,10 +25,12 @@
   let idleTimer:ReturnType<typeof setTimeout>|undefined;
   let stopPreference:()=>void=()=>{};
   let stopLoop:()=>void=()=>{};
+  let stopAutoNext:()=>void=()=>{};
   let loopMode:LoopMode='off';
-  let endBusy=false;
+  let autoNext=false,endBusy=false;
   const loopOrder:LoopMode[]=['off','all','one'];
   function cycleLoop(){loopModeFor(owner).set(loopOrder[(loopOrder.indexOf(loopMode)+1)%loopOrder.length]);reveal();}
+  function toggleAutoNext(){autoNextFor(owner).set(!autoNext);reveal();}
   async function navigate(direction:-1|1){
     try{await onNavigate(direction,loopMode==='all');}
     catch{notice='Could not load another video. Try again.';controlsVisible=true;clearIdle();}
@@ -40,8 +43,16 @@
   }
   async function ended(){
     playing=false;controlsVisible=true;clearIdle();
-    if(endBusy||failure||loopMode!=='one')return;
-    endBusy=true;try{await replay();}finally{endBusy=false;}
+    if(endBusy||failure)return;
+    if(loopMode==='one'){void replay();return;}
+    if(!autoNext)return;
+    const item=media;
+    endBusy=true;
+    try{
+      const moved=await onNavigate(1,loopMode==='all');
+      if(alive&&media===item&&!moved&&loopMode==='all')await replay();
+    }catch{if(alive&&media===item)notice='Could not load the next video. Try again.';}
+    finally{endBusy=false;}
   }
   function clearIdle(){if(idleTimer!==undefined){clearTimeout(idleTimer);idleTimer=undefined;}}
   function scheduleIdle(){
@@ -112,8 +123,8 @@
   function seek(event: Event) {
     if (player && Number.isFinite(duration)) player.currentTime = Number((event.currentTarget as HTMLInputElement).value);
   }
-  onMount(()=>{stopPreference=hideControlsSeconds.subscribe(seconds=>{idleSeconds=seconds;scheduleIdle();});stopLoop=loopModeFor(owner).subscribe(value=>loopMode=value);mounted=true;});
-  onDestroy(()=>{alive=false;clearIdle();stopPreference();stopLoop();player?.pause();if(document.fullscreenElement===viewer)void document.exitFullscreen().catch(()=>{});});
+  onMount(()=>{stopPreference=hideControlsSeconds.subscribe(seconds=>{idleSeconds=seconds;scheduleIdle();});stopLoop=loopModeFor(owner).subscribe(value=>loopMode=value);stopAutoNext=autoNextFor(owner).subscribe(value=>autoNext=value);mounted=true;});
+  onDestroy(()=>{alive=false;clearIdle();stopPreference();stopLoop();stopAutoNext();player?.pause();if(document.fullscreenElement===viewer)void document.exitFullscreen().catch(()=>{});});
 </script>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
   <div class="video-viewer" bind:this={viewer} role="dialog" aria-modal="true" aria-label={label} tabindex="-1" on:keydown={playerKeys} on:pointerdown={() => keyboardActive=false} on:pointermove={pointerMove} on:touchstart={reveal} on:focusin={controlFocus} on:focusout={controlBlur}>
@@ -129,6 +140,7 @@
         <button aria-label="Previous video" disabled={navigating || !(hasPrevious||(loopMode==='all'&&canWrap))} on:click={() => navigate(-1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5 8 12l11 7Z" /></svg></button>
         <button aria-label={playing ? 'Pause' : 'Play'} disabled={!!failure} on:click={togglePlay}><svg viewBox="0 0 24 24" aria-hidden="true">{#if playing}<path d="M8 5v14M16 5v14" />{:else}<path d="m7 4 13 8-13 8Z" />{/if}</svg></button>
         <button aria-label="Next video" disabled={navigating || !(hasNext||(loopMode==='all'&&canWrap))} on:click={() => navigate(1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l11 7-11 7Z" /></svg></button>
+        <div class="auto-next"><span>Auto next {autoNext?'on':'off'}</span><SettingsSwitch label="Auto next" checked={autoNext} on:click={toggleAutoNext}/></div>
         <button class="loop-button" class:off={loopMode==='off'} class:all={loopMode==='all'} class:one={loopMode==='one'} aria-label={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} title={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} aria-pressed={loopMode!=='off'} on:click={cycleLoop}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M3 11V9a4 4 0 0 1 4-4h13"/><path d="M7 22l-3-3 3-3"/><path d="M21 13v2a4 4 0 0 1-4 4H4"/></svg>{#if loopMode==='one'}<span class="loop-one-mark">1</span>{/if}</button>
         <button class="fullscreen" aria-label="Fullscreen" on:click={fullscreen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" /></svg></button>
       </div>
@@ -146,7 +158,11 @@
  .control-row{display:flex;align-items:center;gap:12px}
  .player-controls button{display:grid;place-items:center;width:40px;height:40px;border:0;background:transparent;color:#eee;border-radius:50%;transition:background-color .15s ease}
  .player-controls button:hover:not(:disabled){background:#ffffff20}
- .loop-button{position:relative;margin-left:auto}
+ .auto-next{margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;color:#eee;font-size:10px;line-height:1;white-space:nowrap}
+ .auto-next :global(.settings-switch){width:38px;height:22px}
+ .auto-next :global(.settings-switch span){width:16px;height:16px}
+ .auto-next :global(.settings-switch.checked span){transform:translateX(16px)}
+ .loop-button{position:relative}
  .loop-button.off{color:#8a8a92}
  .loop-button.all,.loop-button.one{color:#fff}
  .loop-one-mark{position:absolute;top:7px;left:8px;font-size:10px;line-height:1;font-weight:800;color:#fff;pointer-events:none;z-index:2;text-shadow:-1px 0 0 #111,1px 0 0 #111,0 -1px 0 #111,0 1px 0 #111,-1px -1px 0 #111,1px -1px 0 #111,-1px 1px 0 #111,1px 1px 0 #111}

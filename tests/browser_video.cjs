@@ -110,7 +110,6 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await back();
   check('next fetches another page within filtered results; first/last controls disable without wrapping');
 
-
   await page.getByRole('button',{name:'Open Keivotos menu'}).click();
   await page.getByRole('button',{name:'Settings',exact:true}).click();
   const settings=page.getByRole('dialog',{name:'Settings',exact:true});
@@ -140,8 +139,22 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.locator('video').evaluate(video=>video.currentTime=video.duration-.15);
   await page.waitForFunction(()=>document.querySelector('video')?.ended);
   assert.equal(await page.locator('video').getAttribute('src'),current);
+  const auto=page.getByRole('switch',{name:'Auto next'});
+  await auto.click();assert.equal(await auto.getAttribute('aria-checked'),'true');
+  await page.getByRole('button',{name:'Play',exact:true}).click();
+  await page.locator('video').evaluate(video=>video.currentTime=video.duration-.15);
+  await page.waitForFunction(src=>document.querySelector('video')?.getAttribute('src')!==src,current);
+  assert((await page.locator('video').getAttribute('src')).includes('sample.webm'));
+  await loop().click();assert.equal(await loop().getAttribute('aria-label'),'Loop all');
+  await page.locator('video').evaluate(video=>video.currentTime=video.duration-.15);
+  await page.waitForFunction(()=>document.querySelector('video')?.getAttribute('src')?.includes('sample.m4v'));
+  await loop().click();assert.equal(await loop().getAttribute('aria-label'),'Loop one');
+  const repeated=await page.locator('video').getAttribute('src');
+  await page.locator('video').evaluate(video=>video.currentTime=video.duration-.15);
+  await page.waitForFunction(()=>{const video=document.querySelector('video');return video&&!video.ended&&video.currentTime<1;});
+  assert.equal(await page.locator('video').getAttribute('src'),repeated);
   await back();
-  check('Loop cycles Off, All and One with its top-left badge');
+  check('Loop cycles Off/All/One, Auto next advances, All wraps, and One replays with a top-left badge');
 
   assert.deepEqual(report.errors,[]);
  }finally{fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));await context.tracing.stop({path:path.join(config.output,'trace.zip')});await browser.close();}

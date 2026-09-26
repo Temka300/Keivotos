@@ -22,3 +22,10 @@ const loopModes = {
   youtube: persistedWritable(persistentStorageKey('youtube-loop-mode'), 'off' as LoopMode, normalizeLoopMode),
 };
 export function loopModeFor(owner: PlaybackOwner) { return loopModes[owner]; }
+
+function normalizeAutoNext(value: unknown): boolean { return value === true; }
+const autoNextModes = {
+  video: persistedWritable(persistentStorageKey('video-auto-next'), false, normalizeAutoNext),
+  youtube: persistedWritable(persistentStorageKey('youtube-auto-next'), false, normalizeAutoNext),
+};
+export function autoNextFor(owner: PlaybackOwner) { return autoNextModes[owner]; }
