@@ -7,7 +7,7 @@
   let items:Manga[]=[], total=0;
   let selected:Manga|null=null, chapters:Chapter[]=[], chapter:Chapter|null=null;
   let chapterLoading=false, chapterError='', readerError='', pageCount=0;
-  let mode='fit';
+  let mode='paged', pageIndex=0;
   let dialog:HTMLDivElement, reader:HTMLDivElement;
   let tileFocus:HTMLElement|null=null, chapterFocus:HTMLElement|null=null;
   let libraryRequest:AbortController|null=null, detailRequest:AbortController|null=null, pageRequest:AbortController|null=null;
@@ -15,6 +15,7 @@
   let visible=new Set<number>();
   let ratios:Record<number,number>={};
   let observer:IntersectionObserver|null=null;
+  let pointerStart:{x:number;y:number}|null=null, pointerDragged=false;
   async function load(more=false){
     libraryRequest?.abort();const current=new AbortController();libraryRequest=current;
     loading=true;error='';
@@ -35,7 +36,7 @@
   async function close(){detailRequest?.abort();selected=null;await tick();tileFocus?.focus();}
   async function read(item:Chapter){
     if(!selected)return;
-    chapterFocus=document.activeElement as HTMLElement;chapter=item;pageCount=0;readerError='';visible=new Set();ratios={};
+    chapterFocus=document.activeElement as HTMLElement;chapter=item;pageCount=0;pageIndex=0;readerError='';visible=new Set();ratios={};
     pageRequest?.abort();const current=new AbortController();pageRequest=current;
     await tick();reader?.focus();
     try{const result=await mangaApi.pages(selected,item,current.signal);if(!current.signal.aborted)pageCount=result.count;}
@@ -50,6 +51,13 @@
     if(event.shiftKey&&(document.activeElement===first||document.activeElement===root)){event.preventDefault();last?.focus();}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
   }
+  function turnPage(direction:-1|1){pageIndex=Math.max(0,Math.min(pageCount-1,pageIndex+direction));}
+  function readerKeys(event:KeyboardEvent){
+    if(mode==='paged'&&pageCount&&!(event.target as HTMLElement).closest('.reader-controls')&&['ArrowLeft','ArrowUp','PageUp','ArrowRight','ArrowDown','PageDown',' '].includes(event.key)){
+      event.preventDefault();turnPage(['ArrowLeft','ArrowUp','PageUp'].includes(event.key)?-1:1);return;
+    }
+    keys(event,reader,()=>void back());
+  }
   function watchPage(node:HTMLElement,index:number){
     if(!observer)observer=new IntersectionObserver(entries=>{
       const next=new Set(visible);
@@ -60,7 +68,24 @@
     return {destroy(){observer?.unobserve(node);}};
   }
   function dimensions(event:Event,index:number){const image=event.currentTarget as HTMLImageElement;ratios={...ratios,[index]:image.naturalWidth/image.naturalHeight};}
-  function changeMode(){reader?.scrollTo({top:0});}
+  async function changeMode(){
+    if(mode==='paged'){
+      const pages=[...reader.querySelectorAll<HTMLElement>('.page')];
+      if(pages.length)pageIndex=Number(pages.reduce((best,item)=>Math.abs(item.getBoundingClientRect().top-reader.clientHeight/2)<Math.abs(best.getBoundingClientRect().top-reader.clientHeight/2)?item:best).dataset.page)||0;
+      reader.scrollTo({top:0});
+    }else{
+      await tick();reader.querySelector<HTMLElement>(`.page[data-page="${pageIndex}"]`)?.scrollIntoView({block:'start'});
+    }
+  }
+  function pointerDown(event:PointerEvent){pointerStart={x:event.clientX,y:event.clientY};pointerDragged=false;}
+  function pointerMove(event:PointerEvent){if(pointerStart&&Math.hypot(event.clientX-pointerStart.x,event.clientY-pointerStart.y)>8)pointerDragged=true;}
+  function readerClick(event:MouseEvent){
+    if(pointerDragged){pointerDragged=false;return;}
+    if((event.target as HTMLElement).closest('.reader-controls,.reader-error'))return;
+    const bounds=reader.getBoundingClientRect(),position=(event.clientY-bounds.top)/bounds.height;
+    if(mode==='paged'&&position<=.25)turnPage(-1);
+    else if(mode==='paged'&&position>=.75)turnPage(1);
+  }
   onMount(()=>{void load();});
   onDestroy(()=>{clearTimeout(debounce);libraryRequest?.abort();detailRequest?.abort();pageRequest?.abort();observer?.disconnect();});
 </script>
@@ -103,18 +128,22 @@
 {/if}
 {#if selected&&chapter}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
-  <div class="reader" class:vertical={mode==='vertical'} bind:this={reader} role="dialog" aria-label="Manga reader" aria-modal="true" tabindex="-1" on:keydown={event=>keys(event,reader,()=>void back())}>
-    <div class="reader-controls">
+  <div class="reader" class:vertical={mode==='vertical'} bind:this={reader} role="dialog" aria-label="Manga reader" aria-modal="true" tabindex="-1" on:keydown={readerKeys} on:pointerdown={pointerDown} on:pointermove={pointerMove} on:click={readerClick}>
+    <div class="reader-controls" >
       <button class="back" aria-label="Back to chapters" on:click={back}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
-      <select aria-label="Reading layout" bind:value={mode} on:change={changeMode}><option value="fit">Fit</option><option value="vertical">Vertical scroll</option></select>
+      <select aria-label="Reading layout" bind:value={mode} on:change={changeMode}><option value="paged">Paged</option><option value="vertical">Vertical scroll</option></select>
     </div>
     {#if readerError}<p class="reader-error" role="alert">{readerError}</p>{/if}
     {#if !pageCount&&!readerError}<p class="muted loading">Loading…</p>{/if}
-    {#each Array(pageCount) as _,i}
-      <div class="page" data-page={i} style={`--ratio:${ratios[i]||2/3}`} use:watchPage={i}>
-        {#if visible.has(i)}<img alt={`Page ${i+1}`} src={mangaApi.page(selected,chapter,i)} on:load={e=>dimensions(e,i)} on:error={()=>readerError='This page cannot be opened. See Logs.'}/>{/if}
-      </div>
-    {/each}
+    {#if mode==='paged'&&pageCount}
+      <div class="paged-page" data-page={pageIndex}><img alt={`Page ${pageIndex+1}`} src={mangaApi.page(selected,chapter,pageIndex)} on:error={()=>readerError='This page cannot be opened. See Logs.'}/></div>
+    {:else if mode==='vertical'}
+      {#each Array(pageCount) as _,i}
+        <div class="page" data-page={i} style={`--ratio:${ratios[i]||2/3}`} use:watchPage={i}>
+          {#if visible.has(i)}<img alt={`Page ${i+1}`} src={mangaApi.page(selected,chapter,i)} on:load={e=>dimensions(e,i)} on:error={()=>readerError='This page cannot be opened. See Logs.'}/>{/if}
+        </div>
+      {/each}
+    {/if}
   </div>
 {/if}
 
@@ -141,9 +170,12 @@
  .back{display:grid;place-items:center;width:40px;height:40px;border:0;background:transparent;border-radius:999px;color:#eee;transition:width .18s ease,background-color .18s ease}
  .back:hover,.back:focus-visible{width:56px;background:#33333b}
  .chapter-dialog>.back{position:absolute;top:16px;left:16px}
- .reader{position:fixed;inset:0;z-index:120;overflow-y:auto;overscroll-behavior:contain;background:#080808;color:#eee}
+ .reader{position:fixed;inset:0;z-index:120;overflow:hidden;overscroll-behavior:contain;background:#080808;color:#eee}
+ .reader.vertical{overflow-y:auto}
  .reader-controls{position:fixed;top:16px;left:16px;z-index:1;display:flex;align-items:center;gap:8px}
  .reader-controls select{border:0;border-radius:20px;background:#26262d;color:#ddd;padding:9px 12px;font-size:13px;cursor:pointer}
+ .paged-page{height:100dvh;width:100%;display:grid;place-items:center;overflow:hidden}
+ .paged-page img{width:100%;height:100%;object-fit:contain}
  .page{height:100dvh;display:flex;justify-content:center;align-items:center;width:100%;margin:0 auto}
  .page img{width:100%;height:100%;object-fit:contain}
  .vertical .page{height:auto;width:min(100%,1000px);aspect-ratio:var(--ratio)}
