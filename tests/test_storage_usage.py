@@ -7,6 +7,9 @@ import config
 import thumbnails
 from services import storage_usage
 from routers import cache, storage
+from files_base import index, sources
+from module_registry import build_registry
+import sqlite3
 
 
 def write(path,size):
@@ -67,3 +70,66 @@ def test_startup_preference_is_strict_and_persisted(monkeypatch):
     assert not config.get_thumbnail_cleanup_on_startup()
     assert storage.cache_preferences(storage.CachePreferences(cleanup_on_startup=True))=={'cleanup_on_startup':True}
     assert config.get_thumbnail_cleanup_on_startup()
+
+
+def test_library_sizes_use_indexed_roles_without_walking_media(tmp_path,monkeypatch):
+    home=tmp_path/'suite';home.mkdir()
+    user_db=tmp_path/'user.sqlite';files_db=tmp_path/'files.sqlite'
+    folders={
+        'files':tmp_path/'files', 'video':tmp_path/'files/nested',
+        'language':tmp_path/'language', 'danbooru':tmp_path/'danbooru',
+        'ghost':tmp_path/'ghost', 'forgotten':tmp_path/'forgotten',
+    }
+    write(folders['files']/'known.txt',100)
+    write(folders['files']/'unknown.txt',10)
+    write(folders['files']/'unavailable.txt',30)
+    write(folders['video']/'clip.mp4',50)
+    write(folders['language']/'note.md',200)
+    write(folders['danbooru']/'image.jpg',300)
+    write(folders['ghost']/'other.bin',400)
+    write(folders['forgotten']/'ignored.bin',600)
+    registered={}
+    with sqlite3.connect(user_db) as connection:
+        connection.row_factory=sqlite3.Row
+        sources.ensure_sources_schema(connection)
+        for role,path in folders.items():
+            registered[role]=sources.register_source(connection,path,role=role)
+        sources.update_source(connection,registered['language'].source_id,visible=False)
+        sources.remove_source(connection,registered['forgotten'].source_id)
+    with index.open_index(files_db) as connection:
+        for role in ('files','video','language','danbooru','ghost','forgotten'):
+            excluded=[folders['video']] if role=='files' else []
+            index.scan_source(connection,registered[role].source_id,folders[role],excluded_roots=excluded)
+        connection.execute("UPDATE files_index SET size=NULL WHERE path=?",(str(folders['files']/'unknown.txt'),))
+        connection.execute("UPDATE files_index SET available=0 WHERE path=?",(str(folders['files']/'unavailable.txt'),))
+        connection.commit()
+    monkeypatch.setattr(config,'USER_DB_PATH',user_db)
+    monkeypatch.setattr(config,'FILES_DB_PATH',files_db)
+    monkeypatch.setattr(config,'SUITE_HOME',home)
+    monkeypatch.setattr(config,'MODULE_REGISTRY',build_registry(home,'test'))
+    monkeypatch.setattr(storage_usage.os,'walk',lambda *args,**kwargs:(_ for _ in ()).throw(AssertionError('media walk')))
+    result=storage_usage.library_files_usage()
+    assert result['total_bytes']==1050
+    assert result['total_files']==6
+    assert result['unknown_files']==1
+    assert not result['index_unavailable']
+    assert [(row['name'],row['bytes']) for row in result['categories']]==[
+        ('Files',100),('Danbooru',300),('Video',50),('Language',200),('Other',400)]
+    with index.open_index(files_db) as connection:
+        connection.execute("UPDATE files_index SET size=? WHERE path=?",(5*1024**3,str(folders['video']/'clip.mp4')))
+        connection.commit()
+    assert next(row for row in storage_usage.library_files_usage()['categories'] if row['id']=='video')['bytes']==5*1024**3
+
+
+def test_library_size_missing_index_is_reported_without_creating_it(tmp_path,monkeypatch):
+    media=tmp_path/'media';media.mkdir()
+    user_db=tmp_path/'user.sqlite';files_db=tmp_path/'missing.sqlite'
+    with sqlite3.connect(user_db) as connection:
+        connection.row_factory=sqlite3.Row
+        sources.ensure_sources_schema(connection)
+        sources.register_source(connection,media)
+    monkeypatch.setattr(config,'USER_DB_PATH',user_db)
+    monkeypatch.setattr(config,'FILES_DB_PATH',files_db)
+    result=storage_usage.library_files_usage()
+    assert result['index_unavailable'] and result['total_bytes']==0
+    assert not files_db.exists()

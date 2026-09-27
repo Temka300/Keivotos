@@ -207,6 +207,28 @@ def source_entry_count(connection: sqlite3.Connection, source_id: str) -> int:
     return int(row["count"] if row is not None else 0)
 
 
+def source_size_totals(
+    connection: sqlite3.Connection, source_id: str, descendant_roots: Iterable[str] = (),
+) -> tuple[int, int, int]:
+    """Logical indexed file bytes/count/unknown sizes for one registered source.
+
+    Descendant registered roots own their indexed files even if older parent
+    scans retained rows for the same paths. This reads SQLite facts only.
+    """
+    clauses = ["source_id=?", "is_dir=0", "available=1"]
+    parameters: list[object] = [source_id]
+    for relative_root in descendant_roots:
+        clauses.append("relative_path NOT LIKE ? ESCAPE '\\'")
+        parameters.append(_escape_like(relative_root.rstrip("/")) + "/%")
+    row = connection.execute(
+        "SELECT COUNT(*) AS files, "
+        "COALESCE(SUM(CASE WHEN size IS NOT NULL AND size>=0 THEN size ELSE 0 END),0) AS bytes, "
+        "COALESCE(SUM(CASE WHEN size IS NULL OR size<0 THEN 1 ELSE 0 END),0) AS unknown "
+        "FROM files_index WHERE " + " AND ".join(clauses), parameters,
+    ).fetchone()
+    return int(row["bytes"]), int(row["files"]), int(row["unknown"])
+
+
 def refresh_file(connection: sqlite3.Connection, source_id: str, root: Path,
                  name: str, previous_name: str | None = None) -> None:
     """Refresh one root-level file after an owner mutation, without scanning media."""

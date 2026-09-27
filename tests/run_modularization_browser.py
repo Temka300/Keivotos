@@ -67,6 +67,8 @@ def main() -> int:
                 (thumbnails/('a'*32+'_v4'+suffix+'.webp')).write_bytes(b'x'*1048576)
             (thumbnails/('b'*32+'_v3.webp')).write_bytes(b'x'*1048576)
             (thumbnails/'keep.json').write_text('preserved')
+            media=base/'media';media.mkdir()
+            (media/'indexed.bin').write_bytes(b'x'*1536)
         if args.script == 'danbooru':
             from browser_library import seed_library
             seed_library(home)

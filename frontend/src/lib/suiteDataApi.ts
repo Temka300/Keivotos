@@ -4,6 +4,8 @@ import type { BackupOptions, DiagnosticsPreferences, UserSetting, StorageConfigu
 export interface StorageUsage {
  data_location:string;total_bytes:number;categories:Record<string,number>;
  modules:{id:string;name:string}[];
+ library_files:{categories:{id:string;name:string;bytes:number;files:number;unknown_files:number}[];
+  total_bytes:number;total_files:number;unknown_files:number;index_unavailable:boolean};
  thumbnails:ThumbnailCacheStatus & {tier_bytes:Record<string,number>};
  cleanup_on_startup:boolean;unreadable:number;
 }
