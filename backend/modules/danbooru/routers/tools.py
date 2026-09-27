@@ -13,12 +13,13 @@ from fastapi import APIRouter, HTTPException, Query
 from modules.danbooru.automation import automation_status, set_automation_enabled
 from config import DATA_DB_PATH, DATA_ROOT, GALLERY_DL_DIR, METADATA_DIR, SCAN_FOLDERS
 from modules.danbooru.credentials import clear_credentials, credential_environment, credentials_status, effective_credentials, save_credentials
+from modules.danbooru.configuration import get_api_base_url, get_api_host, set_api_host
 from database import get_data_db
 from modules.danbooru.client import USER_AGENT
 from modules.danbooru.folder_registry import registered_folder_rows
 from modules.danbooru.tools import _cancel_tool, _extra_root_args, _import_discover_command, _import_enrich_command, _import_finalize_command, _launch_tool, _sync_command, _sync_scan_paths, _tool_base_command, tool_task_snapshot
 from modules.danbooru.models import AutomationStatus, AutomationUpdate, ImportRunRequest, ToolStatusInfo
-from modules.danbooru.models import BackfillToolRequest, DanbooruCredentialsUpdate, DanbooruCredentialStatus, ToolFolderInfo, ToolInfo, ToolRunResult
+from modules.danbooru.models import BackfillToolRequest, DanbooruCredentialsUpdate, DanbooruCredentialStatus, DanbooruHostSettings, ToolFolderInfo, ToolInfo, ToolRunResult
 from modules.danbooru.tag_history import record_removed_tags_from_archive
 
 router = APIRouter()
@@ -172,6 +173,16 @@ def get_danbooru_credentials():
         raise HTTPException(400, str(exc)) from exc
 
 
+@router.get("/api/danbooru/host", response_model=DanbooruHostSettings)
+def get_danbooru_host():
+    return {"host": get_api_host()}
+
+
+@router.put("/api/danbooru/host", response_model=DanbooruHostSettings)
+def update_danbooru_host(update: DanbooruHostSettings):
+    return {"host": set_api_host(update.host)}
+
+
 @router.put("/api/danbooru/credentials", response_model=DanbooruCredentialStatus)
 def update_danbooru_credentials(update: DanbooruCredentialsUpdate):
     try:
@@ -195,7 +206,7 @@ def check_danbooru_credentials():
         raise HTTPException(400, "Save a Danbooru username and API key first")
     token = base64.b64encode(f"{username}:{api_key}".encode("utf-8")).decode("ascii")
     request = urllib.request.Request(
-        "https://danbooru.donmai.us/profile.json",
+        f"{get_api_base_url()}/profile.json",
         headers={
             "Authorization": f"Basic {token}",
             "User-Agent": USER_AGENT,

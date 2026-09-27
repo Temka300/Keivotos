@@ -37,6 +37,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from modules.danbooru.schema import create_data_indexes, ensure_data_schema  # noqa: E402
 from modules.danbooru.network import failure_kind, read_json, retry_delay
+from modules.danbooru.configuration import get_api_base_url
 from runtime_logging import redact_log_text  # noqa: E402
 from storage_layout import (  # noqa: E402
     LibraryRoot,
@@ -403,7 +404,7 @@ def request_json(
     retries: int,
     not_found_empty: bool = False,
 ) -> Any:
-    url = f"{DANBOORU_ROOT}{endpoint}?{urllib.parse.urlencode(params)}"
+    url = f"{get_api_base_url()}{endpoint}?{urllib.parse.urlencode(params)}"
     headers = {
         "Accept": "application/json",
         "User-Agent": "danbooru-gallery-dl-helper/1.0",

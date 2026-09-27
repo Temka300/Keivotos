@@ -23,6 +23,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from config import DANBOORU_MODULE
+from modules.danbooru.configuration import get_api_base_url
 from modules.danbooru.credentials import effective_credentials
 from modules.danbooru.network import failure_kind, read_json
 from product import DISPLAY_NAME, VERSION
@@ -42,7 +43,7 @@ USER_AGENT = (
 
 def danbooru_json(endpoint: str, params: dict[str, str | int], timeout: float = 20.0) -> Any:
     query = urllib.parse.urlencode(params)
-    url = f"{DANBOORU_BASE_URL}{endpoint}"
+    url = f"{get_api_base_url()}{endpoint}"
     if query:
         url = f"{url}?{query}"
     headers = {"User-Agent": USER_AGENT, "Accept": "application/json"}
@@ -69,7 +70,7 @@ def danbooru_json(endpoint: str, params: dict[str, str | int], timeout: float = 
     except (urllib.error.URLError, OSError, http.client.HTTPException, ValueError) as exc:
         kind = failure_kind(exc)
         if kind == "connection":
-            detail = "Connection to Danbooru failed; check access to danbooru.donmai.us and retry."
+            detail = f"Connection to Danbooru failed; check access to {get_api_base_url().removeprefix('https://')} and retry."
         elif kind == "certificate":
             detail = "Danbooru certificate verification failed; check this device's TLS configuration."
         else:

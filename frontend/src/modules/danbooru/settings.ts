@@ -14,7 +14,7 @@ const contribution: SettingsContribution = {
     { id: 'maintenance', group: 'danbooru', label: 'Advanced', icon: 'shield' },
   ],
   searchItems: [
-    { id: 'danbooru-access', section: 'account', label: 'Danbooru access', description: 'Manage encrypted credentials.', keywords: ['username', 'api key', 'credentials', 'connection'] },
+    { id: 'danbooru-access', section: 'account', label: 'Danbooru access', description: 'Manage host and encrypted credentials.', keywords: ['username', 'api key', 'credentials', 'connection', 'host', 'betabooru'] },
     { id: 'startup-view', section: 'browsing', label: 'Startup view', description: `Choose which ${MODULE_NAME} page opens first.`, keywords: ['home', 'browse', 'last page', 'launch', 'gallery'] },
     { id: 'home-layout', section: 'browsing', label: 'Home layout', description: 'Use the new discovery dashboard or restore the preserved classic Home.', keywords: ['home', 'classic', 'legacy', 'old design', 'discovery', 'dashboard'] },
     { id: 'rating-filter', section: 'browsing', label: 'Default rating', description: 'Choose the rating used for normal browsing.', keywords: ['general', 'sensitive', 'questionable', 'explicit', 'unrated'] },

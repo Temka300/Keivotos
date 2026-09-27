@@ -1,5 +1,6 @@
 import { BASE, get, post, put, del } from '../../lib/http';
 import type { ImageSummary, PaginatedImages, TagInfo, TagWikiTextPart, TagWikiTextLine, TagWikiExample, TagWikiSection, ArtistUrl, TagWikiInfo, ArtistFollowInfo, ArtistFollowCheckResult, ArtistProfileAsset, ArtistProfileArchiveResult, ArtistProfileBulkArchiveResult, HomeCoverCandidate, HomeTagInfo, HomeTags, HomeImageRailItem, HomeImageRail, HomeImageRails, DailyChallengeImage, DailyChallengeOption, DailyChallengeClues, DailyChallenge, FavoriteTagCombo, PaginatedTags, PopularityPeriod, TimelapseFrames, RelatedImageInfo, ImageRelations, ImageDetail, FolderInfo, FolderRelocateResult, FolderRemovalMode, FolderRemovalPreview, FolderRemovalResult, CollectionPreviewItem, CollectionInfo, Stats, AutomationStatus, ImportPhase, ImportPipelineStatus, ToolInfo, ToolStatus, ToolFileResult, ToolRunResult, ToolFolder, DanbooruCredentialStatus } from './apiTypes';
+import type { DanbooruHost, DanbooruHostSettings } from './apiTypes';
 const THUMBNAIL_VERSION = 'v4';
 export function thumbnailUrl(fileId: number, size?: number, token?: string): string {
   const params = new URLSearchParams();
@@ -251,6 +252,10 @@ runBackfill: (folder?: string, limit?: number) =>
     }),
 
 getDanbooruCredentials: () => get<DanbooruCredentialStatus>('/danbooru/credentials'),
+
+getDanbooruHost: () => get<DanbooruHostSettings>('/danbooru/host'),
+
+setDanbooruHost: (host: DanbooruHost) => put<DanbooruHostSettings>('/danbooru/host', { host }),
 
 saveDanbooruCredentials: (username: string, apiKey?: string) =>
     put<DanbooruCredentialStatus>('/danbooru/credentials', { username, api_key: apiKey || null }),

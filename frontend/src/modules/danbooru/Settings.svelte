@@ -4,7 +4,7 @@
   import { SETTINGS_SESSION, type SettingsSession } from '../../lib/settingsSession';
   import { compactSegmentClass, iconPath, formatByteCount } from '../../lib/settingsControls';
   import { danbooruApi as api } from './api';
-  import type { DanbooruCredentialStatus, FolderInfo, FolderRemovalMode, FolderRemovalPreview, ToolInfo, ToolStatus } from './apiTypes';
+  import type { DanbooruCredentialStatus, DanbooruHost, FolderInfo, FolderRemovalMode, FolderRemovalPreview, ToolInfo, ToolStatus } from './apiTypes';
   import { MODULE_NAME } from './identity';
   import { activeRating, artistNotificationIntervalMinutes, artistNotificationsEnabled, duplicateScope, duplicatesOnly, fitMode, heartSpamEnabled, homeLayout, imagePageSize, imagePageSizeOptions, imageRefreshToken, imageSize, mediaPlayback, sidebarOpen, sortBy, sortOrder, startupView, tagBannerHeight } from './stores';
   import type { ArtistNotificationIntervalMinutes, DuplicateScope, FitMode, HomeLayout, ImagePageSize, MediaPlayback, StartupView } from './stores';
@@ -31,6 +31,10 @@
   let credentialBusy = false;
   let credentialMessage = '';
   let credentialError = '';
+  let danbooruHost: DanbooruHost = 'danbooru';
+  let hostLoaded = false;
+  let hostBusy = false;
+  let hostError = '';
   let foldersLoaded = false;
   let toolsLoaded = false;
   let credentialsLoaded = false;
@@ -147,11 +151,34 @@
     return credentialsRequest;
   }
 
+  async function loadDanbooruHost(): Promise<void> {
+    if (hostLoaded) return;
+    try {
+      danbooruHost = (await api.getDanbooruHost()).host;
+      hostLoaded = true;
+    } catch (error) {
+      hostError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  async function chooseDanbooruHost(host: DanbooruHost): Promise<void> {
+    if (hostBusy || host === danbooruHost) return;
+    hostBusy = true;
+    hostError = '';
+    try {
+      danbooruHost = (await api.setDanbooruHost(host)).host;
+    } catch (error) {
+      hostError = error instanceof Error ? error.message : String(error);
+    } finally {
+      hostBusy = false;
+    }
+  }
+
   async function ensureSectionData(section: string): Promise<void> {
     if (section === 'library') {
       await Promise.all([loadFolders(), loadTools()]);
     } else if (section === 'account') {
-      await loadCredentials();
+      await Promise.all([loadCredentials(), loadDanbooruHost()]);
     } else if (section === 'maintenance') {
       await Promise.all([loadTools(), loadFolders()]);
 
@@ -409,6 +436,14 @@
                 <div class="flex items-center gap-3"><span class="rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase {credentials?.configured ? 'border-green-400/20 bg-green-500/10 text-green-300' : 'border-amber-400/20 bg-amber-500/10 text-amber-300'}">{!credentialsLoaded ? 'Loading…' : credentials?.configured ? (credentials.source === 'environment' ? 'Environment' : 'Configured') : 'Not configured'}</span><svg class="h-4 w-4 text-gray-600 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 9l6 6 6-6" /></svg></div>
               </summary>
               <div class="border-t border-[#242432] bg-black/10 p-4">
+                <div class="mb-4 flex items-center justify-between gap-4">
+                  <div class="text-sm font-medium text-gray-200">Host</div>
+                  <div class="flex shrink-0 divide-x divide-[#303040] overflow-hidden rounded-lg border border-[#303040]">
+                    <button class={compactSegmentClass(danbooruHost === 'danbooru')} type="button" aria-pressed={danbooruHost === 'danbooru'} disabled={!hostLoaded || hostBusy} on:click={() => chooseDanbooruHost('danbooru')}>Danbooru</button>
+                    <button class={compactSegmentClass(danbooruHost === 'betabooru')} type="button" aria-pressed={danbooruHost === 'betabooru'} disabled={!hostLoaded || hostBusy} on:click={() => chooseDanbooruHost('betabooru')}>Betabooru</button>
+                  </div>
+                </div>
+                {#if hostError}<p class="mb-3 text-xs text-red-400">{hostError}</p>{/if}
                 {#if credentials?.source === 'environment'}<p class="mb-3 rounded-lg border border-cyan-400/15 bg-cyan-500/[0.06] px-3 py-2 text-xs text-cyan-200">Environment credentials are active and override saved values.</p>{/if}
                 <div class="grid gap-3 sm:grid-cols-2">
                   <label><span class="mb-1 block text-[11px] font-medium text-gray-500">Username</span><input class="w-full rounded-lg border border-[#303040] bg-[#0d0d13] px-3 py-2 text-sm text-gray-200 outline-none focus:border-purple-400/60" type="text" autocomplete="username" bind:value={credentialUsername} /></label>

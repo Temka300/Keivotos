@@ -498,3 +498,6 @@ export interface DanbooruCredentialStatus {
   configured: boolean;
   source: 'none' | 'saved' | 'environment';
 }
+
+export type DanbooruHost = 'danbooru' | 'betabooru';
+export interface DanbooruHostSettings { host: DanbooruHost }

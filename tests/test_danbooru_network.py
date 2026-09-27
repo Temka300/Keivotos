@@ -10,15 +10,60 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "backend"))
 
-from modules.danbooru import client, network, pipeline
+from modules.danbooru import client, configuration, network, pipeline
 from modules.danbooru.routers import tags
+from modules.danbooru.routers import tools as tool_routes
+from modules.danbooru.models import DanbooruHostSettings
 
 
 class DanbooruNetworkTests(unittest.TestCase):
+    def test_manual_host_setting_persists_and_rejects_other_hosts(self):
+        import config
+
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(config, "RUNTIME_CONFIG_FILE", Path(directory) / "config.json"), \
+             patch.dict(config._cfg, {}, clear=True):
+            self.assertEqual(configuration.get_api_host(), "danbooru")
+            self.assertEqual(configuration.set_api_host("betabooru"), "betabooru")
+            self.assertEqual(configuration.get_api_base_url(), "https://betabooru.donmai.us")
+            self.assertEqual(config._read_json(config.RUNTIME_CONFIG_FILE)["danbooru_host"], "betabooru")
+            with self.assertRaises(ValueError):
+                configuration.set_api_host("other.example")
+            self.assertEqual(configuration.get_api_host(), "betabooru")
+            with self.assertRaises(ValidationError):
+                DanbooruHostSettings(host="other.example")
+
+    def test_selected_host_routes_wiki_and_post_lookup_without_changing_post_links(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"id": 123}'
+        with patch.object(configuration, "get_api_host", return_value="betabooru"), \
+             patch.object(client, "effective_credentials", return_value=("user", "key", "saved")), \
+             patch.object(network.urllib.request, "urlopen", return_value=response) as open_url:
+            self.assertEqual(client.danbooru_json("/wiki_pages/cat.json", {}), {"id": 123})
+            wiki_request = open_url.call_args.args[0]
+            self.assertEqual(wiki_request.full_url, "https://betabooru.donmai.us/wiki_pages/cat.json")
+            self.assertTrue(wiki_request.get_header("Authorization").startswith("Basic "))
+            self.assertEqual(pipeline.request_json("/posts.json", {"md5": "abc"}, "user", "key", 0), {"id": 123})
+            post_request = open_url.call_args.args[0]
+            self.assertEqual(post_request.full_url, "https://betabooru.donmai.us/posts.json?md5=abc")
+            self.assertTrue(post_request.get_header("Authorization").startswith("Basic "))
+        self.assertEqual(client.DANBOORU_POST_URL_PREFIX, "https://danbooru.donmai.us/posts/")
+        self.assertEqual(pipeline.DANBOORU_ROOT, "https://danbooru.donmai.us")
+
+    def test_credential_check_uses_selected_host(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"name": "user", "id": 42}'
+        with patch.object(tool_routes, "get_api_base_url", return_value="https://betabooru.donmai.us"), \
+             patch.object(tool_routes, "effective_credentials", return_value=("user", "key", "saved")), \
+             patch.object(tool_routes.urllib.request, "urlopen", return_value=response) as open_url:
+            self.assertEqual(tool_routes.check_danbooru_credentials()["user_id"], 42)
+        self.assertEqual(open_url.call_args.args[0].full_url, "https://betabooru.donmai.us/profile.json")
+
     def test_reset_then_success_is_bounded_and_redacted(self):
         response = MagicMock()
         response.__enter__.return_value.read.return_value = b'{"id": 123}'

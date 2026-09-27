@@ -1417,6 +1417,23 @@
         "title": "DanbooruCredentialsUpdate",
         "type": "object"
       },
+      "DanbooruHostSettings": {
+        "properties": {
+          "host": {
+            "enum": [
+              "danbooru",
+              "betabooru"
+            ],
+            "title": "Host",
+            "type": "string"
+          }
+        },
+        "required": [
+          "host"
+        ],
+        "title": "DanbooruHostSettings",
+        "type": "object"
+      },
       "DiagnosticsPreferences": {
         "additionalProperties": false,
         "properties": {
@@ -6164,6 +6181,60 @@
           }
         },
         "summary": "Check Danbooru Credentials"
+      }
+    },
+    "/api/danbooru/host": {
+      "get": {
+        "operationId": "get_danbooru_host_api_danbooru_host_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DanbooruHostSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Danbooru Host"
+      },
+      "put": {
+        "operationId": "update_danbooru_host_api_danbooru_host_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DanbooruHostSettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DanbooruHostSettings"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Danbooru Host"
       }
     },
     "/api/diagnostics": {

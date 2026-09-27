@@ -1117,6 +1117,30 @@
       }
     },
     {
+      "name": "getDanbooruHost",
+      "args": [],
+      "request": {
+        "url": "http://fixture.invalid/api/danbooru/host",
+        "method": "GET",
+        "headers": null,
+        "body": null,
+        "signal": false
+      }
+    },
+    {
+      "name": "setDanbooruHost",
+      "args": ["betabooru"],
+      "request": {
+        "url": "/api/danbooru/host",
+        "method": "PUT",
+        "headers": {
+          "Content-Type": "application/json"
+        },
+        "body": "{\"host\":\"betabooru\"}",
+        "signal": false
+      }
+    },
+    {
       "name": "saveDanbooruCredentials",
       "args": [
         "a /?#한",

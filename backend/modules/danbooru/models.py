@@ -436,6 +436,10 @@ class DanbooruCredentialsUpdate(BaseModel):
     api_key: str | None = None
 
 
+class DanbooruHostSettings(BaseModel):
+    host: Literal["danbooru", "betabooru"]
+
+
 class BackfillToolRequest(BaseModel):
     folder: str | None = None
     limit: int | None = Field(default=None, ge=1, le=1000000)

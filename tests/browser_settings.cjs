@@ -71,6 +71,10 @@ const report = { checks: [], errors: [], requests: [] };
   assert.equal(await dialog.getByRole('textbox',{name:'Username',exact:true}).inputValue(),'unsaved_fixture');
   assert.equal(credentialReads,1);
   check('owner section order, disabled visibility, lazy account loading and draft persistence');
+  await dialog.getByRole('button',{name:'Betabooru',exact:true}).click();
+  await page.waitForFunction(async()=>(await(await fetch('/api/danbooru/host')).json()).host==='betabooru');
+  assert.equal(await dialog.getByRole('button',{name:'Betabooru',exact:true}).getAttribute('aria-pressed'),'true');
+  check('manual Danbooru host selection saves to isolated config');
   await section('Browsing').click();
   await page.locator('#setting-home-layout').getByRole('button',{name:'Classic',exact:true}).click();
   await section('Display').click();
@@ -132,6 +136,13 @@ const report = { checks: [], errors: [], requests: [] };
   assert.equal(await page.getByRole('dialog',{name:'What should be removed?',exact:true}).count(),0);
   assert(!report.requests.some(r=>r.startsWith('DELETE ')));
   check('module removal overlay keeps its warning, Escape leaves Settings open, media resume hook survives cleanup');
+
+  await page.reload();
+  await open();
+  await section('Account').click();
+  await dialog.locator('#setting-danbooru-access > summary').click();
+  assert.equal(await dialog.getByRole('button',{name:'Betabooru',exact:true}).getAttribute('aria-pressed'),'true');
+  check('selected Danbooru host survives reload');
 
   assert.deepEqual(report.errors,[]);
   check('presentation cleanup and clean browser/API logs');

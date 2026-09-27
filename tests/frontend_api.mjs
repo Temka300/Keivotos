@@ -68,7 +68,7 @@ try {
   const suiteChunks = (Array.isArray(suiteBuild) ? suiteBuild[0] : suiteBuild).output.filter(item => item.type === 'chunk');
   assert(suiteChunks.every(chunk => chunk.moduleIds.every(id => !id.includes('/modules/danbooru/'))),
     'Suite preservation/settings client must not import Danbooru');
-  console.log(`PASS: ${snapshot.cases.length} requests, ${snapshot.urls.length} URLs, 92 method identities, error semantics and suite isolation`);
+  console.log(`PASS: ${snapshot.cases.length} requests, ${snapshot.urls.length} URLs, ${Object.keys(api).length} method identities, error semantics and suite isolation`);
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
   delete globalThis.window;

@@ -25,6 +25,7 @@ class ModuleConfigurationTests(unittest.TestCase):
             "data_root": str(first.home / "library"), "metadata_dir": str(first.home),
             "gallery_dl_dir": str(first.home / "gallery-dl"), "automation_enabled": False,
             "automation_enabled_at": None, "automation_interval_minutes": 15,
+            "danbooru_host": "danbooru",
         })
         first.config_defaults["automation_enabled"] = True
         self.assertFalse(second.config_defaults["automation_enabled"])
