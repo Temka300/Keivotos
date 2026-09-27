@@ -41,11 +41,19 @@ uvicorn.run(server.app, host='127.0.0.1', port=int(sys.argv[2]))
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
-    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'storage', 'absence'), default='modularization')
+    parser.add_argument('--dist', type=Path, help='Prebuilt scratch frontend; skip the runner build')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'language', 'storage', 'absence'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
         parser.error('Provide --node /path/to/node')
+    windows_node = str(args.node).lower().endswith('.exe')
+
+    def node_path(path: Path) -> str:
+        if not windows_node:
+            return str(path)
+        return subprocess.check_output(['wslpath', '-w', str(path)], text=True).strip()
+
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=False)
     with tempfile.TemporaryDirectory(prefix='keivotos-modularization-') as temporary:
@@ -71,6 +79,9 @@ def main() -> int:
         if args.script == 'youtube':
             from browser_youtube_fixture import seed
             seed(base / 'media')
+        if args.script == 'language':
+            from browser_language_fixture import seed_language
+            seed_language(base / 'media')
         project = ROOT
         if args.script == 'absence':
             project = base / 'source'
@@ -85,16 +96,23 @@ def main() -> int:
             media = base / 'media'
             media.mkdir()
             (media / 'preserved.txt').write_text('Files-only preservation fixture')
-        dist = project / 'frontend/dist' if args.script == 'absence' else base / 'frontend'
-        with (output / 'build.log').open('w') as log:
-            subprocess.run([args.node, 'node_modules/vite/bin/vite.js', 'build', '--outDir', str(dist)],
-                           cwd=project / 'frontend', stdout=log, stderr=subprocess.STDOUT, check=True)
+        dist = args.dist.resolve() if args.dist else (
+            project / 'frontend/dist' if args.script == 'absence' else base / 'frontend')
+        if args.dist and args.script == 'absence':
+            placeholder = project / 'frontend/dist/index.html'
+            placeholder.parent.mkdir(parents=True, exist_ok=True)
+            placeholder.write_text('scratch frontend route placeholder')
+        if not args.dist:
+            with (output / 'build.log').open('w') as log:
+                subprocess.run([args.node, 'node_modules/vite/bin/vite.js', 'build', '--outDir', str(dist)],
+                               cwd=project / 'frontend', stdout=log, stderr=subprocess.STDOUT, check=True)
         with socket.socket() as probe:
             probe.bind(('127.0.0.1', 0))
             port = probe.getsockname()[1]
         url = f'http://127.0.0.1:{port}'
         context = base / 'context.json'
-        context.write_text(json.dumps({'url': url, 'home': str(home), 'output': str(output), 'media': str(base / 'media')}))
+        context.write_text(json.dumps({'url': url, 'home': str(home), 'output': node_path(output),
+                                       'media': str(base / 'media'), 'mediaLocal': node_path(base / 'media')}))
         env = {**os.environ, 'KEIVOTOS_HOME': str(home)}
         with (output / 'server.log').open('w') as log:
             server = subprocess.Popen([sys.executable, '-c', SERVER, str(dist), str(port), args.script, str(base / 'media')],
@@ -111,7 +129,8 @@ def main() -> int:
                         time.sleep(.1)
                 else:
                     raise RuntimeError('Isolated server startup timed out')
-                result = subprocess.run([args.node, str(ROOT / 'tests' / f'browser_{args.script}.cjs'), str(context)],
+                result = subprocess.run([args.node, node_path(ROOT / 'tests' / f'browser_{args.script}.cjs'),
+                                         node_path(context)],
                                         cwd=ROOT, env=env, timeout=180)
             finally:
                 server.terminate()
