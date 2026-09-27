@@ -1,7 +1,7 @@
 """Experimental local Markdown notes attached to registered Language folders."""
 from pathlib import Path
 
-from module_descriptor import ModuleDescriptor
+from module_descriptor import BackupComponent, ModuleDescriptor
 
 
 def _routers():
@@ -42,4 +42,8 @@ def descriptor(suite_home: Path, version: str) -> ModuleDescriptor:
         user_agent=f"Keivotos/{version} (Language)", disableable=True,
         is_base=False, experimental=True, router_provider=_routers,
         adopt_hook=adopt, release_hook=release,
+        backup_components_provider=lambda: (
+            BackupComponent("language_revisions", "language", "language_revisions",
+                            "tree", home / "revisions"),
+        ),
     )

@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT / 'backend'))
 def test_specs_and_frozen_checks_with_physical_module_absence(tmp_path, installed, target):
     source = tmp_path / 'source'
     source.mkdir()
-    omitted = ('__pycache__',) if installed else ('__pycache__', 'danbooru', 'youtube')
+    omitted = ('__pycache__',) if installed else ('__pycache__', 'danbooru', 'youtube', 'language')
     shutil.copytree(ROOT / 'backend', source / 'backend', ignore=shutil.ignore_patterns(*omitted))
     shutil.copytree(ROOT / 'packaging', source / 'packaging')
     shutil.copy2(ROOT / 'app.py', source / 'app.py')
@@ -82,6 +82,8 @@ assert 'windows_folder_picker.py' in helpers
 assert ('danbooru_gallery_dl.py' in helpers) == installed
 # Keep config's source paths isolated, then simulate only frozen resource checks.
 asgi_app = app._load_asgi_app()
+assert ('language' in [descriptor.slug for descriptor in config.MODULE_REGISTRY]) == installed
+assert ('/api/language/documents' in asgi_app.openapi()['paths']) == installed
 app._load_asgi_app = lambda: asgi_app
 suffix = '.exe' if target == 'win32' else ''
 for tool in plan.tools:
@@ -100,6 +102,7 @@ with patch.object(sys, 'platform', target), patch.object(sys, 'frozen', True, cr
         path.touch()
 if not installed:
     assert not (Path(config.SUITE_HOME) / 'modules/danbooru').exists()
+    assert not (Path(config.SUITE_HOME) / 'modules/language').exists()
 '''
     result = subprocess.run([sys.executable, '-c', code, target, str(installed)], cwd=source,
                             env={**os.environ, 'PYTHONPATH': str(source / 'backend'),

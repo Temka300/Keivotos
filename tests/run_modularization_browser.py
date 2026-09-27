@@ -87,11 +87,11 @@ def main() -> int:
             project = base / 'source'
             project.mkdir()
             shutil.copytree(ROOT / 'backend', project / 'backend',
-                            ignore=shutil.ignore_patterns('danbooru', 'video', 'manga', 'youtube', '__pycache__'))
+                            ignore=shutil.ignore_patterns('danbooru', 'video', 'manga', 'youtube', 'language', '__pycache__'))
             for name in ('app.py', 'config.json'):
                 shutil.copy2(ROOT / name, project / name)
             shutil.copytree(ROOT / 'frontend', project / 'frontend',
-                            ignore=shutil.ignore_patterns('node_modules', 'dist', 'danbooru', 'video', 'manga', 'youtube'))
+                            ignore=shutil.ignore_patterns('node_modules', 'dist', 'danbooru', 'video', 'manga', 'youtube', 'language'))
             (project / 'frontend/node_modules').symlink_to(ROOT / 'frontend/node_modules', target_is_directory=True)
             media = base / 'media'
             media.mkdir()

@@ -45,6 +45,7 @@ def test_descriptor_folder_role_and_history_owner(local):
     source, media, home, db, connect = local
     descriptor = router.config.MODULE_REGISTRY.require("language")
     assert descriptor.experimental and descriptor.disableable and descriptor.adopt_hook
+    assert descriptor.backup_components()[0].source == home / "modules/language/revisions"
     with connect() as connection:
         sources.update_source(connection, source.source_id, role="files")
     import database
@@ -103,6 +104,23 @@ def test_external_edit_conflict_preserves_both_versions(local):
     assert conflict.value.status_code == 409
     assert (media / created["name"]).read_text() == "external edit"
     assert not list((home / "modules/language").rglob("*.md"))
+
+
+def test_revision_history_link_cannot_escape_suite_home(local, tmp_path):
+    source, media, home, db, connect = local
+    created = router.create_document(router.CreateRequest(source_id=source.source_id))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    history_home = home / "modules/language"
+    history_home.mkdir(parents=True)
+    (history_home / "revisions").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(HTTPException) as error:
+        router.save_document(router.SaveRequest(source_id=source.source_id,
+            name=created["name"], content="local edit", revision=created["revision"],
+            session_id="c" * 32))
+    assert error.value.status_code == 403
+    assert (media / created["name"]).read_bytes() == b""
+    assert list(outside.iterdir()) == []
 
 
 @pytest.mark.parametrize("name", ["../escape.md", "a/b.md", "C:\\note.md", "CON.md",

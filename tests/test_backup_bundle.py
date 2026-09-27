@@ -105,6 +105,27 @@ class MetadataBackupBundleTests(unittest.TestCase):
             self.assertIn("databases/danbooru.sqlite", archive.namelist())
             self.assertEqual(archive.read("sidecars/sample.json"), b"original-sidecar")
 
+    def test_language_revision_history_roundtrip_without_original_notes(self) -> None:
+        history = self.temp / "language_revisions"
+        archived = history / "note" / "session.md"
+        archived.parent.mkdir(parents=True)
+        archived.write_bytes(b"previous draft")
+        original = self.temp / "external" / "current.md"
+        original.write_bytes(b"current original note")
+        backup_bundle.COMPONENTS = {
+            **backup_bundle.COMPONENTS,
+            "language_revisions": ("language_revisions", history),
+        }
+        selection = {key: key == "language_revisions" for key in backup_bundle._component_keys()}
+        created = backup_bundle.create_backup_bundle(selection)
+        with zipfile.ZipFile(created["path"]) as archive:
+            self.assertEqual(archive.read("language_revisions/note/session.md"), b"previous draft")
+            self.assertNotIn("current.md", " ".join(archive.namelist()))
+        archived.write_bytes(b"later history")
+        backup_bundle.restore_backup_bundle(Path(created["path"]).name)
+        self.assertEqual(archived.read_bytes(), b"previous draft")
+        self.assertEqual(original.read_bytes(), b"current original note")
+
     def test_missing_optional_artifacts_are_reported_without_creating_them(self) -> None:
         self.data_db.unlink()  # Disposable fixture only.
         created = backup_bundle.create_backup_bundle()
@@ -336,9 +357,11 @@ class BackupComponentDeclarationTests(unittest.TestCase):
             "user_database": "suite", "file_attachments": "files",
             "library_database": "danbooru", "sidecars": "danbooru",
             "sidecar_history": "danbooru", "artist_profile_archive": "danbooru",
+            "language_revisions": "language",
         })
         self.assertEqual(catalog["library_database"].archive_name, "databases/danbooru.sqlite")
         self.assertEqual(catalog["user_database"].archive_name, "databases/user.sqlite")
+        self.assertEqual(catalog["language_revisions"].archive_name, "language_revisions")
         self.assertNotIn("files_database", catalog)
 
     def test_invalid_duplicate_and_overlapping_declarations_are_rejected(self) -> None:
