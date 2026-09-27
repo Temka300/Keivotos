@@ -30,6 +30,11 @@ class ModuleRegistryTests(unittest.TestCase):
         self.assertEqual(danbooru.database, home.resolve() / "modules" / "danbooru" / "danbooru.sqlite")
         self.assertEqual(danbooru.api_prefix, "/api/danbooru")
         self.assertIn("Danbooru", danbooru.user_agent)
+        language = registry.require("language")
+        self.assertTrue(language.experimental)
+        self.assertTrue(language.disableable)
+        self.assertIsNotNone(language.adopt_hook)
+        self.assertEqual(language.api_prefix, "/api/language")
 
     def test_registry_rejects_duplicate_slugs(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT / "tests") as temporary:

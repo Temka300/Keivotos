@@ -207,6 +207,41 @@ def source_entry_count(connection: sqlite3.Connection, source_id: str) -> int:
     return int(row["count"] if row is not None else 0)
 
 
+def refresh_file(connection: sqlite3.Connection, source_id: str, root: Path,
+                 name: str, previous_name: str | None = None) -> None:
+    """Refresh one root-level file after an owner mutation, without scanning media."""
+    root = Path(root).expanduser().resolve(strict=False)
+    if previous_name and previous_name != name:
+        connection.execute(
+            "UPDATE files_index SET available=0 WHERE source_id=? AND path=?",
+            (source_id, str(root / previous_name)),
+        )
+    path = root / name
+    if not path.is_file() or path.is_symlink():
+        connection.execute(
+            "UPDATE files_index SET available=0 WHERE source_id=? AND path=?",
+            (source_id, str(path)),
+        )
+    else:
+        stat_result = path.stat()
+        timestamp = _now()
+        connection.execute(
+            """INSERT INTO files_index
+               (source_id, path, relative_path, parent, name, ext, is_dir,
+                size, mtime, indexed_at, seen_at, available)
+               VALUES (?, ?, ?, '', ?, ?, 0, ?, ?, ?, ?, 1)
+               ON CONFLICT(path) DO UPDATE SET
+                source_id=excluded.source_id, relative_path=excluded.relative_path,
+                parent='', name=excluded.name, ext=excluded.ext, is_dir=0,
+                size=excluded.size, mtime=excluded.mtime,
+                content_hash=NULL, hashed_at=NULL,
+                seen_at=excluded.seen_at, available=1""",
+            (source_id, str(path), name, name, path.suffix.lower().lstrip('.'),
+             int(stat_result.st_size), int(stat_result.st_mtime), timestamp, timestamp),
+        )
+    connection.commit()
+
+
 def drop_source(connection: sqlite3.Connection, source_id: str) -> int:
     """Remove all index rows for a source (un-index only; disk is untouched)."""
     removed = connection.execute(

@@ -31,6 +31,13 @@ except ModuleNotFoundError as exc:
     manga_descriptor = None
 
 try:
+    from modules.language import descriptor as language_descriptor
+except ModuleNotFoundError as exc:
+    if exc.name != "modules.language":
+        raise
+    language_descriptor = None
+
+try:
     from modules.youtube import descriptor as youtube_descriptor
     from modules.youtube.delivery import contribution as youtube_delivery
     from modules.youtube.helpers import dispatch_helper as youtube_helper
@@ -43,7 +50,7 @@ except ModuleNotFoundError as exc:
 # One import/factory entry is the registration boundary for each module.
 _DESCRIPTOR_FACTORIES = (
     files_descriptor,
-) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ()) + ((video_descriptor,) if video_descriptor is not None else ()) + ((manga_descriptor,) if manga_descriptor is not None else ()) + ((youtube_descriptor,) if youtube_descriptor is not None else ())
+) + ((danbooru_descriptor,) if danbooru_descriptor is not None else ()) + ((video_descriptor,) if video_descriptor is not None else ()) + ((manga_descriptor,) if manga_descriptor is not None else ()) + ((youtube_descriptor,) if youtube_descriptor is not None else ()) + ((language_descriptor,) if language_descriptor is not None else ())
 
 
 _DELIVERY_PROVIDERS = ((danbooru_delivery,) if danbooru_delivery is not None else ()) + ((youtube_delivery,) if youtube_delivery is not None else ())
@@ -130,4 +137,5 @@ PLANNED_MODULES = (
     {"id": "video", "name": "Video", "experimental": False},
     {"id": "manga", "name": "Manga", "experimental": False},
     {"id": "youtube", "name": "YouTube", "experimental": True},
+    {"id": "language", "name": "Language", "experimental": True},
 )
