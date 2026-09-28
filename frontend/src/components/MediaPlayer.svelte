@@ -140,7 +140,7 @@
         <button aria-label="Previous video" disabled={navigating || !(hasPrevious||(loopMode==='all'&&canWrap))} on:click={() => navigate(-1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5 8 12l11 7Z" /></svg></button>
         <button aria-label={playing ? 'Pause' : 'Play'} disabled={!!failure} on:click={togglePlay}><svg viewBox="0 0 24 24" aria-hidden="true">{#if playing}<path d="M8 5v14M16 5v14" />{:else}<path d="m7 4 13 8-13 8Z" />{/if}</svg></button>
         <button aria-label="Next video" disabled={navigating || !(hasNext||(loopMode==='all'&&canWrap))} on:click={() => navigate(1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l11 7-11 7Z" /></svg></button>
-        <div class="auto-next"><span>Auto next {autoNext?'on':'off'}</span><SettingsSwitch label="Auto next" checked={autoNext} on:click={toggleAutoNext}/></div>
+        <div class="auto-next"><SettingsSwitch label="Auto next" checked={autoNext} on:click={toggleAutoNext}/></div>
         <button class="loop-button" class:off={loopMode==='off'} class:all={loopMode==='all'} class:one={loopMode==='one'} aria-label={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} title={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} aria-pressed={loopMode!=='off'} on:click={cycleLoop}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M3 11V9a4 4 0 0 1 4-4h13"/><path d="M7 22l-3-3 3-3"/><path d="M21 13v2a4 4 0 0 1-4 4H4"/></svg>{#if loopMode==='one'}<span class="loop-one-mark">1</span>{/if}</button>
         <button class="fullscreen" aria-label="Fullscreen" on:click={fullscreen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" /></svg></button>
       </div>
@@ -158,7 +158,7 @@
  .control-row{display:flex;align-items:center;gap:12px}
  .player-controls button{display:grid;place-items:center;width:40px;height:40px;border:0;background:transparent;color:#eee;border-radius:50%;transition:background-color .15s ease}
  .player-controls button:hover:not(:disabled){background:#ffffff20}
- .auto-next{margin-left:auto;display:flex;flex-direction:column;align-items:center;gap:3px;color:#eee;font-size:10px;line-height:1;white-space:nowrap}
+ .auto-next{margin-left:auto;display:flex;align-items:center}
  .auto-next :global(.settings-switch){width:38px;height:22px}
  .auto-next :global(.settings-switch span){width:16px;height:16px}
  .auto-next :global(.settings-switch.checked span){transform:translateX(16px)}

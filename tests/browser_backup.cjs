@@ -105,6 +105,8 @@ assert.match(config.home, /[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   await settings.getByRole('button',{name:'Custom',exact:true}).click();
   assert.equal(await picker.count(),0);
   assert.equal(await changeFolder.isEnabled(),true);
+  assert.equal((await settings.locator('.backup-path').innerText()).trim(),config.home+'/backups');
+  assert.equal(await settings.getByText('Choose a folder to use Custom backup location.',{exact:false}).count(),0);
   assert.equal(await page.evaluate(async()=>(await(await fetch('/api/backups')).json()).options.location),'default');
   await settings.getByRole('button',{name:'Back up now',exact:true}).click();
   await settings.getByText('Choose a folder before using Custom backup location.',{exact:true}).waitFor();

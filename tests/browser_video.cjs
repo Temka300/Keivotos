@@ -140,6 +140,7 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.waitForFunction(()=>document.querySelector('video')?.ended);
   assert.equal(await page.locator('video').getAttribute('src'),current);
   const auto=page.getByRole('switch',{name:'Auto next'});
+  assert.equal((await page.locator('.auto-next').innerText()).trim(),'');
   await auto.click();assert.equal(await auto.getAttribute('aria-checked'),'true');
   await page.getByRole('button',{name:'Play',exact:true}).click();
   await page.locator('video').evaluate(video=>video.currentTime=video.duration-.15);

@@ -36,10 +36,23 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   const box=await reader.boundingBox();assert.equal(box.width,1440);assert.equal(box.height,1000);
   assert.equal(await reader.locator('img').count(),1);
   assert.equal(await page.getByLabel('Reading layout').inputValue(),'paged');
+  async function assertPagedImageFits(){
+    await page.waitForFunction(()=>{const image=document.querySelector('.paged-page img');return image?.complete&&image.naturalWidth>0;});
+    const bounds=await reader.locator('.paged-page img').evaluate(image=>{
+      const page=image.closest('.paged-page').getBoundingClientRect();
+      const rect=image.getBoundingClientRect();
+      return {page:{left:page.left,top:page.top,right:page.right,bottom:page.bottom},image:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height},naturalRatio:image.naturalWidth/image.naturalHeight};
+    });
+    assert(bounds.image.left>=bounds.page.left-1&&bounds.image.top>=bounds.page.top-1);
+    assert(bounds.image.right<=bounds.page.right+1&&bounds.image.bottom<=bounds.page.bottom+1);
+    assert(Math.abs(bounds.image.width/bounds.image.height-bounds.naturalRatio)<.01);
+  }
+  await assertPagedImageFits();
   await page.mouse.click(700,900);await page.getByAltText('Page 2',{exact:true}).waitFor();
   await page.mouse.click(700,100);await page.getByAltText('Page 1',{exact:true}).waitFor();
   await reader.focus();await page.keyboard.press('ArrowRight');await page.getByAltText('Page 2',{exact:true}).waitFor();
   await page.keyboard.press('PageDown');await page.getByAltText('Page 3',{exact:true}).waitFor();
+  await assertPagedImageFits();
   await shot('manga-reader-paged');
   check('Paged shows one contained page; bottom/top clicks and keyboard move exactly one page');
   await page.mouse.click(700,500);

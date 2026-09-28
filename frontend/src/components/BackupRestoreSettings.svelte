@@ -70,7 +70,7 @@
   $: moduleOwners = [...new Set(availableChoices.filter(choice => choice.owner !== 'suite').map(choice => choice.owner))].sort((left, right) => ownerOrder(left) - ownerOrder(right));
   $: blocked = busy || saving || toolRunning || !!configuration?.automatic_status?.running;
   $: locationMode = locationDraft ?? options.location;
-  $: locationDisplay = locationMode === 'custom' ? options.custom_location : destination;
+  $: locationDisplay = locationMode === 'custom' ? options.custom_location || destination : destination;
   $: includedLabels = inspected ? Object.entries(inspected.components)
     .filter(([, included]) => included).map(([key]) => componentLabel(key)) : [];
 
@@ -320,7 +320,6 @@
     <div class="backup-row"><span>Automatic backup</span><div class="backup-controls"><span role="status" class="backup-hint">{#if configuration.automatic_status.running}Backing up…{:else if configuration.automatic_status.last_result === 'failed'}Last backup failed ⚠ — see Logs{:else if configuration.automatic_status.last_success_at}Last backup ✓ {new Date(configuration.automatic_status.last_success_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}{/if}</span><SettingsSwitch label="Automatic backup" checked={options.enabled} disabled={blocked} on:click={() => changeOption('enabled', !options.enabled)} /></div></div>
     <div class="backup-row"><span>Backup location</span><div class="backup-segments"><button class:chosen={locationMode === 'default'} aria-pressed={locationMode === 'default'} disabled={blocked} on:click={() => changeOption('location','default')}>Default</button><button class:chosen={locationMode === 'custom'} aria-pressed={locationMode === 'custom'} disabled={blocked} on:click={selectCustomLocation}>Custom</button></div></div>
     <div class="backup-row location-row"><span>Location</span><div class="backup-controls location-controls"><span class="backup-path" title={locationDisplay}>{locationDisplay}</span><button class="backup-button" disabled={blocked || locationMode === 'default'} on:click={chooseLocation}>Change folder</button></div></div>
-    {#if locationDraft}<p class="location-prompt" role="status">Choose a folder to use Custom backup location. The saved destination stays active until then.</p>{/if}
     <div class="backup-row"><label for="backup-retention">Backups</label><select id="backup-retention" aria-label="Keep automatic backups" value={options.retention} disabled={blocked} on:change={event => changeOption('retention', Number(event.currentTarget.value))}>{#each [1,2,3,4,5] as count}<option value={count}>{count}</option>{/each}</select></div>
     <div class="backup-row"><label for="backup-frequency">Backup frequency</label><select id="backup-frequency" aria-label="Frequency" value={options.frequency_minutes} disabled={blocked} on:change={event => changeOption('frequency_minutes', Number(event.currentTarget.value) as BackupOptions['frequency_minutes'])}>{#each [15,30,45,60] as minutes}<option value={minutes}>{minutes === 60 ? '1 hour' : `${minutes} min`}</option>{/each}</select></div>
   </section>
@@ -391,7 +390,6 @@
   #backup-frequency{width:156px}
   .location-controls{flex:0 1 512px}
   .backup-path{min-width:0;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:8px 13px;font-size:12px;color:#a2a4b6;background:#0d0e15;border:1px solid #343749;border-radius:8px}
-  .location-prompt{margin:0;padding:0 17px 12px;color:#a2a4b6;font-size:12px}
   .backup-heading{padding:16px 17px;display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:72px}
   h3,h4{font-size:15px;font-weight:500;margin:0}
   .backup-hint{font-size:12px;color:#858899;line-height:1.5}

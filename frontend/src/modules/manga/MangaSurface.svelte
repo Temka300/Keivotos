@@ -184,8 +184,8 @@
  .reader-controls{position:fixed;top:16px;left:16px;z-index:1;display:flex;align-items:center;gap:8px;transition:opacity .18s ease,transform .18s ease}
  .reader-controls.hidden{opacity:0;transform:translateY(-10px);pointer-events:none}
  .reader-controls select{border:0;border-radius:20px;background:#26262d;color:#ddd;padding:9px 12px;font-size:13px;cursor:pointer}
- .paged-page{height:100dvh;width:100%;display:grid;place-items:center;overflow:hidden}
- .paged-page img{width:100%;height:100%;object-fit:contain}
+ .paged-page{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
+ .paged-page img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
  .page{height:100dvh;display:flex;justify-content:center;align-items:center;width:100%;margin:0 auto}
  .page img{width:100%;height:100%;object-fit:contain}
  .vertical .page{height:auto;width:min(100%,1000px);aspect-ratio:var(--ratio)}
