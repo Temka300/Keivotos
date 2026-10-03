@@ -77,6 +77,35 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   assert.equal(fs.readFileSync(current,'utf8'),'external content');
   assert.equal(fs.readFileSync(path.join(config.mediaLocal||config.media,'Welcome.md'),'utf8'),'# Updated locally\n');
   check('disable blocks Language operations and leaves original Markdown files untouched');
+
+  assert.equal((await api('/api/suite/modules/language/enable','POST')).status,200);
+  await page.reload();
+  await page.getByRole('button',{name:'Open Keivotos menu'}).click();
+  await page.locator('.app-drawer').getByRole('button',{name:'Language',exact:true}).click();
+  await page.getByRole('tab',{name:'Welcome.md',exact:true}).click();
+  await page.getByRole('textbox',{name:'Edit Welcome.md'}).fill('# Draft across restart\n');
+  await page.close({runBeforeUnload:false});
+  assert.equal(fs.readFileSync(path.join(config.mediaLocal||config.media,'Welcome.md'),'utf8'),'# Updated locally\n');
+  const reopened=await context.newPage();
+  reopened.on('pageerror',error=>report.errors.push(error.message));
+  await reopened.goto(config.url);
+  await reopened.getByRole('button',{name:'Open Keivotos menu'}).click();
+  await reopened.locator('.app-drawer').getByRole('button',{name:'Language',exact:true}).click();
+  await reopened.getByRole('tab',{name:'Welcome.md',exact:true}).click();
+  const recovered=reopened.getByRole('textbox',{name:'Edit Welcome.md'});
+  assert.equal(await recovered.inputValue(),'# Draft across restart\n');
+  await recovered.fill('# Draft across restart and saved\n');
+  await reopened.waitForFunction(async sourceId=>{
+   const response=await fetch('/api/language/document?source_id='+encodeURIComponent(sourceId)+'&name=Welcome.md');
+   return response.ok&&(await response.json()).content==='# Draft across restart and saved\n';
+  },sourceId);
+  const savedPath=path.join(config.mediaLocal||config.media,'Welcome.md');
+  for(let attempt=0;attempt<30&&fs.readFileSync(savedPath,'utf8')!=='# Draft across restart and saved\n';attempt++){
+   await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  assert.equal(fs.readFileSync(savedPath,'utf8'),'# Draft across restart and saved\n');
+  await reopened.waitForFunction(sourceId=>!localStorage.getItem(`keivotos:language-draft:${sourceId}:Welcome.md`),sourceId);
+  check('closing before autosave preserves a recoverable draft across a new browser session');
   assert.deepEqual(report.errors,[]);
  }finally{
   fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));

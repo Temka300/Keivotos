@@ -13,21 +13,34 @@
 
   function draftKey(folder:string,name:string){return `keivotos:language-draft:${folder}:${name}`;}
   function remember(tab:OpenNote){
-    try{sessionStorage.setItem(draftKey(sourceId,tab.name),JSON.stringify({content:tab.content,revision:tab.revision,sessionId:tab.sessionId}));}
-    catch{tab.error='Could not keep this draft in browser storage. Save or copy the text before leaving.';}
+    const key=draftKey(sourceId,tab.name);
+    const value=JSON.stringify({content:tab.content,revision:tab.revision,sessionId:tab.sessionId});
+    let persistent=false;
+    try{localStorage.setItem(key,value);persistent=true;}catch{/* Keep a session copy if persistent storage is unavailable. */}
+    try{sessionStorage.setItem(key,value);}catch{/* Persistent storage may still be available. */}
+    if(!persistent)tab.error ||= 'Could not keep this draft across app restarts. Save or copy the text before leaving.';
   }
-  function clearDraft(tab:OpenNote){try{sessionStorage.removeItem(draftKey(sourceId,tab.name));}catch{/* Storage may be disabled. */}}
+  function clearDraft(tab:OpenNote){
+    const key=draftKey(sourceId,tab.name);
+    try{localStorage.removeItem(key);}catch{/* Storage may be disabled. */}
+    try{sessionStorage.removeItem(key);}catch{/* Storage may be disabled. */}
+  }
   function restoreDraft(tab:OpenNote){
     try{
-      const raw=sessionStorage.getItem(draftKey(sourceId,tab.name));
+      const key=draftKey(sourceId,tab.name);
+      let raw:string|null=null;
+      try{raw=localStorage.getItem(key);}catch{/* Fall back to the current session. */}
+      if(!raw)raw=sessionStorage.getItem(key);
       if(!raw)return;
       const saved=JSON.parse(raw);
       if(typeof saved.content!=='string'||typeof saved.revision!=='string')return;
+      if(saved.content===tab.content){clearDraft(tab);return;}
       const diskRevision=tab.revision;
       tab.content=saved.content;tab.revision=saved.revision;
       tab.sessionId=typeof saved.sessionId==='string'?saved.sessionId:tab.sessionId;
       tab.dirty=true;
       if(saved.revision!==diskRevision)tab.error='This note changed outside Keivotos. Your draft is preserved; review it before retrying.';
+      remember(tab);
     }catch{/* An invalid browser draft cannot replace the disk note. */}
   }
   async function loadFolders(){
