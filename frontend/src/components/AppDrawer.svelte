@@ -6,6 +6,7 @@
   import { activateModule, moduleUi } from '../modules/registry';
 
   const dispatch = createEventDispatcher<{ close: void }>();
+  export let beforeNavigate: ((slug: string) => boolean | Promise<boolean>) | undefined = undefined;
   const DRAWER_EXIT_MS = 180;
   let closing = false;
   let closeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -37,7 +38,8 @@
     settingsOpen.set(true);
   }
 
-  function openModule(mod: SuiteModule) {
+  async function openModule(mod: SuiteModule) {
+    if (beforeNavigate && !await beforeNavigate(mod.slug)) return;
     activateModule(mod.slug);
     close();
   }
