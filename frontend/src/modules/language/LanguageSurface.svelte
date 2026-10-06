@@ -3,6 +3,7 @@
   import AppDrawer from '../../components/AppDrawer.svelte';
   import {settingsInitialSection,settingsOpen} from '../../lib/suiteStores';
   import {languageApi,type LanguageDocument,type LanguageFile,type LanguageFolder} from './api';
+  import MarkdownEditor from './MarkdownEditor.svelte';
 
   type OpenNote = LanguageDocument & {sourceId:string; savedContent:string; sessionId:string; dirty:boolean; saving:boolean; error:string};
   type Decision = 'save'|'keep'|'discard';
@@ -10,6 +11,7 @@
   let folders:LanguageFolder[]=[], sourceId='', files:LanguageFile[]=[], tabs:OpenNote[]=[], openNames:string[]=[], activeName='', openSourceId='';
   let editingName='', nameDraft='', renameBusy=false, nameInput:HTMLInputElement;
   let surface:HTMLDivElement, decisionFocus:HTMLDivElement;
+  let editor:MarkdownEditor;
   let pendingDecision:{description:string; resolve:(choice:Decision)=>void}|null=null;
   let saveQueue:Promise<boolean>=Promise.resolve(true);
   $: active=tabs.find(tab=>tab.name===activeName);
@@ -195,9 +197,9 @@
     }catch(caught){error=caught instanceof Error?caught.message:'Could not rename this note.';}
     finally{renameBusy=false;}
   }
-  function input(event:Event){
+  function input(content:string){
     if(!active)return;
-    active.content=(event.currentTarget as HTMLTextAreaElement).value;
+    active.content=content;
     active.dirty=active.content!==active.savedContent;
     active.error='';
     if(active.dirty)remember(active);else clearDraft(active);
@@ -259,7 +261,20 @@
       {#if folders.length>1}<select aria-label="Language folder" value={sourceId} on:change={event=>selectFolder(event.currentTarget)}>{#each folders as folder}<option value={folder.source_id}>{folder.name}</option>{/each}</select>{/if}
     </div>
     {#if active}
-      <textarea class="editor" aria-label={`Edit ${active.name}`} spellcheck="false" value={active.content} on:input={input}></textarea>
+      <div class="format-toolbar" role="toolbar" aria-label="Markdown formatting">
+        <select aria-label="Heading level" value="" on:change={event=>{const select=event.currentTarget;if(select.value)editor?.format(select.value as `heading-${1|2|3|4|5|6}`);select.value='';}}>
+          <option value="">Heading</option>
+          {#each [1,2,3,4,5,6] as level}<option value={`heading-${level}`}>Heading {level}</option>{/each}
+        </select>
+        <button aria-label="Insert horizontal rule" title="Horizontal rule" on:click={()=>editor?.format('rule')}>―</button>
+        <button aria-label="Bold" title="Bold (Ctrl+B)" on:click={()=>editor?.format('bold')}><strong>B</strong></button>
+        <button aria-label="Italic" title="Italic (Ctrl+I)" on:click={()=>editor?.format('italic')}><em>I</em></button>
+        <button aria-label="Bold and italic" title="Bold and italic" on:click={()=>editor?.format('bold-italic')}><strong><em>BI</em></strong></button>
+        <button aria-label="Highlight" title="Highlight" on:click={()=>editor?.format('highlight')}><mark>H</mark></button>
+      </div>
+      {#key `${sourceId}:${active.name}`}
+        <MarkdownEditor bind:this={editor} value={active.content} label={`Edit ${active.name}`} onChange={input}/>
+      {/key}
       <div class="save-status" role="status">
         {#if active.error}<span class="failed">{active.error}</span>{/if}
         <span>{#if active.saving}Saving…{:else if active.dirty}Unsaved changes…{:else}Saved{/if}</span>
@@ -302,13 +317,17 @@
   .tab-close.is-dirty:hover .dirty-glyph,.tab-close.is-dirty:focus-visible .dirty-glyph{display:none}
   .tab.editing{display:flex;align-items:center;flex:none;min-width:90px;padding:8px 15px;border-right:1px solid #34343f;color:#fff;background:#22222b;font-size:13px}.tab input{width:125px;min-width:40px;background:transparent;outline:none;color:#fff}.tab span{color:#a7a7b6}
   .tabs select{order:2;max-width:180px;padding:0 12px;background:#1b1b25;border-left:1px solid #393946;font-size:12px}
-  .editor{width:100%;min-height:0;flex:1;resize:none;border:0;outline:none;background:#101016;color:#eee;padding:24px;font:15px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace;tab-size:2}
+  .format-toolbar{display:flex;gap:2px;align-items:center;flex-wrap:wrap;min-height:38px;padding:3px 12px;border-bottom:1px solid #292936;background:#17171f}
+  .format-toolbar button,.format-toolbar select{min-height:30px;min-width:32px;border-radius:5px;padding:3px 8px;color:#d8d8e2;font-size:12px}
+  .format-toolbar button:hover,.format-toolbar select:hover{background:#282833;color:#fff}
+  .format-toolbar button:focus-visible,.format-toolbar select:focus-visible{outline:2px solid var(--accent)}
+  .format-toolbar mark{background:#8e6a2d;color:#fff;padding:0 2px}
   .save-status{display:flex;align-items:center;gap:8px;min-height:32px;padding:5px 16px;border-top:1px solid #292936;color:#9393a5;font-size:12px}.save-status .failed{color:#fca5a5}.save-status button,.notice button,.empty button{text-decoration:underline;margin-left:8px;color:#ddd}
   .notice{padding:12px 16px;color:#fca5a5;font-size:13px}.empty{flex:1;display:grid;place-content:center;text-align:center;color:#a7a7b6;gap:12px}
   .decision-overlay{position:fixed;inset:0;z-index:150;display:grid;place-items:center;background:rgba(0,0,0,.72);padding:16px}
   .decision-dialog{width:min(430px,100%);border:1px solid #383848;border-radius:14px;background:#17171f;padding:24px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
   .decision-dialog h2{font-size:18px;font-weight:600;color:#fff}.decision-dialog p{margin-top:12px;color:#b8b8c7;font-size:14px}
   .decision-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:22px}.decision-actions button{border:1px solid #444455;border-radius:8px;padding:7px 11px;font-size:13px}.decision-actions button:first-child{background:var(--accent-strong);border-color:var(--accent-strong);color:#fff}.decision-actions button:hover{border-color:var(--accent);color:#fff}
-  button:focus-visible,select:focus-visible,.editor:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-  @media(max-width:600px){.tabs select{max-width:110px}.editor{padding:16px}}
+  button:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  @media(max-width:600px){.tabs select{max-width:110px}}
 </style>

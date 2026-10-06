@@ -18,6 +18,9 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   for(let attempt=0;attempt<30&&fs.readFileSync(filename,'utf8')!==expected;attempt++)await new Promise(resolve=>setTimeout(resolve,100));
   assert.equal(fs.readFileSync(filename,'utf8'),expected);
  }
+ async function editorText(locator){
+  return locator.evaluate(node=>[...node.querySelectorAll('.cm-line')].map(line=>line.textContent).join('\n'));
+ }
  try{
   await page.goto(config.url);
   assert.equal((await api('/api/suite/modules/language/enable','POST')).status,200);
@@ -64,7 +67,7 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   assert.equal(await decision.getByRole('button',{name:'Save',exact:true}).evaluate(node=>document.activeElement===node),true);
   await decision.press('Escape');
   await decision.waitFor({state:'detached'});
-  assert.equal(await editor.inputValue(),'# Close and save\n');
+  assert.equal(await editorText(editor),'# Close and save\n');
   await closeWelcome.click();
   await decision.getByRole('button',{name:'Save',exact:true}).click();
   await page.getByRole('tab',{name:'Welcome.md',exact:true}).waitFor({state:'detached'});
@@ -77,7 +80,7 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   assert.equal(fs.readFileSync(path.join(config.mediaLocal||config.media,'Welcome.md'),'utf8'),'# Close and save\n');
   await page.getByRole('combobox',{name:'Open Markdown file'}).selectOption('Welcome.md');
   await page.getByRole('tab',{name:'Welcome.md',exact:true}).waitFor();
-  assert.equal(await page.getByRole('textbox',{name:'Edit Welcome.md'}).inputValue(),'# Close and save\n');
+  assert.equal(await editorText(page.getByRole('textbox',{name:'Edit Welcome.md'})),'# Close and save\n');
   check('dirty dot and close control offer Save, Keep editing and Discard without deleting the file');
 
   await page.getByRole('button',{name:'New Markdown file'}).click();
@@ -124,7 +127,7 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   await page.getByRole('button',{name:'Save Study 2.md'}).click();
   await page.getByText(/Markdown file changed outside Keivotos/).waitFor();
   assert.equal(fs.readFileSync(current,'utf8'),'external content');
-  assert.equal(await page.getByRole('textbox',{name:'Edit Study 2.md'}).inputValue(),'unsaved local draft');
+  assert.equal(await editorText(page.getByRole('textbox',{name:'Edit Study 2.md'})),'unsaved local draft');
   check('external edit conflict keeps both disk content and the visible local draft');
 
   await page.screenshot({path:path.join(config.output,'language.png')});
@@ -149,7 +152,7 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   await reopened.locator('.app-drawer').getByRole('button',{name:'Language',exact:true}).click();
   await reopened.getByRole('tab',{name:'Welcome.md',exact:true}).click();
   const recovered=reopened.getByRole('textbox',{name:'Edit Welcome.md'});
-  assert.equal(await recovered.inputValue(),'# Draft across restart\n');
+  assert.equal(await editorText(recovered),'# Draft across restart\n');
   assert.equal(await reopened.getByRole('button',{name:'Save Welcome.md'}).count(),1);
   await recovered.press('Control+s');
   await waitDisk('Welcome.md','# Draft across restart\n');
@@ -173,7 +176,7 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   const drawer=reopened.locator('.app-drawer');
   await drawer.getByRole('button',{name:'Files',exact:true}).click();
   await reopenedDecision.getByRole('button',{name:'Keep editing'}).click();
-  assert.equal(await reopened.getByRole('textbox',{name:'Edit Welcome.md'}).inputValue(),'# Module leave draft\n');
+  assert.equal(await editorText(reopened.getByRole('textbox',{name:'Edit Welcome.md'})),'# Module leave draft\n');
   await drawer.getByRole('button',{name:'Files',exact:true}).click();
   await reopenedDecision.getByRole('button',{name:'Discard changes'}).click();
   await reopened.getByRole('textbox',{name:'Edit Welcome.md'}).waitFor({state:'detached'});
@@ -181,8 +184,53 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   await reopened.getByRole('button',{name:'Open Keivotos menu'}).click();
   await reopened.locator('.app-drawer').getByRole('button',{name:'Language',exact:true}).click();
   await reopened.getByRole('tab',{name:'Welcome.md',exact:true}).click();
-  assert.equal(await reopened.getByRole('textbox',{name:'Edit Welcome.md'}).inputValue(),'# Folder save A\n');
+  assert.equal(await editorText(reopened.getByRole('textbox',{name:'Edit Welcome.md'})),'# Folder save A\n');
   check('folder switch saves all dirty tabs; module switch asks before leaving and discard keeps disk bytes');
+
+  const formatted=reopened.getByRole('textbox',{name:'Edit Welcome.md'});
+  const toolbar=reopened.getByRole('toolbar',{name:'Markdown formatting'});
+  for(let level=1;level<=6;level++){
+   await formatted.fill('Heading text');
+   await toolbar.getByRole('combobox',{name:'Heading level'}).selectOption(`heading-${level}`);
+   assert.equal(await editorText(formatted),'#'.repeat(level)+' Heading text');
+  }
+  for(const [button,expected] of [
+   ['Bold','**words**'],['Italic','*words*'],['Bold and italic','***words***'],['Highlight','==words==']
+  ]){
+   await formatted.fill('words');await formatted.press('Control+a');
+   await toolbar.getByRole('button',{name:button,exact:true}).click();
+   assert.equal(await editorText(formatted),expected);
+  }
+  await formatted.press('Control+z');
+  assert.equal(await editorText(formatted),'words');
+  await formatted.press('Control+y');
+  assert.equal(await editorText(formatted),'==words==');
+  assert.equal(await formatted.locator('.cm-markdown-highlight').count(),1);
+  await formatted.fill('before');
+  await toolbar.getByRole('button',{name:'Insert horizontal rule'}).click();
+  assert.equal(await editorText(formatted),'before\n\n---\n');
+  check('heading levels, rule, bold, italic, combined emphasis and highlight insert readable Markdown');
+
+  const remoteRequests=[];
+  reopened.on('request',request=>{if(!request.url().startsWith(config.url))remoteRequests.push(request.url());});
+  const corpus='---\ntitle: 원문\n---\n\n# Heading\n\n**bold *nested*** and ***both***\n'+
+   '| One | Two |\n| --- | --- |\n| escaped \\| pipe | 한국어 |\n\n'+
+   '`==literal==` and \\==escaped== and ==visible==\n\n'+
+   '```md\n==fenced==\n```\n\n'+
+   '<script>window.__languageUnsafe = true</script>\n'+
+   '![remote](https://example.invalid/never-load.png)\n';
+  await formatted.fill(corpus);
+  assert.equal(await formatted.locator('.cm-markdown-highlight').count(),1);
+  assert.equal(await reopened.evaluate(()=>window.__languageUnsafe),undefined);
+  await formatted.press('Control+s');
+  await waitDisk('Welcome.md',corpus);
+  await reopened.getByRole('tab',{name:'Study 2.md'}).click();
+  await reopened.getByRole('tab',{name:'Welcome.md'}).click();
+  assert.equal(await editorText(reopened.getByRole('textbox',{name:'Edit Welcome.md'})),corpus);
+  assert.equal(await reopened.getByRole('button',{name:'Save Welcome.md'}).count(),0);
+  assert.deepEqual(remoteRequests,[]);
+  await reopened.screenshot({path:path.join(config.output,'language-markdown-editor.png')});
+  check('mixed Markdown round-trips unchanged; literal markers stay literal and raw HTML/remote images do not run');
   assert.deepEqual(report.errors,[]);
  }finally{
   fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));
