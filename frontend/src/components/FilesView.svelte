@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { filesApi, type DuplicateGroup, type FileNode, type SourceInfo } from '../lib/filesApi';
   import { fileGlyph, hasThumbnail, type Subject } from '../lib/filePreview';
   import GridSizeMenu from './GridSizeMenu.svelte';
-  import { filesGridSize } from '../lib/filesStores';
+  import { filesGridSize, filesLocationRequest, type FilesLocationRequest } from '../lib/filesStores';
   import { gridSizeByValue, thumbnailTierFor } from '../lib/gridPreferences';
   import { SUITE_NAME } from '../lib/product';
   import { suiteModules } from '../lib/suiteStores';
@@ -23,6 +23,8 @@
   let directoryPicker: DirectoryPicker;
 
   let sources: SourceInfo[] = [];
+  let sourcesLoaded = false;
+  let locationTask: Promise<void> = Promise.resolve();
   let selectedSourceId: string | null = null;
   let currentParent = '';
   let entries: FileNode[] = [];
@@ -53,6 +55,11 @@
   $: subject = buildSubject(selectedEntry, selectedSource, currentParent, sources);
   $: subjectSourceName =
     sources.find((source) => source.source_id === subject?.sourceId)?.display_name ?? '';
+  $: if (sourcesLoaded && $filesLocationRequest) {
+    const request = $filesLocationRequest;
+    filesLocationRequest.set(null);
+    locationTask = locationTask.then(() => navigateToLocation(request));
+  }
 
   onMount(loadSources);
 
@@ -94,11 +101,11 @@
     };
   }
 
-  function isSelected(entry: FileNode): boolean {
+  function isSelected(entry: FileNode, selection: FileNode | null): boolean {
     return (
-      selectedEntry !== null &&
-      selectedEntry.source_id === entry.source_id &&
-      selectedEntry.relative_path === entry.relative_path
+      selection !== null &&
+      selection.source_id === entry.source_id &&
+      selection.relative_path === entry.relative_path
     );
   }
 
@@ -183,12 +190,69 @@
       const loadedSources = await filesApi.listSources();
       sources = loadedSources;
       const firstVisible = loadedSources.find((source) => source.visible);
-      if (firstVisible && !selectedSourceId) {
+      if (firstVisible && !selectedSourceId && !$filesLocationRequest) {
         await selectSource(firstVisible.source_id);
       }
     } catch (e) {
       error = (e as Error).message;
+    } finally {
+      sourcesLoaded = true;
     }
+  }
+
+  async function navigateToLocation(request: FilesLocationRequest): Promise<void> {
+    try {
+      sources = await filesApi.listSources();
+    } catch (e) {
+      error = (e as Error).message;
+      return;
+    }
+    const source = sources.find((candidate) => candidate.source_id === request.sourceId && candidate.visible);
+    if (!source) {
+      error = 'This item’s folder is no longer visible in Files.';
+      return;
+    }
+    const path = request.relativePath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (path.split('/').some((segment) => segment === '.' || segment === '..')) {
+      error = 'This item has an invalid Files path.';
+      return;
+    }
+    let target: FileNode | undefined;
+    if (path) {
+      const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+      try {
+        target = (await filesApi.browse(source.source_id, parent)).find(
+          (entry) => entry.source_id === source.source_id && entry.relative_path === path && entry.available,
+        );
+      } catch (e) {
+        error = (e as Error).message;
+        return;
+      }
+      if (!target) {
+        error = 'This item is no longer available in its Files folder.';
+        return;
+      }
+    }
+    const parent = target?.is_dir ? path : target?.parent ?? '';
+    await selectSource(source.source_id, parent);
+    if (error) return;
+    if (target && !target.is_dir) {
+      selectedEntry = entries.find((entry) =>
+        entry.source_id === target.source_id && entry.relative_path === target.relative_path,
+      ) ?? null;
+      if (!selectedEntry) {
+        error = 'This item is no longer available in its Files folder.';
+        return;
+      }
+    }
+    await tick();
+    const selector = target && !target.is_dir ? '[data-files-entry-path]' : '[data-files-breadcrumb-path]';
+    const wanted = target && !target.is_dir ? path : parent;
+    const focusTarget = Array.from(document.querySelectorAll<HTMLButtonElement>(selector)).find(
+      (element) => (target && !target.is_dir ? element.dataset.filesEntryPath : element.dataset.filesBreadcrumbPath) === wanted,
+    );
+    focusTarget?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    focusTarget?.focus({ preventScroll: true });
   }
 
   async function selectSource(sourceId: string, parent = '') {
@@ -549,6 +613,7 @@
           {#if i > 0}<span class="shrink-0 text-gray-600">/</span>{/if}
           <button
             type="button"
+            data-files-breadcrumb-path={source.source_id === selectedSourceId ? '' : undefined}
             class="shrink-0 text-gray-300 hover:text-white"
             on:click={() => source.source_id === selectedSourceId ? navigate('') : selectSource(source.source_id)}
           >{source.display_name}</button>
@@ -557,6 +622,7 @@
           <span class="shrink-0 text-gray-600">/</span>
           <button
             type="button"
+            data-files-breadcrumb-path={crumbs.slice(0, i + 1).join('/')}
             class="shrink-0 text-gray-300 hover:text-white"
             on:click={() => navigate(crumbs.slice(0, i + 1).join('/'))}
           >{crumb}</button>
@@ -622,7 +688,8 @@
           {#each displayed as entry (entry.source_id + '/' + entry.relative_path)}
             <button
               type="button"
-              class="flex flex-col items-center gap-1 p-3 rounded-lg text-center transition-colors {isSelected(entry) ? 'border border-purple-500/60 bg-purple-500/15' : 'border border-white/5 bg-white/[0.03] hover:bg-white/[0.07]'}"
+              data-files-entry-path={entry.relative_path}
+              class="flex flex-col items-center gap-1 p-3 rounded-lg text-center transition-colors {isSelected(entry, selectedEntry) ? 'border border-purple-500/60 bg-purple-500/15' : 'border border-white/5 bg-white/[0.03] hover:bg-white/[0.07]'}"
               on:click={() => openEntry(entry)}
               on:contextmenu={(event) => openMenu(event, entry)}
               title={entry.relative_path}

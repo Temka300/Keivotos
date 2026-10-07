@@ -42,7 +42,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
     parser.add_argument('--dist', type=Path, help='Prebuilt scratch frontend; skip the runner build')
-    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'language', 'storage', 'absence'), default='modularization')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'language', 'module_locations', 'storage', 'absence'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
@@ -84,6 +84,12 @@ def main() -> int:
         if args.script == 'language':
             from browser_language_fixture import seed_language
             seed_language(base / 'media')
+        if args.script == 'module_locations':
+            media = base / 'media'
+            (media / 'Deep' / '子').mkdir(parents=True)
+            (media / 'Nested').mkdir()
+            (media / 'Deep' / '子' / 'same.txt').write_text('outer', encoding='utf-8')
+            (media / 'Nested' / 'same.txt').write_text('inner', encoding='utf-8')
         project = ROOT
         if args.script == 'absence':
             project = base / 'source'
@@ -100,11 +106,31 @@ def main() -> int:
             (media / 'preserved.txt').write_text('Files-only preservation fixture')
         dist = args.dist.resolve() if args.dist else (
             project / 'frontend/dist' if args.script == 'absence' else base / 'frontend')
+        if args.script == 'module_locations':
+            # Expose only the internal navigation action in a disposable build.
+            # The actual Files/registry code is copied unchanged and exercised
+            # from the same origin as the isolated backend.
+            scratch_frontend = base / 'frontend-source'
+            shutil.copytree(ROOT / 'frontend', scratch_frontend,
+                            ignore=shutil.ignore_patterns('node_modules', 'dist', '__pycache__'))
+            (scratch_frontend / 'node_modules').symlink_to(ROOT / 'frontend/node_modules', target_is_directory=True)
+            app_source = scratch_frontend / 'src/App.svelte'
+            app_text = app_source.read_text()
+            app_text = app_text.replace("  import { onMount } from 'svelte';",
+                                        "  import { onMount } from 'svelte';\n  import { showInFiles } from './modules/registry';")
+            app_text = app_text.replace('  onMount(() => { void initializeModules(); });',
+                                        '  onMount(() => { (window as any).__showInFiles = showInFiles; void initializeModules(); });')
+            app_source.write_text(app_text)
+            dist = base / 'frontend'
+            build_node = shutil.which('node') or args.node
+            with (output / 'build.log').open('w') as build_log:
+                subprocess.run([build_node, 'node_modules/vite/bin/vite.js', 'build', '--outDir', str(dist)],
+                               cwd=scratch_frontend, stdout=build_log, stderr=subprocess.STDOUT, check=True)
         if args.dist and args.script == 'absence':
             placeholder = project / 'frontend/dist/index.html'
             placeholder.parent.mkdir(parents=True, exist_ok=True)
             placeholder.write_text('scratch frontend route placeholder')
-        if not args.dist:
+        if not args.dist and args.script != 'module_locations':
             with (output / 'build.log').open('w') as log:
                 subprocess.run([args.node, 'node_modules/vite/bin/vite.js', 'build', '--outDir', str(dist)],
                                cwd=project / 'frontend', stdout=log, stderr=subprocess.STDOUT, check=True)

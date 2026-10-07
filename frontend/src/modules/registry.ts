@@ -1,4 +1,5 @@
 import { activeModule } from '../lib/suiteStores';
+import { filesLocationRequest } from '../lib/filesStores';
 
 export interface DrawerAction {
   id: string;
@@ -37,4 +38,9 @@ export function moduleUi(slug: string): ModuleUiDescriptor {
 export function activateModule(slug: string): void {
   moduleUi(slug).activate?.();
   activeModule.set(slug);
+}
+
+export function showInFiles(sourceId: string, relativePath: string): void {
+  filesLocationRequest.set({ sourceId, relativePath });
+  activateModule('files');
 }
