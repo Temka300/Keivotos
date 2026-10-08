@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onMount,onDestroy,tick} from 'svelte';
   import AppDrawer from '../../components/AppDrawer.svelte';
+  import ModuleLocationMenu from '../../components/ModuleLocationMenu.svelte';
   import {settingsInitialSection,settingsOpen} from '../../lib/suiteStores';
   import {languageApi,type LanguageDocument,type LanguageFile,type LanguageFolder} from './api';
   import MarkdownEditor from './MarkdownEditor.svelte';
@@ -12,6 +13,16 @@
   let editingName='', nameDraft='', renameBusy=false, nameInput:HTMLInputElement;
   let surface:HTMLDivElement, decisionFocus:HTMLDivElement;
   let editor:MarkdownEditor;
+  let locationMenu:{x:number;y:number;label:string;sourceId:string;relativePath:string;anchor:HTMLElement}|null=null;
+  let locationMenuSerial=0;
+  function openLocation(event:MouseEvent|KeyboardEvent,name:string){
+    event.preventDefault();event.stopPropagation();
+    const anchor=event.currentTarget as HTMLElement,rect=anchor.getBoundingClientRect();
+    locationMenu={x:event instanceof MouseEvent?event.clientX:rect.left+8,y:event instanceof MouseEvent?event.clientY:rect.top+rect.height,
+      label:name,sourceId,relativePath:name,anchor};
+    locationMenuSerial++;
+  }
+  function locationKey(event:KeyboardEvent,name:string){if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')openLocation(event,name);}
   let pendingDecision:{description:string; resolve:(choice:Decision)=>void}|null=null;
   let saveQueue:Promise<boolean>=Promise.resolve(true);
   $: active=tabs.find(tab=>tab.name===activeName);
@@ -243,7 +254,7 @@
             <div class="tab editing"><input aria-label="Rename Markdown file" bind:this={nameInput} bind:value={nameDraft} disabled={renameBusy} on:keydown={event=>{if(event.key==='Enter'){event.preventDefault();void commitRename();}else if(event.key==='Escape'){event.preventDefault();editingName='';}}} on:blur={commitRename}/><span>.md</span></div>
           {:else}
             <div class="tab-shell" class:active={activeName===name}>
-              <button class="tab-title" role="tab" aria-selected={activeName===name} aria-describedby={tab?.dirty?`language-dirty-${index}`:undefined} on:click={()=>openDocument(name)} on:dblclick={()=>startRename(name)} title={name}>{name}</button>
+              <button class="tab-title" role="tab" aria-selected={activeName===name} aria-describedby={tab?.dirty?`language-dirty-${index}`:undefined} on:click={()=>openDocument(name)} on:dblclick={()=>startRename(name)} on:contextmenu={event=>openLocation(event,name)} on:keydown={event=>locationKey(event,name)} title={name}>{name}</button>
               {#if tab?.dirty}<span class="sr-only" id={`language-dirty-${index}`}>Unsaved changes</span>{/if}
               <button class="tab-close" class:is-dirty={tab?.dirty} aria-label={`Close ${name}`} title={`Close ${name}`} on:click={()=>closeTab(name)}>
                 <span class="close-glyph" aria-hidden="true">×</span><span class="dirty-glyph" aria-hidden="true">●</span>
@@ -284,6 +295,9 @@
   {/if}
 </div>
 {#if drawer}<AppDrawer beforeNavigate={beforeNavigate} on:close={()=>drawer=false}/>{/if}
+{#if locationMenu}
+  {#key locationMenuSerial}<ModuleLocationMenu {...locationMenu} beforeShow={()=>beforeNavigate('files')} on:close={()=>locationMenu=null}/>{/key}
+{/if}
 {#if pendingDecision}
   <div class="decision-overlay">
     <div class="decision-dialog" role="dialog" aria-modal="true" aria-label="Unsaved Markdown changes" tabindex="-1" bind:this={decisionFocus} on:keydown={decisionKeydown}>

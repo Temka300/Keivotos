@@ -5,6 +5,7 @@
   import {settingsOpen, settingsInitialSection} from '../../lib/suiteStores';
   import {videoApi, type VideoItem} from './api';
   import MediaPlayer from '../../components/MediaPlayer.svelte';
+  import ModuleLocationMenu from '../../components/ModuleLocationMenu.svelte';
   let drawer = false;
   let query = '';
   let items: VideoItem[] = [];
@@ -18,6 +19,8 @@
   let alive = true;
   let returnFocus: HTMLElement | null = null;
   let navigating = false;
+  let locationMenu: {x:number;y:number;label:string;sourceId:string;relativePath:string;anchor:HTMLElement}|null=null;
+  let locationMenuSerial=0;
   $: selectedIndex = selected ? items.findIndex(item => item.source_id === selected?.source_id && item.path === selected?.path) : -1;
   $: playback=selected ? {src:filesApi.fileUrl(selected.source_id,selected.path),ext:selected.ext} : null;
   async function load(more = false) {
@@ -37,6 +40,14 @@
     debounce = setTimeout(() => void load(), 200);
   }
   function folders() { settingsInitialSection.set('roots'); settingsOpen.set(true); }
+  function openLocation(event:MouseEvent|KeyboardEvent,item:VideoItem){
+    event.preventDefault();event.stopPropagation();
+    const anchor=event.currentTarget as HTMLElement,rect=anchor.getBoundingClientRect();
+    locationMenu={x:event instanceof MouseEvent?event.clientX:rect.left+8,y:event instanceof MouseEvent?event.clientY:rect.top+rect.height,
+      label:item.name,sourceId:item.source_id,relativePath:item.path,anchor};
+    locationMenuSerial++;
+  }
+  function locationKey(event:KeyboardEvent,item:VideoItem){if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')openLocation(event,item);}
   function open(item: VideoItem) {
     if(!selected)returnFocus=document.activeElement as HTMLElement;
     selected=item;notice='';
@@ -81,7 +92,7 @@
     {#if !loading && !error && !items.length}<p class="empty">{#if query}No videos found.{:else}<button on:click={folders}>Add Video folders in Settings</button>{/if}</p>{/if}
     <div class="video-grid" aria-busy={loading}>
       {#each items as item (`${item.source_id}/${item.path}`)}
-        <button class="video-tile" title={item.name} on:click={() => open(item)}>
+        <button class="video-tile" title={item.name} on:click={() => open(item)} on:contextmenu={event=>openLocation(event,item)} on:keydown={event=>locationKey(event,item)}>
           <span class="thumbnail"><span aria-hidden="true">▷</span><img loading="lazy" alt="" src={filesApi.thumbnailUrl(item.source_id,item.path,600,`${item.mtime}:${item.size}`)} on:error={event => (event.currentTarget as HTMLImageElement).style.display = 'none'} /></span>
           <span class="video-name">{item.name}</span>
         </button>
@@ -91,6 +102,9 @@
   </main>
 </div>
 {#if drawer}<AppDrawer on:close={() => drawer = false} />{/if}
+{#if locationMenu}
+  {#key locationMenuSerial}<ModuleLocationMenu {...locationMenu} on:close={()=>locationMenu=null}/>{/key}
+{/if}
 {#if selected && playback}
   <MediaPlayer media={playback} owner="video"
     hasPrevious={selectedIndex>0} hasNext={selectedIndex>=0&&selectedIndex<total-1}

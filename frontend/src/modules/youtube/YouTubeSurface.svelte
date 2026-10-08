@@ -3,12 +3,26 @@
  import {slide} from 'svelte/transition';
  import MediaPlayer from '../../components/MediaPlayer.svelte';
  import AppDrawer from '../../components/AppDrawer.svelte';
+ import ModuleLocationMenu from '../../components/ModuleLocationMenu.svelte';
  import {filesApi} from '../../lib/filesApi';
  import {youtubeApi,type Download,type EngineStatus} from './api';
  let drawer=false,query='',video='best',audio='best',optionsOpen=false;
  let status:EngineStatus|null=null,items:Download[]=[],total=0,error='',busy=false,loading=false;
  let request:AbortController|null=null,timer:ReturnType<typeof setTimeout>,debounce:ReturnType<typeof setTimeout>,alive=true;
  let selected:Download|null=null,returnFocus:HTMLElement|null=null,navigating=false,navigationNotice='';
+ let locationMenu:{x:number;y:number;label:string;sourceId:string|null;relativePath:string|null;anchor:HTMLElement;unavailableReason:string}|null=null;
+ let locationMenuSerial=0;
+ function openLocation(event:MouseEvent|KeyboardEvent,item:Download){
+  event.preventDefault();event.stopPropagation();
+  const current=event.currentTarget as HTMLElement;
+  const anchor=event.target instanceof HTMLElement?(event.target.closest<HTMLElement>('button,a')??current):current;
+  const rect=anchor.getBoundingClientRect(),complete=item.status==='complete'&&!!item.source_id&&!!item.path;
+  locationMenu={x:event instanceof MouseEvent?event.clientX:rect.left+8,y:event instanceof MouseEvent?event.clientY:rect.top+rect.height,
+   label:item.title||'YouTube video',sourceId:complete?item.source_id:null,relativePath:complete?item.path:null,anchor,
+   unavailableReason:complete?'':'This download has no completed local file.'};
+  locationMenuSerial++;
+ }
+ function locationKey(event:KeyboardEvent,item:Download){if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')openLocation(event,item);}
  const isAudio=(item:Download)=>['mp3','m4a','aac','ogg','opus','wav','flac'].includes(item.path.split('.').pop()?.toLowerCase()||'');
  $: playable=items.filter(item=>item.status==='complete'&&!isAudio(item));
  $: selectedIndex=selected?playable.findIndex(item=>item.id===selected?.id):-1;
@@ -87,7 +101,8 @@
   {#if error}<p role="alert">{error}</p>{/if}
   <div class="download-grid" aria-busy={loading}>
    {#each items as item (item.id)}
-    <article data-job-id={item.id}>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
+    <article data-job-id={item.id} role="group" aria-label={item.title||'YouTube video'} tabindex="0" on:contextmenu={event=>openLocation(event,item)} on:keydown={event=>locationKey(event,item)}>
      <div class="thumbnail">
       {#if item.status==='complete'}
        {#if isAudio(item)}
@@ -115,6 +130,9 @@
  </main>
 </div>
 {#if drawer}<AppDrawer on:close={()=>drawer=false}/>{/if}
+{#if locationMenu}
+ {#key locationMenuSerial}<ModuleLocationMenu {...locationMenu} on:close={()=>locationMenu=null}/>{/key}
+{/if}
 {#if selected && playback}
  <MediaPlayer media={playback} owner="youtube" label="YouTube player" backLabel="Back to downloads"
   hasPrevious={selectedIndex>0} hasNext={selectedIndex>=0&&(selectedIndex<playable.length-1||items.length<total)}

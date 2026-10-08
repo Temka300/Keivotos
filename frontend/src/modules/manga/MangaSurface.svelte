@@ -1,6 +1,7 @@
 <script lang="ts">
   import {onMount,onDestroy,tick} from 'svelte';
   import AppDrawer from '../../components/AppDrawer.svelte';
+  import ModuleLocationMenu from '../../components/ModuleLocationMenu.svelte';
   import {settingsOpen,settingsInitialSection} from '../../lib/suiteStores';
   import {mangaApi,type Manga,type Chapter} from './api';
   let drawer=false, query='', loading=false, error='';
@@ -16,6 +17,16 @@
   let ratios:Record<number,number>={};
   let observer:IntersectionObserver|null=null;
   let pointerStart:{x:number;y:number}|null=null, pointerDragged=false;
+  let locationMenu:{x:number;y:number;label:string;sourceId:string;relativePath:string;anchor:HTMLElement}|null=null;
+  let locationMenuSerial=0;
+  function openLocation(event:MouseEvent|KeyboardEvent,label:string,sourceId:string,relativePath:string){
+    event.preventDefault();event.stopPropagation();
+    const anchor=event.currentTarget as HTMLElement,rect=anchor.getBoundingClientRect();
+    locationMenu={x:event instanceof MouseEvent?event.clientX:rect.left+8,y:event instanceof MouseEvent?event.clientY:rect.top+rect.height,
+      label,sourceId,relativePath,anchor};
+    locationMenuSerial++;
+  }
+  function locationKey(event:KeyboardEvent,label:string,sourceId:string,relativePath:string){if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')openLocation(event,label,sourceId,relativePath);}
   async function load(more=false){
     libraryRequest?.abort();const current=new AbortController();libraryRequest=current;
     loading=true;error='';
@@ -110,7 +121,7 @@
     {#if !loading&&!error&&!items.length}<p class="empty">{#if query}No manga found.{:else}<button on:click={folders}>Add Manga folders in Settings</button>{/if}</p>{/if}
     <div class="manga-grid" aria-busy={loading}>
       {#each items as item (`${item.source_id}/${item.path}`)}
-        <button class="manga-tile" title={item.name} on:click={()=>open(item)}>
+        <button class="manga-tile" title={item.name} on:click={()=>open(item)} on:contextmenu={event=>openLocation(event,item.name,item.source_id,item.path)} on:keydown={event=>locationKey(event,item.name,item.source_id,item.path)}>
           <span class="cover"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v16H4zM11 4h9v16h-9"/></svg><img alt="" loading="lazy" src={mangaApi.page(item,item.cover,0,true)} on:error={e=>(e.currentTarget as HTMLImageElement).style.display='none'}/></span>
           <span class="manga-name">{item.name}</span>
         </button>
@@ -120,6 +131,9 @@
   </main>
 </div>
 {#if drawer}<AppDrawer on:close={()=>drawer=false}/>{/if}
+{#if locationMenu}
+  {#key locationMenuSerial}<ModuleLocationMenu {...locationMenu} on:close={()=>locationMenu=null}/>{/key}
+{/if}
 {#if selected}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div class="scrim" inert={!!chapter} on:click={event=>{if(event.target===event.currentTarget)void close();}}>
@@ -130,7 +144,7 @@
       <div class="chapter-list" aria-busy={chapterLoading}>
         {#if chapterLoading}<p class="muted">Loading…</p>{/if}
         {#if chapterError}<p role="alert">{chapterError}</p>{/if}
-        {#each chapters as item (`${item.kind}/${item.path}`)}<button on:click={()=>read(item)}>{item.name}<span aria-hidden="true">›</span></button>{/each}
+        {#each chapters as item (`${item.kind}/${item.path}`)}<button on:click={()=>read(item)} on:contextmenu={event=>openLocation(event,item.name,selected!.source_id,item.path)} on:keydown={event=>locationKey(event,item.name,selected!.source_id,item.path)}>{item.name}<span aria-hidden="true">›</span></button>{/each}
       </div>
     </div>
   </div>

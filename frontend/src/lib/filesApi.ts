@@ -262,4 +262,19 @@ export const filesApi = {
     send<{ status: string }>('POST', '/open', { source_id: sourceId, path }),
   revealFile: (sourceId: string, path: string) =>
     send<{ status: string }>('POST', '/reveal', { source_id: sourceId, path }),
+  locationUnavailableReason: async (sourceId: string | null, path: string | null): Promise<string | null> => {
+    if (!sourceId || path === null) return 'No completed local file is available.';
+    if (path.startsWith('/') || path.includes('\\') || path.split('/').some((part) => part === '.' || part === '..')) {
+      return 'This item has an invalid Files path.';
+    }
+    const sources = await getJson<SourceInfo[]>('/sources');
+    if (!sources.some((source) => source.source_id === sourceId && source.visible)) {
+      return 'This item’s folder is no longer visible in Files.';
+    }
+    if (!path) return null;
+    const parent = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    const entries = await getJson<FileNode[]>('/browse', { source_id: sourceId, parent });
+    return entries.some((entry) => entry.source_id === sourceId && entry.relative_path === path && entry.available)
+      ? null : 'This item is no longer available in Files.';
+  },
 };
