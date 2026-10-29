@@ -96,7 +96,7 @@
  <label>Video<select aria-label="Video quality" bind:value={video}><option value="best">Best</option><option value="1080">1080p</option><option value="720">720p</option><option value="480">480p</option><option value="audio">Audio only</option></select></label>
  <label>Audio<select aria-label="Audio quality" bind:value={audio}><option value="best">Best</option><option value="192">Up to 192 kbps</option><option value="128">Up to 128 kbps</option></select></label>
  {#if status&&!status.ready}<p role="status">Missing: {status.missing.join(', ')}. <button on:click={engine}>Check again</button></p>{/if}
- </div>{/if}</div><input aria-label="Search downloads or paste a YouTube URL" placeholder="Search or paste a YouTube URL…" bind:value={query} on:input={input}/>{#if urlMode}<button class="download" disabled={busy||!urlMode||!status?.ready} on:click={start}>{busy?'Starting…':'Download'}</button>{/if}</div></header>
+ </div>{/if}</div><input aria-label="Search downloads or paste a YouTube URL" placeholder="Search or paste a YouTube URL…" bind:value={query} on:input={input}/><div class="download-reveal" class:visible={urlMode} inert={!urlMode}><button class="download" aria-hidden={!urlMode} tabindex={urlMode?0:-1} disabled={busy||!urlMode||!status?.ready} on:click={start}>{busy?'Starting…':'Download'}</button></div></div></header>
  <main>
   {#if error}<p role="alert">{error}</p>{/if}
   <div class="download-grid" aria-busy={loading}>
@@ -144,13 +144,16 @@
  .youtube-surface{display:flex;flex:1;min-height:0;flex-direction:column;background:#0f0f14;color:#e0e0e8}
  header{display:flex;align-items:center;gap:16px;min-height:60px;border-bottom:1px solid #2a2a3a;padding:8px 16px}
  .menu{width:36px;height:36px;border-radius:8px;background:#1e1e2e}.module-title{font-size:18px;font-weight:600}
- .search-controls{display:flex;align-items:center;gap:10px;flex:1;min-width:0;max-width:800px;margin:auto}
+ .search-controls{display:flex;align-items:center;gap:10px;flex:1;min-width:0;max-width:640px;margin:auto}
  header input{min-width:0;flex:1;border:1px solid #2a2a3a;border-radius:8px;padding:8px 12px;background:#1a1a24;font-size:14px}
  .options-anchor{position:relative;flex-shrink:0}.options-toggle{display:grid;place-items:center;width:40px;height:36px;border:0;border-radius:20px;background:#26262d;color:#ddd}.options-toggle svg{width:20px;height:20px;transition:transform .2s ease}.options-toggle svg.opened{transform:rotate(180deg)}
  .download-options{position:absolute;left:-16px;top:46px;z-index:30;width:350px;max-width:calc(100vw - 92px);padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px;border-radius:16px;background:#191920;box-shadow:0 12px 32px #0008}
  label{display:flex;flex-direction:column;gap:8px;min-width:0;font-size:13px;color:#ddd}select{border:0;border-radius:20px;background:#26262d;padding:9px 12px;color:#ddd;font-size:13px;min-width:0;width:100%}
- .download{background:var(--accent);color:#111118;padding:9px 18px;border-radius:20px;font-size:13px;font-weight:600;flex-shrink:0}.download:disabled{opacity:.4}.download-options p{grid-column:1/-1;font-size:12px;color:#aaa;padding:0 8px}
+ .download-reveal{width:110px;flex-shrink:0;overflow:hidden;clip-path:inset(0 100% 0 0);opacity:0;transform:translateX(-8px);pointer-events:none;transition:clip-path .22s ease,opacity .22s ease,transform .22s ease}
+ .download-reveal.visible{clip-path:inset(0);opacity:1;transform:translateX(0);pointer-events:auto}
+ .download{width:100%;background:var(--accent);color:#111118;padding:9px 12px;border-radius:20px;font-size:13px;font-weight:600}.download:disabled{opacity:.4}.download-options p{grid-column:1/-1;font-size:12px;color:#aaa;padding:0 8px}
  @media(max-width:700px){.module-title{display:none}}
+ @media(max-width:400px){header{gap:8px;padding-inline:8px}.search-controls{gap:6px}.download-reveal{width:92px}.download{padding-inline:6px}}
  main{overflow:auto;flex:1;padding:24px;min-height:0}.download-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:24px 18px}
  article{min-width:0}.thumbnail{aspect-ratio:16/9;background:#1a1a24;border-radius:10px;position:relative;overflow:hidden}.thumbnail a,.thumbnail .play-download{display:grid;place-items:center;width:100%;height:100%}.thumbnail img{width:100%;height:100%;object-fit:cover;position:absolute}.thumbnail svg{width:28px;height:28px;fill:none;stroke:#ddd;stroke-width:1.5;position:relative;opacity:.7}
  .job-action{position:absolute;right:8px;top:8px;background:#292933;width:28px;height:28px;border-radius:50%;font-size:20px;display:grid;place-items:center}.download-title{padding-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.job-error{font-size:12px;color:#aaa;margin-top:4px}
@@ -158,5 +161,6 @@
  button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
  :global(html[data-motion='reduced']) .progress>div{transition:none}
  :global(html[data-motion='reduced']) .options-toggle svg{transition:none}
- @media(prefers-reduced-motion:reduce){.options-toggle svg{transition:none}}
+ :global(html[data-motion='reduced']) .download-reveal{transition:none}
+ @media(prefers-reduced-motion:reduce){.options-toggle svg,.download-reveal{transition:none}}
 </style>

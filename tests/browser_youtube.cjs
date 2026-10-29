@@ -21,7 +21,36 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   for(const text of ['valley','https://example.com/watch?v=abcdefghijk','https://youtube.com.evil/watch?v=abcdefghijk','https://youtube.com/playlist?list=abc']){
    await input.fill(text);assert.equal(await page.getByRole('button',{name:'Download',exact:true}).count(),0);
   }
+  const beforeSearch=await input.boundingBox(),beforeOptions=await toggle.boundingBox();
+  const reveal=page.locator('.download-reveal');
+  assert((await reveal.getAttribute('inert'))!==null);
   await input.fill(url);assert.equal(await page.getByLabel('Video quality').count(),0);
+  assert.equal(await page.locator('.download-grid article').count(),0);
+  const duringClip=await reveal.evaluate(node=>getComputedStyle(node).clipPath);
+  await page.waitForTimeout(70);
+  const middleClip=await reveal.evaluate(node=>getComputedStyle(node).clipPath);
+  await page.waitForTimeout(220);
+  const finalClip=await reveal.evaluate(node=>getComputedStyle(node).clipPath);
+  assert.notEqual(duringClip,finalClip);assert.notEqual(middleClip,finalClip);
+  assert.equal(finalClip,'inset(0px)');
+  const afterSearch=await input.boundingBox(),afterOptions=await toggle.boundingBox();
+  assert(Math.abs(beforeSearch.x-afterSearch.x)<1&&Math.abs(beforeSearch.width-afterSearch.width)<1);
+  assert(Math.abs(beforeOptions.x-afterOptions.x)<1);
+  for(let i=0;i<3;i++){
+   await input.fill('https://example.com/watch?v=abcdefghijk');
+   assert.equal(await page.getByRole('button',{name:'Download',exact:true}).count(),0);
+   await input.fill(url);
+   assert.equal(await page.getByRole('button',{name:'Download',exact:true}).count(),1);
+  }
+  await page.waitForTimeout(250);
+  await page.setViewportSize({width:360,height:780});
+  const narrowSearch=await input.boundingBox(),narrowDownload=await page.getByRole('button',{name:'Download',exact:true}).boundingBox();
+  assert(narrowSearch.width>=80&&narrowDownload.x+narrowDownload.width<=360);
+  await page.setViewportSize({width:1440,height:1000});
+  await page.evaluate(()=>document.documentElement.dataset.motion='reduced');
+  assert(Number.parseFloat(await reveal.evaluate(node=>getComputedStyle(node).transitionDuration))<.001);
+  await page.evaluate(()=>{delete document.documentElement.dataset.motion;});
+  check('search width and options position stay fixed; Download reveals left to right, reverses rapidly and fits narrow screens');
   const top=await page.locator('main').last().evaluate(n=>n.getBoundingClientRect().top);
   await toggle.click();await page.waitForTimeout(60);const middle=await page.locator('.download-options').evaluate(n=>n.getBoundingClientRect().height);await page.waitForTimeout(220);const full=await page.locator('.download-options').evaluate(n=>n.getBoundingClientRect().height);assert(middle>0&&middle<full);
   assert.equal(await page.locator('main').last().evaluate(n=>n.getBoundingClientRect().top),top);
