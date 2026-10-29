@@ -29,3 +29,13 @@ const autoNextModes = {
   youtube: persistedWritable(persistentStorageKey('youtube-auto-next'), false, normalizeAutoNext),
 };
 export function autoNextFor(owner: PlaybackOwner) { return autoNextModes[owner]; }
+
+export function normalizeVolumePercent(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? Math.min(100, Math.max(0, Math.round(value))) : 100;
+}
+
+const volumes = {
+  video: persistedWritable(persistentStorageKey('video-volume-percent'), 100, normalizeVolumePercent),
+  youtube: persistedWritable(persistentStorageKey('youtube-volume-percent'), 100, normalizeVolumePercent),
+};
+export function volumeFor(owner: PlaybackOwner) { return volumes[owner]; }

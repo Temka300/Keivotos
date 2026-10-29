@@ -1,8 +1,9 @@
 <script lang="ts">
   import {onMount,onDestroy,tick} from 'svelte';
   import type {PlaybackMedia,PlaybackFailure} from '../lib/playback';
-  import {hideControlsSeconds,loopModeFor,autoNextFor,type LoopMode,type PlaybackOwner} from '../lib/playbackPreferences';
+  import {hideControlsSeconds,loopModeFor,autoNextFor,volumeFor,type LoopMode,type PlaybackOwner} from '../lib/playbackPreferences';
   import SettingsSwitch from './SettingsSwitch.svelte';
+  import VolumeControl from './VolumeControl.svelte';
   export let media:PlaybackMedia;
   export let owner:PlaybackOwner;
   export let label='Video player';
@@ -26,8 +27,10 @@
   let stopPreference:()=>void=()=>{};
   let stopLoop:()=>void=()=>{};
   let stopAutoNext:()=>void=()=>{};
+  let stopVolume:()=>void=()=>{};
   let loopMode:LoopMode='off';
   let autoNext=false,endBusy=false;
+  let volume=100;
   const loopOrder:LoopMode[]=['off','all','one'];
   function cycleLoop(){loopModeFor(owner).set(loopOrder[(loopOrder.indexOf(loopMode)+1)%loopOrder.length]);reveal();}
   function toggleAutoNext(){autoNextFor(owner).set(!autoNext);reveal();}
@@ -102,6 +105,7 @@
     clearIdle();controlsVisible=true;keyboardActive=false;pointerOverControls=false;pointerInteracting=false;
     endBusy=false;
     await tick(); if (!alive || media !== item) return; viewer?.focus();
+    player.volume=volume/100;
     if (!['mp4','m4v','webm'].includes(item.ext)) {
       failure = 'This format cannot play here. See Logs.'; void report('unsupported_format'); return;
     }
@@ -157,15 +161,21 @@
   function seek(event: Event) {
     if (player && Number.isFinite(duration)) player.currentTime = Number((event.currentTarget as HTMLInputElement).value);
   }
-  onMount(()=>{stopPreference=hideControlsSeconds.subscribe(seconds=>{idleSeconds=seconds;scheduleIdle();});stopLoop=loopModeFor(owner).subscribe(value=>loopMode=value);stopAutoNext=autoNextFor(owner).subscribe(value=>autoNext=value);mounted=true;});
-  onDestroy(()=>{alive=false;clearIdle();stopPreference();stopLoop();stopAutoNext();player?.pause();if(document.fullscreenElement===viewer)void document.exitFullscreen().catch(()=>{});});
+  function setVolume(value:number){volumeFor(owner).set(value);reveal();}
+  function volumeChanged(){
+    if(!player)return;
+    const actual=Math.round(player.volume*100);
+    if(actual!==volume)volumeFor(owner).set(actual);
+  }
+  onMount(()=>{stopPreference=hideControlsSeconds.subscribe(seconds=>{idleSeconds=seconds;scheduleIdle();});stopLoop=loopModeFor(owner).subscribe(value=>loopMode=value);stopAutoNext=autoNextFor(owner).subscribe(value=>autoNext=value);stopVolume=volumeFor(owner).subscribe(value=>{volume=value;if(player&&player.volume!==value/100)player.volume=value/100;});mounted=true;});
+  onDestroy(()=>{alive=false;clearIdle();stopPreference();stopLoop();stopAutoNext();stopVolume();player?.pause();if(document.fullscreenElement===viewer)void document.exitFullscreen().catch(()=>{});});
 </script>
   <svelte:window on:pointerup={pointerRelease} on:pointercancel={pointerRelease}/>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
   <div class="video-viewer" bind:this={viewer} role="dialog" aria-modal="true" aria-label={label} tabindex="-1" on:keydown={playerKeys} on:pointerdown={pointerDown} on:pointermove={pointerMove} on:touchstart={reveal} on:focusin={controlFocus} on:focusout={controlBlur}>
     {#key media.src}
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video bind:this={player} src={['mp4','m4v','webm'].includes(media.ext) ? media.src : undefined} playsinline preload="metadata" on:error={mediaError} on:play={() => {playing=true;scheduleIdle();}} on:pause={() => {playing=false;controlsVisible=true;clearIdle();}} on:ended={ended} on:timeupdate={() => position = player.currentTime} on:durationchange={() => duration = Number.isFinite(player.duration) ? player.duration : 0}></video>
+      <video bind:this={player} src={['mp4','m4v','webm'].includes(media.ext) ? media.src : undefined} playsinline preload="metadata" on:error={mediaError} on:play={() => {playing=true;scheduleIdle();}} on:pause={() => {playing=false;controlsVisible=true;clearIdle();}} on:ended={ended} on:timeupdate={() => position = player.currentTime} on:durationchange={() => duration = Number.isFinite(player.duration) ? player.duration : 0} on:volumechange={volumeChanged}></video>
     {/key}
     <button class="back" class:controls-hidden={!controlsVisible} aria-label={backLabel} tabindex={controlsVisible?0:-1} on:pointerenter={() => {pointerOverControls=true;clearIdle();}} on:pointerleave={() => {pointerOverControls=false;scheduleIdle();}} on:click={close}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7" /></svg></button>
     {#if failure || notice || navigationNotice}<p class="playback-error" role="alert">{failure || notice || navigationNotice}</p>{/if}
@@ -175,6 +185,7 @@
         <button aria-label="Previous video" disabled={navigating || !(hasPrevious||(loopMode==='all'&&canWrap))} on:click={() => navigate(-1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M19 5 8 12l11 7Z" /></svg></button>
         <button aria-label={playing ? 'Pause' : 'Play'} disabled={!!failure} on:click={togglePlay}><svg viewBox="0 0 24 24" aria-hidden="true">{#if playing}<path d="M8 5v14M16 5v14" />{:else}<path d="m7 4 13 8-13 8Z" />{/if}</svg></button>
         <button aria-label="Next video" disabled={navigating || !(hasNext||(loopMode==='all'&&canWrap))} on:click={() => navigate(1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l11 7-11 7Z" /></svg></button>
+        <VolumeControl value={volume} disabled={!!failure} onChange={setVolume}/>
         <div class="auto-next"><SettingsSwitch label="Auto next" checked={autoNext} on:click={toggleAutoNext}/></div>
         <button class="loop-button" class:off={loopMode==='off'} class:all={loopMode==='all'} class:one={loopMode==='one'} aria-label={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} title={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} aria-pressed={loopMode!=='off'} on:click={cycleLoop}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M3 11V9a4 4 0 0 1 4-4h13"/><path d="M7 22l-3-3 3-3"/><path d="M21 13v2a4 4 0 0 1-4 4H4"/></svg>{#if loopMode==='one'}<span class="loop-one-mark">1</span>{/if}</button>
         <button class="fullscreen" aria-label="Fullscreen" on:click={fullscreen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" /></svg></button>
@@ -202,11 +213,13 @@
  .loop-button.all,.loop-button.one{color:#fff}
  .loop-one-mark{position:absolute;top:7px;left:8px;font-size:10px;line-height:1;font-weight:800;color:#fff;pointer-events:none;z-index:2;text-shadow:-1px 0 0 #111,1px 0 0 #111,0 -1px 0 #111,0 1px 0 #111,-1px -1px 0 #111,1px -1px 0 #111,-1px 1px 0 #111,1px 1px 0 #111}
  .loop-one-mark::before{content:"";position:absolute;z-index:-1;left:-2px;right:-2px;top:5px;height:5px;border-radius:3px;background:#151515}
- .player-controls input{appearance:none;width:100%;height:20px;margin:0;padding:0;border:0;border-radius:0;background:transparent;cursor:pointer}
- .player-controls input::-webkit-slider-runnable-track{height:3px;border:0;background:linear-gradient(to right,var(--accent) var(--progress),#ffffff55 var(--progress))}
- .player-controls input::-moz-range-track{height:3px;border:0;background:linear-gradient(to right,var(--accent) var(--progress),#ffffff55 var(--progress))}
- .player-controls input::-webkit-slider-thumb{appearance:none;width:11px;height:11px;margin-top:-4px;border:0;border-radius:50%;background:var(--accent)}
- .player-controls input::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:var(--accent)}
+ .player-controls>input{appearance:none;width:100%;height:20px;margin:0;padding:0;border:0;border-radius:0;background:transparent;cursor:pointer}
+ .player-controls>input::-webkit-slider-runnable-track{height:3px;border:0;background:linear-gradient(to right,var(--accent) var(--progress),#ffffff55 var(--progress))}
+ .player-controls>input::-moz-range-track{height:3px;border:0;background:linear-gradient(to right,var(--accent) var(--progress),#ffffff55 var(--progress))}
+ .player-controls>input::-webkit-slider-thumb{appearance:none;width:11px;height:11px;margin-top:-4px;border:0;border-radius:50%;background:var(--accent)}
+ .player-controls>input::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:var(--accent)}
+ @media(max-width:600px){.player-controls{padding-inline:12px}.control-row{gap:3px}.control-row button{width:32px;height:36px}}
+ @media(max-width:400px){.control-row button{width:28px}}
  :global(html[data-motion='reduced']) .back,:global(html[data-motion='reduced']) .player-controls,:global(html[data-motion='reduced']) .player-controls button{transition:none}
  @media(prefers-reduced-motion:reduce){.back,.player-controls,.player-controls button{transition:none}}
  .playback-error{position:absolute;color:#e5e5eb;background:#171720;padding:12px 18px;border-radius:8px}
