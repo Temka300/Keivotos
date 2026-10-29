@@ -20,7 +20,7 @@
   let playing=false,position=0,duration=0,failure='',notice='';
   let reported=new Set<PlaybackFailure>();
   let alive=true,mounted=false;
-  let controlsVisible=true,pointerOverControls=false,keyboardActive=false;
+  let controlsVisible=true,pointerOverControls=false,pointerInteracting=false,keyboardActive=false;
   let idleSeconds=5;
   let idleTimer:ReturnType<typeof setTimeout>|undefined;
   let stopPreference:()=>void=()=>{};
@@ -61,7 +61,24 @@
     idleTimer=setTimeout(()=>{controlsVisible=false;idleTimer=undefined;if(viewer?.contains(document.activeElement))viewer.focus();},idleSeconds*1000);
   }
   function reveal(){controlsVisible=true;scheduleIdle();}
-  function pointerMove(){keyboardActive=false;reveal();}
+  function pointerMove(event:PointerEvent){
+    keyboardActive=false;
+    pointerOverControls=event.target instanceof Element&&!!event.target.closest('button,input');
+    const bounds=viewer.getBoundingClientRect();
+    const atEdge=event.clientX>=bounds.left&&event.clientX<=bounds.right&&event.clientY>=bounds.top&&event.clientY<=bounds.bottom&&
+      (bounds.right-event.clientX<=4||bounds.bottom-event.clientY<=4);
+    const focusedControl=viewer.contains(document.activeElement)&&document.activeElement!==viewer;
+    if(atEdge&&playing&&!failure&&!notice&&!navigationNotice&&!pointerOverControls&&!pointerInteracting&&!focusedControl){
+      clearIdle();controlsVisible=false;return;
+    }
+    reveal();
+  }
+  function pointerDown(event:PointerEvent){
+    keyboardActive=false;
+    pointerInteracting=event.target instanceof Element&&!!event.target.closest('button,input');
+    if(pointerInteracting){controlsVisible=true;clearIdle();}
+  }
+  function pointerRelease(){if(pointerInteracting){pointerInteracting=false;scheduleIdle();}}
   function controlFocus(event:FocusEvent){if(event.target!==viewer&&keyboardActive){controlsVisible=true;clearIdle();}}
   function controlBlur(){void tick().then(()=>{if(alive&&(!viewer?.contains(document.activeElement)||document.activeElement===viewer)){keyboardActive=false;scheduleIdle();}});}
   $: if(navigationNotice){controlsVisible=true;clearIdle();}
@@ -82,7 +99,7 @@
   async function open(item: PlaybackMedia) {
     player?.pause();
     playing = false; position = 0; duration = 0; failure = ''; notice = ''; reported = new Set();
-    clearIdle();controlsVisible=true;keyboardActive=false;pointerOverControls=false;
+    clearIdle();controlsVisible=true;keyboardActive=false;pointerOverControls=false;pointerInteracting=false;
     endBusy=false;
     await tick(); if (!alive || media !== item) return; viewer?.focus();
     if (!['mp4','m4v','webm'].includes(item.ext)) {
@@ -143,8 +160,9 @@
   onMount(()=>{stopPreference=hideControlsSeconds.subscribe(seconds=>{idleSeconds=seconds;scheduleIdle();});stopLoop=loopModeFor(owner).subscribe(value=>loopMode=value);stopAutoNext=autoNextFor(owner).subscribe(value=>autoNext=value);mounted=true;});
   onDestroy(()=>{alive=false;clearIdle();stopPreference();stopLoop();stopAutoNext();player?.pause();if(document.fullscreenElement===viewer)void document.exitFullscreen().catch(()=>{});});
 </script>
+  <svelte:window on:pointerup={pointerRelease} on:pointercancel={pointerRelease}/>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
-  <div class="video-viewer" bind:this={viewer} role="dialog" aria-modal="true" aria-label={label} tabindex="-1" on:keydown={playerKeys} on:pointerdown={() => keyboardActive=false} on:pointermove={pointerMove} on:touchstart={reveal} on:focusin={controlFocus} on:focusout={controlBlur}>
+  <div class="video-viewer" bind:this={viewer} role="dialog" aria-modal="true" aria-label={label} tabindex="-1" on:keydown={playerKeys} on:pointerdown={pointerDown} on:pointermove={pointerMove} on:touchstart={reveal} on:focusin={controlFocus} on:focusout={controlBlur}>
     {#key media.src}
       <!-- svelte-ignore a11y_media_has_caption -->
       <video bind:this={player} src={['mp4','m4v','webm'].includes(media.ext) ? media.src : undefined} playsinline preload="metadata" on:error={mediaError} on:play={() => {playing=true;scheduleIdle();}} on:pause={() => {playing=false;controlsVisible=true;clearIdle();}} on:ended={ended} on:timeupdate={() => position = player.currentTime} on:durationchange={() => duration = Number.isFinite(player.duration) ? player.duration : 0}></video>
