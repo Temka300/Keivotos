@@ -114,6 +114,23 @@
     if(event.key==='Tab'&&!controlsVisible){event.preventDefault();keyboardActive=true;controlsVisible=true;clearIdle();void tick().then(()=>{const controls=[...viewer.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled)')];(event.shiftKey?controls.at(-1):controls[0])?.focus();});return;}
     if(event.key==='Tab'||event.key.startsWith('Arrow')){keyboardActive=true;controlsVisible=true;clearIdle();}
     if (event.key === 'Escape' && !document.fullscreenElement) {void close(); return;}
+    const target=event.target instanceof HTMLElement?event.target:null;
+    const editing=target?.closest('button,input,textarea,select,a,[contenteditable="true"]');
+    if(!editing&&!event.isComposing&&!event.altKey&&!event.ctrlKey&&!event.metaKey&&!event.shiftKey&&player&&!failure){
+      if(event.key===' '||event.key==='Spacebar'){
+        event.preventDefault();keyboardActive=true;controlsVisible=true;clearIdle();
+        if(!event.repeat)void togglePlay();
+        return;
+      }
+      if(event.key==='ArrowLeft'||event.key==='ArrowRight'){
+        event.preventDefault();
+        if(Number.isFinite(duration)&&duration>0){
+          player.currentTime=Math.min(duration,Math.max(0,player.currentTime+(event.key==='ArrowRight'?5:-5)));
+          position=player.currentTime;
+        }
+        return;
+      }
+    }
     if (event.key !== 'Tab') return;
     const controls = [...viewer.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled)')];
     const first = controls[0], last = controls[controls.length - 1];
