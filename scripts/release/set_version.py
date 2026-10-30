@@ -1,9 +1,12 @@
-"""Set the product version in every tracked location with one command.
+r"""Set the product version in every tracked location with one command.
 
 Usage:  .venv\Scripts\python.exe scripts\release\set_version.py 1.0.0
+        .venv\Scripts\python.exe scripts\release\set_version.py 1.0.0 --released-at 2026-11-02T10:43:17+09:00
 """
 from __future__ import annotations
 
+import argparse
+from datetime import datetime
 import os
 import re
 import shutil
@@ -40,16 +43,42 @@ def resolve_uv() -> Path:
     raise SystemExit("uv was not found on PATH or in the standard per-user install locations")
 
 
-def main() -> int:
-    if len(sys.argv) != 2:
-        print(__doc__, file=sys.stderr)
-        return 2
-    version = sys.argv[1].strip()
+def release_timestamp(value: str) -> str:
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as error:
+        raise ValueError("Release date must be an ISO 8601 date and time with a timezone") from error
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise ValueError("Release date must include a timezone offset")
+    return parsed.isoformat(timespec="seconds")
+
+
+def recorded_release_timestamp(version: str, supplied: str | None) -> str:
+    if supplied is not None:
+        return release_timestamp(supplied)
+    product = (ROOT / "backend" / "product.py").read_text(encoding="utf-8")
+    previous = re.search(r'^VERSION = "([^"]+)"$', product, re.MULTILINE)
+    recorded = re.search(r'^RELEASED_AT = "([^"]*)"$', product, re.MULTILINE)
+    if previous and previous.group(1) == version and recorded:
+        return recorded.group(1)
+    return ""
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("version")
+    parser.add_argument("--released-at", help="Recorded release time with timezone, e.g. 2026-11-02T10:43:17+09:00")
+    args = parser.parse_args(argv)
+    version = args.version.strip()
     match = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)[0-9A-Za-z.+-]*", version)
     if not match:
         print(f"Version must start with X.Y.Z: {version}", file=sys.stderr)
         return 2
     major, minor, patch = (int(part) for part in match.groups())
+    try:
+        released_at = recorded_release_timestamp(version, args.released_at)
+    except ValueError as error:
+        parser.error(str(error))
     uv = resolve_uv()
 
     # Runtime identity: --version, logs, User-Agent, FastAPI/OpenAPI.
@@ -57,6 +86,11 @@ def main() -> int:
         ROOT / "backend" / "product.py",
         r'^VERSION = ".*"$',
         f'VERSION = "{version}"',
+    )
+    rewrite(
+        ROOT / "backend" / "product.py",
+        r'^RELEASED_AT = "[^"]*"$',
+        f'RELEASED_AT = "{released_at}"',
     )
 
     # Package metadata must stay PEP 440-valid.
@@ -71,6 +105,11 @@ def main() -> int:
         ROOT / "frontend" / "src" / "lib" / "product.ts",
         r"^export const VERSION = '.*';$",
         f"export const VERSION = '{version}';",
+    )
+    rewrite(
+        ROOT / "frontend" / "src" / "lib" / "product.ts",
+        r"^export const RELEASED_AT = '[^']*';$",
+        f"export const RELEASED_AT = '{released_at}';",
     )
 
     # Frontend package + lockfile (npm ci verifies they agree; the first two
@@ -127,6 +166,7 @@ def main() -> int:
         f"Version set to {version} across product.py, pyproject.toml, uv.lock, "
         "product.ts, package.json, package-lock.json, version_info.txt, and the OpenAPI snapshot."
     )
+    print(f"Recorded release time: {released_at or 'unavailable'}")
     return 0
 
 
