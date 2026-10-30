@@ -11,6 +11,7 @@
   import type { InterfaceScale, MotionPreference, StartupModule } from '../lib/suiteStores';
   import BackupRestoreSettings from '../components/BackupRestoreSettings.svelte';
   import ThumbnailCacheSettings from '../components/ThumbnailCacheSettings.svelte';
+  import AboutSettings from './AboutSettings.svelte';
   export let selectedSection: string;
   export let query = '';
   const session = getContext<SettingsSession>(SETTINGS_SESSION);
@@ -39,6 +40,8 @@
   <ModulesSettings />
 {:else if selectedSection === 'general-advanced'}
   <AdvancedSettings />
+{:else if selectedSection === 'about'}
+  <AboutSettings />
 {:else if selectedSection === 'appearance'}
           <div class="mx-auto max-w-3xl space-y-4">
             <section class="overflow-hidden rounded-xl border border-[#292938] bg-[#111118]">

@@ -1,4 +1,4 @@
-import { SUITE_NAME } from '../lib/product';
+import { SUITE_NAME, VERSION } from '../lib/product';
 import component from './GeneralSettings.svelte';
 import type { SettingsContribution } from '../lib/settingsTypes';
 
@@ -14,6 +14,7 @@ const contribution: SettingsContribution = {
     { id: 'storage', group: 'general', label: 'Data & storage', icon: 'folder' },
     { id: 'backup', group: 'general', label: 'Backup', icon: 'shield' },
     { id: 'general-advanced', group: 'general', label: 'Advanced', icon: 'settings' },
+    { id: 'about', group: 'general', label: 'About', icon: 'window' },
   ],
   searchItems: [
     { id: 'accent-style', section: 'appearance', label: 'Accent style', description: 'Choose the interface accent color.', keywords: ['purple', 'pink', 'cyan', 'yellow', 'blue', 'green', 'orange', 'color'] },
@@ -27,6 +28,7 @@ const contribution: SettingsContribution = {
     { id: 'thumbnail-cache', section: 'storage', label: 'Data & storage', description: 'Application data usage and thumbnail cleanup.', keywords: ['300', '600', '1200', 'cleanup', 'cache'] },
     { id: 'backup', section: 'backup', label: 'Backup', description: `Choose ${SUITE_NAME} backup contents, location and automatic schedule.`, keywords: ['automatic', 'frequency', 'retention', 'destination', 'size', 'modules'] },
     { id: 'restore', section: 'backup', label: 'Restore', description: `Validate and restore a ${SUITE_NAME} backup bundle with rollback.`, keywords: ['recovery', 'rollback', 'backup'] },
+    { id: 'about', section: 'about', label: `About ${SUITE_NAME}`, description: `Version ${VERSION} and recorded release date.`, keywords: ['about', 'version', 'release', 'date', VERSION] },
   ],
 };
 

@@ -4,6 +4,13 @@ export const RELEASED_AT = '';
 export const DISPLAY_NAME = SUITE_NAME;
 export const DEFAULT_PROFILE_NAME = SUITE_NAME;
 
+export function formatReleaseDate(value: string): string | null {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!parts) return null;
+  const [, year, month, day, hour, minute, offset] = parts;
+  return `${year}/${month}/${day} ${hour}/${minute} ${offset === 'Z' ? 'UTC' : `UTC${offset}`}`;
+}
+
 export const STORAGE_PREFIX = 'keivotos:';
 const LEGACY_STORAGE_PREFIXES = ['danbooru:'];
 
