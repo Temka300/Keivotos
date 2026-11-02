@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageOps
@@ -234,6 +235,67 @@ def ensure_thumbnail(
             except Exception as exc:  # noqa: BLE001 - failed previews degrade to placeholders.
                 logger.warning("Could not create thumbnail for %s: %s", src, exc)
                 return None
+
+
+def derived_thumbnail_bytes(cache_key: str, create, max_size: int = 1200,
+                            max_bytes: int = 4 * 1024 * 1024) -> bytes:
+    """Cache a bounded derived WebP using the existing directory/prune contract.
+
+    The caller guards and versions its original before invoking this helper.
+    Only derived bytes are written; an unavailable cache still returns the render.
+    """
+    tier = normalize_thumbnail_size(max_size)
+    token = hashlib.sha256(('derived:' + cache_key).encode()).hexdigest()[:32]
+    suffix = '' if tier == DEFAULT_THUMB_SIZE else f'_{tier}'
+    path = THUMB_DIR / f'{token}_{THUMB_CACHE_VERSION}{suffix}.webp'
+
+    def guarded_root():
+        root = THUMB_DIR.absolute()
+        return (not any(part.is_symlink() for part in (root, *root.parents))
+                and os.path.normcase(str(root.resolve())) == os.path.normcase(str(root)))
+
+    def cached():
+        if not guarded_root() or path.is_symlink():
+            return None
+        try:
+            with path.open('rb') as stream:
+                content = stream.read(max_bytes + 1)
+            if len(content) > max_bytes:
+                return None
+            with Image.open(io.BytesIO(content)) as image:
+                if image.format != 'WEBP' or max(image.size) > tier:
+                    return None
+                image.verify()
+            return content
+        except (OSError, ValueError, Image.DecompressionBombError):
+            return None
+
+    with _thumbnail_lock(path):
+        content = cached()
+        if content is not None:
+            return content
+        content = create()
+        if len(content) > max_bytes:
+            raise ValueError('Derived thumbnail exceeds cache limit')
+        temporary = None
+        try:
+            if not guarded_root() or path.is_symlink():
+                return content
+            THUMB_DIR.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=THUMB_DIR, prefix='.derived-', delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(content)
+            if guarded_root() and not path.is_symlink():
+                temporary.replace(path)
+                # This owner writes fewer files; enforce the shared budget on
+                # every write rather than waiting for 25 unrelated thumbnails.
+                prune_thumbnail_cache(get_thumbnail_cache_limit_bytes())
+        except OSError as exc:
+            logger.warning('Could not store derived thumbnail: %s', exc)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return content
 
 
 def cache_entries():

@@ -57,3 +57,11 @@ def seed_manga(media):
                 with zipfile.ZipFile(series/f'Chapter {chapter}.cbz','w',compression=zipfile.ZIP_DEFLATED) as z:
                     z.writestr('00-cover.png',cover(title,bg,accent))
                     for n in [1,2,10]:z.writestr(f'{n}.png',page(n))
+    # Reader compatibility cases stay inside an existing final chapter so the
+    # library and ordinary navigation fixtures retain their original structure.
+    with zipfile.ZipFile(media/'The Quiet Valley/Chapter 10.cbz','a') as z:
+        original=BytesIO();image=Image.new('RGB',(120,60),'#526f82');exif=Image.Exif();exif[274]=6
+        image.save(original,'JPEG',exif=exif);z.writestr('20-oriented.png',original.getvalue())
+        converted=BytesIO();image.save(converted,'BMP');z.writestr('21-fallback.bmp',converted.getvalue())
+        animated=BytesIO();image.save(animated,'GIF',save_all=True,append_images=[Image.new('RGB',(120,60),'red')],duration=100,loop=0)
+        z.writestr('22-animated.gif',animated.getvalue())

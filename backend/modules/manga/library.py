@@ -12,7 +12,7 @@ import zipfile
 
 from PIL import Image, ImageOps
 from files_base import index, serving
-from modules.manga.page_cache import file_identity, manifests
+from modules.manga.page_cache import PageData, file_identity, manifests, responses
 
 IMAGES = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'}
 ARCHIVES = {'zip', 'cbz'}
@@ -20,6 +20,17 @@ MAX_ENTRIES = 4096
 MAX_PAGE_BYTES = 32 * 1024 * 1024
 MAX_TOTAL_BYTES = 1024 * 1024 * 1024
 MAX_PIXELS = 24_000_000
+RENDER_VERSION = 'manga-v1'
+ORIGINAL_MIMES = {'JPEG': 'image/jpeg', 'PNG': 'image/png',
+                  'GIF': 'image/gif', 'WEBP': 'image/webp'}
+
+
+class OriginalUnavailable(ValueError):
+    """A raster needs explicit conversion rather than original-byte delivery."""
+
+
+class StaleRevision(ValueError):
+    pass
 
 
 def natural(value):
@@ -195,12 +206,48 @@ def render_page(raw, cover=False):
             return output.getvalue()
 
 
-def read_page(source, chapter, kind, page, db, forbidden, cover=False):
+def _revision(source, target, identity, member=None):
+    values = (source.source_id, str(target), identity, member)
+    return sha256(repr(values).encode('utf-8', errors='surrogatepass')).hexdigest()
+
+
+def _archive_revision(source, target, archive, info):
+    identity = file_identity(os.fstat(archive.fp.fileno()))
+    member = (info.filename, info.CRC, info.file_size, info.compress_size,
+              info.header_offset, info.flag_bits, info.compress_type)
+    return _revision(source, target, identity, member)
+
+
+def chapter_metadata(source, chapter, kind, db, forbidden, first_only=False):
+    target = serving.resolve_within_source(source.path, chapter, forbidden)
+    if kind == 'archive':
+        with open_archive(target, source_id=source.source_id) as (archive, pages):
+            revisions = [_archive_revision(source, target, archive, info)
+                         for info in (pages[:1] if first_only else pages)]
+    else:
+        revisions = []
+        names = folder_pages(db, source.source_id, chapter)
+        for name in (names[:1] if first_only else names):
+            try:
+                page = serving.resolve_served_file(source.path, name, forbidden)
+                revisions.append(_revision(source, page, file_identity(page.stat())))
+            except (OSError, serving.ServeDenied):
+                # Preserve discovery of other pages. The actual read still
+                # refuses missing, protected or outside targets through serving.
+                revisions.append(_revision(source, target, None, name))
+    return {'count': len(revisions), 'revisions': revisions,
+            'revision': sha256(''.join(revisions).encode()).hexdigest()}
+
+
+def read_page_bytes(source, chapter, kind, page, db, forbidden, revision=None):
     target = serving.resolve_within_source(source.path, chapter, forbidden)
     if kind == 'archive':
         with open_archive(target, source_id=source.source_id) as (archive, pages):
             if page >= len(pages):
                 raise IndexError('Page is unavailable')
+            current = _archive_revision(source, target, archive, pages[page])
+            if revision is not None and revision != current:
+                raise StaleRevision('Chapter changed; reopen it to load the current pages')
             with archive.open(pages[page]) as stream:
                 raw = stream.read(MAX_PAGE_BYTES + 1)
     else:
@@ -211,8 +258,54 @@ def read_page(source, chapter, kind, page, db, forbidden, cover=False):
         with target.open('rb') as stream:
             identity = file_identity(os.fstat(stream.fileno()))
             _assert_unchanged(target, stream, identity)
+            current = _revision(source, target, identity)
+            if revision is not None and revision != current:
+                raise StaleRevision('Chapter changed; reopen it to load the current pages')
             raw = stream.read(MAX_PAGE_BYTES + 1)
             _assert_unchanged(target, stream, identity)
     if len(raw) > MAX_PAGE_BYTES:
         raise ValueError('Page exceeds reader limit')
-    return render_page(raw, cover)
+    return raw, current
+
+
+def original_page(raw):
+    with warnings.catch_warnings():
+        warnings.simplefilter('error', Image.DecompressionBombWarning)
+        with Image.open(BytesIO(raw)) as image:
+            if image.width * image.height > MAX_PIXELS:
+                raise ValueError('Image dimensions exceed reader limit')
+            media_type = ORIGINAL_MIMES.get(image.format)
+            if media_type is None:
+                raise OriginalUnavailable('This image format needs conversion')
+            if getattr(image, 'is_animated', False):
+                raise OriginalUnavailable('Animated pages need conversion to a still image')
+            image.verify()
+        # verify() checks structure; a full decode also refuses truncated data.
+        # The original bytes (including valid EXIF orientation) are preserved.
+        with Image.open(BytesIO(raw)) as image:
+            if image.getexif().get(274, 1) not in range(1, 9):
+                raise OriginalUnavailable('This page has unsupported orientation metadata')
+            image.load()
+    return PageData(raw, media_type)
+
+
+def page_response(source, chapter, kind, page, db, forbidden, cover=False,
+                  representation='webp', revision=None):
+    raw, current = read_page_bytes(source, chapter, kind, page, db, forbidden, revision)
+    digest = sha256(raw).hexdigest()
+    variant = 'cover' if cover else representation
+    key = (RENDER_VERSION, digest, variant, (480, 720) if cover else (2400, 3600),
+           85, MAX_PIXELS, MAX_PAGE_BYTES)
+    if cover:
+        from thumbnails import derived_thumbnail_bytes
+        content = derived_thumbnail_bytes(repr(key), lambda: render_page(raw, True))
+        result = PageData(content, 'image/webp')
+    else:
+        result = responses.get_or_create(key, lambda: original_page(raw) if representation == 'original'
+                                        else PageData(render_page(raw), 'image/webp'))
+    return result, current
+
+
+def read_page(source, chapter, kind, page, db, forbidden, cover=False):
+    # Existing callers retain WebP defaults; the new reader opts into Original.
+    return page_response(source, chapter, kind, page, db, forbidden, cover)[0].content

@@ -1,8 +1,8 @@
-"""Bounded Manga page-name manifests; no media bytes or open file handles."""
+"""Separate bounded Manga manifest and response caches; no open file handles."""
 from collections import OrderedDict
 from dataclasses import dataclass
 import os
-from threading import RLock
+from threading import Lock, RLock
 
 
 def file_identity(info):
@@ -72,3 +72,46 @@ class ManifestCache:
 
 
 manifests = ManifestCache()
+
+
+@dataclass(frozen=True)
+class PageData:
+    content: bytes
+    media_type: str
+
+
+class ResponseCache:
+    """Bounded full-page bytes; fixed stripes coalesce identical work."""
+    def __init__(self, max_entries=32, max_bytes=64 * 1024 * 1024):
+        self.max_entries = max_entries
+        self.max_bytes = max_bytes
+        self._items = OrderedDict()
+        self._bytes = 0
+        self._lock = RLock()
+        self._work = tuple(Lock() for _ in range(64))
+
+    def get_or_create(self, key, create):
+        with self._work[hash(key) % len(self._work)]:
+            with self._lock:
+                item = self._items.get(key)
+                if item is not None:
+                    self._items.move_to_end(key)
+                    return item
+            item = create()
+            with self._lock:
+                size = len(item.content)
+                if size <= self.max_bytes and self.max_entries > 0:
+                    self._items[key] = item
+                    self._bytes += size
+                    while len(self._items) > self.max_entries or self._bytes > self.max_bytes:
+                        _, removed = self._items.popitem(last=False)
+                        self._bytes -= len(removed.content)
+            return item
+
+    def clear(self):
+        with self._lock:
+            self._items.clear()
+            self._bytes = 0
+
+
+responses = ResponseCache()

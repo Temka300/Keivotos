@@ -66,6 +66,31 @@ class ThumbnailTests(unittest.TestCase):
         self.assertEqual(cleaned["removed"], 1)
         self.assertEqual(cleaned["tiers"], {"300": 1, "600": 1, "1200": 1})
 
+    def test_derived_cache_recovers_corruption_and_preserves_link_target(self) -> None:
+        import io
+        output = io.BytesIO()
+        Image.new('RGB', (40, 60), 'blue').save(output, 'WEBP')
+        content = output.getvalue()
+        calls = []
+        def create():
+            calls.append(True)
+            return content
+        self.assertEqual(thumbnails.derived_thumbnail_bytes('fixture', create), content)
+        self.assertEqual(thumbnails.derived_thumbnail_bytes('fixture', create), content)
+        self.assertEqual(len(calls), 1)
+        cached = thumbnails.cache_entries()[0]
+        cached.write_bytes(b'broken thumbnail')
+        self.assertEqual(thumbnails.derived_thumbnail_bytes('fixture', create), content)
+        self.assertEqual(len(calls), 2)
+        kept = self.root / 'preserved.txt'
+        kept.write_text('keep this')
+        cached.unlink()
+        cached.symlink_to(kept)
+        self.assertEqual(thumbnails.derived_thumbnail_bytes('fixture', create), content)
+        self.assertEqual(kept.read_text(), 'keep this')
+        self.assertTrue(cached.is_symlink())
+        self.assertFalse(list(thumbnails.THUMB_DIR.glob('.derived-*')))
+
     def test_mp4_uses_extracted_frame(self) -> None:
         import imageio_ffmpeg
 
