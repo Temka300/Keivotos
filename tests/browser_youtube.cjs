@@ -82,6 +82,21 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.screenshot({path:path.join(config.output,'youtube-library.png')});
   const result=(await api('/api/youtube/library')).data.items[0];assert.equal(result.status,'complete');
   assert(result.path.endsWith('Valley.mp4'));
+  const youtubeTitle=page.locator(`[data-job-id="${result.id}"] .download-title`);
+  for(const width of [1440,360]){
+   await page.setViewportSize({width,height:1000});
+   for(const text of [result.title,'静かな谷を越えて旅を続ける物語','A quiet journey through the valley that needs more than two rows','unbroken'.repeat(18)]){
+    await youtubeTitle.evaluate((node,value)=>node.textContent=value,text);
+    const metrics=await youtubeTitle.evaluate(node=>({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width,card:node.closest('article').getBoundingClientRect().width,font:parseFloat(getComputedStyle(node).fontSize),clamp:getComputedStyle(node).webkitLineClamp,wrap:getComputedStyle(node).overflowWrap}));
+    assert.equal(metrics.clamp,'2');assert.equal(metrics.wrap,'anywhere');
+    assert(Math.abs(metrics.height-metrics.font*2.7)<1);assert(metrics.width<=metrics.card);
+   }
+  }
+  await youtubeTitle.evaluate((node,value)=>node.textContent=value,result.title);
+  await page.setViewportSize({width:1440,height:1000});
+  assert.equal(await youtubeTitle.getAttribute('title'),result.title);
+  assert.equal(await page.locator(`[data-job-id="${result.id}"]`).getAttribute('aria-label'),result.title);
+  check('YouTube titles reserve two rows and contain Japanese, long Latin and unbroken names at both widths');
   const files=(await api('/api/files/search?q=Valley')).data;assert(files.some(x=>x.relative_path===result.path));
 
   await input.fill('not found');await page.waitForTimeout(350);assert.equal(await page.locator('.download-grid article').count(),0);

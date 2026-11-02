@@ -125,7 +125,7 @@
  .video-tile{text-align:left;min-width:0}
  .thumbnail{display:grid;place-items:center;position:relative;aspect-ratio:16/9;background:#1a1a24;border-radius:10px;overflow:hidden;color:#858599}
  .thumbnail img{position:absolute;width:100%;height:100%;object-fit:cover}
- .video-name{display:block;padding-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+ .video-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;height:2.7em;margin-top:8px;overflow:hidden;overflow-wrap:anywhere;line-height:1.35;font-size:14px}
  .empty{text-align:center;color:#9292a5;padding:40px}
  .empty button,.more{padding:8px 12px;border:1px solid #303040;border-radius:8px}
  .more{display:block;margin:24px auto}

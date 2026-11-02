@@ -181,7 +181,7 @@
  .manga-tile{text-align:left;min-width:0}
  .cover{display:grid;place-items:center;position:relative;aspect-ratio:2/3;background:#1b1b24;border-radius:8px;overflow:hidden;color:#777788}
  .cover img{position:absolute;width:100%;height:100%;object-fit:cover}
- .manga-name{display:block;padding-top:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
+ .manga-name{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;height:2.7em;margin-top:10px;overflow:hidden;overflow-wrap:anywhere;line-height:1.35;font-size:14px}
  svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
  .empty{text-align:center;color:#9292a5;padding:40px}.more{display:block;margin:24px auto;padding:8px 12px}
  .scrim{position:fixed;inset:0;z-index:110;display:grid;place-items:center;background:#000b;padding:24px}

@@ -25,6 +25,20 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.getByLabel('Search manga').fill('');await page.waitForTimeout(450);
   check('optional Manga enables, adopts a source, renders eight covers and searches names');
   const tile=page.getByRole('button',{name:'The Quiet Valley',exact:true});
+  const mangaTitle=page.locator('.manga-tile[title="The Quiet Valley"] .manga-name');
+  for(const width of [1440,360]){
+   await page.setViewportSize({width,height:1000});
+   for(const text of ['The Quiet Valley','静かな谷を越えて旅を続ける物語','The Quiet Valley and the morning train that kept going','unbroken'.repeat(18)]){
+    await mangaTitle.evaluate((node,value)=>node.textContent=value,text);
+    const metrics=await mangaTitle.evaluate(node=>({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width,card:node.closest('button').getBoundingClientRect().width,font:parseFloat(getComputedStyle(node).fontSize),clamp:getComputedStyle(node).webkitLineClamp,wrap:getComputedStyle(node).overflowWrap}));
+    assert.equal(metrics.clamp,'2');assert.equal(metrics.wrap,'anywhere');
+    assert(Math.abs(metrics.height-metrics.font*2.7)<1);assert(metrics.width<=metrics.card);
+   }
+  }
+  await mangaTitle.evaluate(node=>node.textContent='The Quiet Valley');
+  await page.setViewportSize({width:1440,height:1000});
+  assert.equal(await tile.getAttribute('title'),'The Quiet Valley');
+  check('Manga titles reserve two rows and contain Japanese, long Latin and unbroken names at both widths');
   await tile.click({button:'right'});
   await page.getByRole('menu',{name:'Location for The Quiet Valley'}).getByRole('menuitem',{name:'Show in Files'}).click();
   await page.getByRole('navigation',{name:'Current folder'}).getByRole('button',{name:'The Quiet Valley'}).waitFor();

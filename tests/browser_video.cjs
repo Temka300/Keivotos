@@ -33,6 +33,20 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.getByRole('button',{name:'sample.mp4',exact:true}).waitFor();
   const sampleTile=page.getByRole('button',{name:'sample.mp4',exact:true});
   const otherTile=page.getByRole('button',{name:'sample.webm',exact:true});
+  const videoTitle=page.locator('.video-tile[title="sample.mp4"] .video-name');
+  for(const width of [1440,360]){
+   await page.setViewportSize({width,height:1000});
+   for(const text of ['sample.mp4','静かな谷を越えて旅を続ける物語.mp4','A very long video title that needs more than two rows in the library.mp4','unbroken'.repeat(18)+'.mp4']){
+    await videoTitle.evaluate((node,value)=>node.textContent=value,text);
+    const metrics=await videoTitle.evaluate(node=>({height:node.getBoundingClientRect().height,width:node.getBoundingClientRect().width,card:node.closest('button').getBoundingClientRect().width,font:parseFloat(getComputedStyle(node).fontSize),clamp:getComputedStyle(node).webkitLineClamp,wrap:getComputedStyle(node).overflowWrap}));
+    assert.equal(metrics.clamp,'2');assert.equal(metrics.wrap,'anywhere');
+    assert(Math.abs(metrics.height-metrics.font*2.7)<1);assert(metrics.width<=metrics.card);
+   }
+  }
+  await videoTitle.evaluate(node=>node.textContent='sample.mp4');
+  await page.setViewportSize({width:1440,height:1000});
+  assert.equal(await sampleTile.getAttribute('title'),'sample.mp4');
+  check('Video titles reserve two rows and contain Japanese, long Latin and unbroken names at both widths');
   await sampleTile.click({button:'right'});
   let locationMenu=page.getByRole('menu',{name:'Location for sample.mp4'});
   await locationMenu.getByRole('menuitem',{name:'Show in Files'}).waitFor();

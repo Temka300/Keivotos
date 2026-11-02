@@ -121,7 +121,7 @@
       {:else if item.status!=='complete'}<button class="job-action" aria-label={`Retry ${item.title||'download'}`} title="Retry download" on:click={()=>action(item,true)}>↻</button>{/if}
      </div>
      {#if active(item)}<div class="progress" role="progressbar" aria-label={item.title||'Download'} aria-valuenow={Math.round(item.progress)} aria-valuemin="0" aria-valuemax="100"><div class:pending={item.status==='queued'||item.status==='merging'} style={`width:${Math.max(2,item.progress)}%`}></div></div>{/if}
-     <div class="download-title">{item.title||'YouTube video'}</div>
+     <div class="download-title" title={item.title||'YouTube video'}>{item.title||'YouTube video'}</div>
      {#if !active(item)&&item.status!=='complete'}<p class="job-error">{item.status==='cancelled'?'Cancelled':item.error||'Interrupted. Retry to download again.'}</p>{/if}
     </article>
    {/each}
@@ -156,7 +156,7 @@
  @media(max-width:400px){header{gap:8px;padding-inline:8px}.search-controls{gap:6px}.download-reveal{width:92px}.download{padding-inline:6px}}
  main{overflow:auto;flex:1;padding:24px;min-height:0}.download-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));gap:24px 18px}
  article{min-width:0}.thumbnail{aspect-ratio:16/9;background:#1a1a24;border-radius:10px;position:relative;overflow:hidden}.thumbnail a,.thumbnail .play-download{display:grid;place-items:center;width:100%;height:100%}.thumbnail img{width:100%;height:100%;object-fit:cover;position:absolute}.thumbnail svg{width:28px;height:28px;fill:none;stroke:#ddd;stroke-width:1.5;position:relative;opacity:.7}
- .job-action{position:absolute;right:8px;top:8px;background:#292933;width:28px;height:28px;border-radius:50%;font-size:20px;display:grid;place-items:center}.download-title{padding-top:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.job-error{font-size:12px;color:#aaa;margin-top:4px}
+ .job-action{position:absolute;right:8px;top:8px;background:#292933;width:28px;height:28px;border-radius:50%;font-size:20px;display:grid;place-items:center}.download-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;height:2.7em;margin-top:8px;overflow:hidden;overflow-wrap:anywhere;line-height:1.35;font-size:14px}.job-error{font-size:12px;color:#aaa;margin-top:4px}
  .progress{height:6px;overflow:hidden;border-radius:999px;background:#20202b;margin-top:8px}.progress>div{height:100%;border-radius:999px;background:var(--accent);transition:width .2s ease}.pending{opacity:.65}.more{display:block;margin:24px auto;padding:8px 12px}
  button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
  :global(html[data-motion='reduced']) .progress>div{transition:none}
