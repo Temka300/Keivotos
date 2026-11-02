@@ -3,13 +3,15 @@
   import AppDrawer from '../../components/AppDrawer.svelte';
   import ModuleLocationMenu from '../../components/ModuleLocationMenu.svelte';
   import {settingsOpen,settingsInitialSection,suiteModules} from '../../lib/suiteStores';
-  import {mangaApi,type Manga,type Chapter} from './api';
+  import {mangaApi,createPagePrefetch,type Manga,type Chapter} from './api';
   let drawer=false, query='', loading=false, error='';
   let items:Manga[]=[], total=0;
   let selected:Manga|null=null, chapters:Chapter[]=[], chapter:Chapter|null=null;
   let chapterLoading=false, chapterError='', readerError='', pageCount=0;
   let chapterRevision='', pageRevisions:string[]=[], converted=new Set<number>(), failedPage:number|null=null;
   let mode='paged', pageIndex=0, controlsVisible=true;
+  const prefetch=createPagePrefetch();
+  let loadedPage='';
   let dialog:HTMLDivElement, reader:HTMLDivElement;
   let tileFocus:HTMLElement|null=null, chapterFocus:HTMLElement|null=null;
   let libraryRequest:AbortController|null=null, detailRequest:AbortController|null=null, pageRequest:AbortController|null=null;
@@ -62,9 +64,19 @@
     try{const result=await mangaApi.pages(selected,item,current.signal);if(!current.signal.aborted){chapterRevision=result.revision;pageRevisions=result.revisions;pageCount=result.count;}}
     catch(e){if(!current.signal.aborted)readerError=e instanceof Error?e.message:'Could not open chapter. See Logs.';}
   }
-  function clearPages(){observer?.disconnect();observer=null;pageCount=0;chapterRevision='';pageRevisions=[];converted=new Set();failedPage=null;visible=new Set();}
+  function clearPages(){prefetch.clear();loadedPage='';observer?.disconnect();observer=null;pageCount=0;chapterRevision='';pageRevisions=[];converted=new Set();failedPage=null;visible=new Set();}
   async function back(){pageRequest?.abort();refreshRequest?.abort();clearPages();chapter=null;await tick();chapterFocus?.focus();}
-  function pageUrl(index:number){return mangaApi.page(selected!,chapter!,index,false,pageRevisions[index],converted.has(index)?'webp':'original');}
+  function pageUrl(index:number,revisions=pageRevisions,fallback=converted){return mangaApi.page(selected!,chapter!,index,false,revisions[index],fallback.has(index)?'webp':'original');}
+  function warmPages(manga:Manga|null,item:Chapter|null,count:number,index:number,layout:string,revisions:string[],fallback:Set<number>,loaded:string){
+    if(!manga||!item||!count||layout!=='paged'){prefetch.clear();return;}
+    const url=(page:number)=>mangaApi.page(manga,item,page,false,revisions[page],fallback.has(page)?'webp':'original');
+    prefetch.update(url(index),[index+1,index-1,index+2].filter(page=>page>=0&&page<count).map(url),loaded===url(index));
+  }
+  $: warmPages(selected,chapter,pageCount,pageIndex,mode,pageRevisions,converted,loadedPage);
+  function pageLoaded(event:Event,index:number,url:string){
+    const image=event.currentTarget as HTMLImageElement;
+    if(chapter&&pageCount&&mode==='paged'&&index===pageIndex&&pageUrl(index)===url&&image.getAttribute('src')===url)loadedPage=url;
+  }
   function pageFailed(event:Event,index:number,url:string){
     if(!chapter||!pageCount||pageUrl(index)!==url||(mode==='paged'&&index!==pageIndex))return;
     if((event.currentTarget as HTMLImageElement).getAttribute('src')!==url)return;
@@ -147,7 +159,7 @@
     const focus=()=>{if(!settingsSeen)void refreshSources();};window.addEventListener('focus',focus);
     return()=>{stopSettings();stopModules();window.removeEventListener('focus',focus);};
   });
-  onDestroy(()=>{clearTimeout(debounce);libraryRequest?.abort();detailRequest?.abort();pageRequest?.abort();refreshRequest?.abort();observer?.disconnect();});
+  onDestroy(()=>{prefetch.clear();clearTimeout(debounce);libraryRequest?.abort();detailRequest?.abort();pageRequest?.abort();refreshRequest?.abort();observer?.disconnect();});
 </script>
 
 <div class="manga-surface" inert={!!selected}>
@@ -202,12 +214,12 @@
     </div>{/if}
     {#if !pageCount&&!readerError}<p class="muted loading">Loading…</p>{/if}
     {#if mode==='paged'&&pageCount}
-      {@const url=pageUrl(pageIndex)}
-      <div class="paged-page" data-page={pageIndex}><img alt={`Page ${pageIndex+1}`} src={url} on:error={event=>pageFailed(event,pageIndex,url)}/></div>
+      {@const url=pageUrl(pageIndex,pageRevisions,converted)}
+      <div class="paged-page" data-page={pageIndex}><img alt={`Page ${pageIndex+1}`} src={url} fetchpriority="high" on:load={event=>pageLoaded(event,pageIndex,url)} on:error={event=>pageFailed(event,pageIndex,url)}/></div>
     {:else if mode==='vertical'}
       {#each Array(pageCount) as _,i}
         <div class="page" data-page={i} style={`--ratio:${ratios[i]||2/3}`} use:watchPage={i}>
-          {#if visible.has(i)}{@const url=pageUrl(i)}<img alt={`Page ${i+1}`} src={url} on:load={e=>dimensions(e,i)} on:error={event=>pageFailed(event,i,url)}/>{/if}
+          {#if visible.has(i)}{@const url=pageUrl(i,pageRevisions,converted)}<img alt={`Page ${i+1}`} src={url} on:load={e=>dimensions(e,i)} on:error={event=>pageFailed(event,i,url)}/>{/if}
         </div>
       {/each}
     {/if}

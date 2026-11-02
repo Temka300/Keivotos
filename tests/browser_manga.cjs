@@ -240,6 +240,107 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.unroute('**/api/manga/library?*',pagination);await page.getByLabel('Search manga').fill('');
   await page.waitForFunction(()=>document.querySelectorAll('.manga-tile').length===8);
   check('focus refresh preserves expanded Load more results and library scroll position');
+  const warmContext=await browser.newContext({viewport:{width:1440,height:1000}});
+  await warmContext.tracing.start({screenshots:true,snapshots:true});
+  await warmContext.addInitScript(()=>{
+   const NativeImage=window.Image;window.__warmImages=[];window.__warmStarts=[];
+   const src=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'src');
+   const width=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'naturalWidth').get,height=Object.getOwnPropertyDescriptor(HTMLImageElement.prototype,'naturalHeight').get;
+   window.Image=function(...args){
+    const image=new NativeImage(...args);window.__warmImages.push(new WeakRef(image));
+    Object.defineProperty(image,'src',{get:()=>src.get.call(image),set:value=>{if(image.fetchPriority==='low')window.__warmStarts.push(value);src.set.call(image,value);}});
+    // Exercise the retention policy without allocating oversized fixture images.
+    Object.defineProperty(image,'naturalWidth',{get:()=>window.__largeWarmPages&&image.fetchPriority==='low'?2800:width.call(image)});
+    Object.defineProperty(image,'naturalHeight',{get:()=>window.__largeWarmPages&&image.fetchPriority==='low'?2800:height.call(image)});
+    return image;
+   };
+   window.Image.prototype=NativeImage.prototype;
+  });
+  const warm=await warmContext.newPage();warm.setDefaultTimeout(15000);
+  warm.on('pageerror',error=>report.errors.push(error.message));
+  const requests=[];let delay=100,holdFirst=false,holdNeighbor=false,active=0,peak=0;
+  const warmerImages=()=>warm.evaluate(()=>window.__warmImages.map(ref=>ref.deref()).filter(image=>image?.fetchPriority==='low'&&image.hasAttribute('src')).map(image=>({url:image.getAttribute('src'),complete:image.complete,width:image.naturalWidth,height:image.naturalHeight})));
+  const settled=()=>warm.waitForFunction(()=>window.__warmImages.map(ref=>ref.deref()).filter(image=>image?.fetchPriority==='low'&&image.hasAttribute('src')).every(image=>image.complete&&image.naturalWidth>0));
+  const fullPageRoute=async route=>{
+   const url=new URL(route.request().url());if(url.searchParams.get('cover')!=='false'){await route.continue();return;}
+   const index=Number(url.searchParams.get('page')),chapter=url.searchParams.get('path');
+   requests.push({index,chapter,representation:url.searchParams.get('representation'),time:Date.now()});active++;peak=Math.max(peak,active);
+   try{
+    const response=await route.fetch();
+    await new Promise(resolve=>setTimeout(resolve,(holdFirst&&index===0?350:holdNeighbor&&index===1?650:delay)));
+    await route.fulfill({response});
+   }finally{active--;}
+  };
+  await warm.route('**/api/manga/page?*',fullPageRoute);
+  try{
+   await warm.goto(config.url);await warm.getByRole('button',{name:'Open Keivotos menu'}).click();
+   await warm.locator('.app-drawer').getByRole('button',{name:'Manga',exact:true}).click();
+   const warmTile=warm.getByRole('button',{name:'The Quiet Valley',exact:true}),warmReader=warm.getByRole('dialog',{name:'Manga reader'});
+   const warmDialog=warm.getByRole('dialog',{name:'The Quiet Valley chapters'});
+   async function openChapter(name){await warmTile.click();await warmDialog.getByRole('button',{name,exact:true}).click();}
+   async function exitChapter(){await warm.getByRole('button',{name:'Back to chapters'}).click();await warmReader.waitFor({state:'detached'});assert.equal((await warmerImages()).length,0);}
+   async function ready(index){await warm.waitForFunction(index=>{const image=document.querySelector('.paged-page img');return image?.complete&&image.naturalWidth>0&&Number(image.closest('.paged-page').dataset.page)===index;},index);}
+   const firstRequest=warm.waitForRequest(request=>new URL(request.url()).searchParams.get('cover')==='false');
+   holdFirst=true;await openChapter('Chapter 1');await firstRequest;
+   await warm.waitForTimeout(90);assert.deepEqual(requests.map(request=>request.index),[0]);assert.equal((await warmerImages()).length,0);
+   await ready(0);await warm.waitForFunction(()=>window.__warmImages.filter(ref=>ref.deref()?.getAttribute('src')).length===2);await settled();
+   assert.deepEqual(requests.map(request=>request.index),[0,1,2]);assert.equal(peak,1);
+   report.prefetch={coldSequence:requests.map(request=>request.index),initialRequestConcurrency:peak,warmTurns:[]};
+   holdFirst=false;await warmReader.focus();
+   await warm.evaluate(()=>{
+    const reader=document.querySelector('.reader');window.__turnTimes=[];let started=0;
+    reader.addEventListener('keydown',event=>{if(['ArrowRight','ArrowLeft'].includes(event.key))started=performance.now();},true);
+    reader.addEventListener('load',event=>{if(event.target.matches('.paged-page img')&&started){window.__turnTimes.push(performance.now()-started);started=0;}},true);
+   });
+   for(let sample=0;sample<3;sample++){
+    await warm.keyboard.press('ArrowRight');await ready(1);await settled();
+    await warm.keyboard.press('ArrowLeft');await ready(0);await settled();
+   }
+   report.prefetch.warmTurns=await warm.evaluate(()=>window.__turnTimes);
+   assert.equal(requests.filter(request=>request.index===1).length,1,'warm visible page must reuse its prefetched image');
+   assert.equal(requests.filter(request=>request.index===0).length,1,'revisit must reuse the displayed original');
+   assert((await warmerImages()).length<=4);
+   check('visible page completes before serial low-priority next-two prefetch; warm turns and revisits reuse exact revision URLs');
+   for(let index=0;index<20;index++)await warm.keyboard.press('ArrowRight');await ready(12);await settled();
+   assert(requests.every(request=>request.index>=0&&request.index<13));
+   const lastImages=await warmerImages();assert(lastImages.every(image=>[11,12].includes(Number(new URL(image.url,config.url).searchParams.get('page')))));
+   await exitChapter();await warm.keyboard.press('Escape');
+   check('first/last boundaries remain bounded and closing the reader releases every retained preview');
+   // A new document removes the old reader's image sharing window.
+   await warm.reload();await warm.getByRole('button',{name:'Open Keivotos menu'}).click();
+   await warm.locator('.app-drawer').getByRole('button',{name:'Manga',exact:true}).click();
+   requests.length=0;holdNeighbor=true;
+   await openChapter('Chapter 1');await ready(0);
+   await warm.waitForFunction(()=>window.__warmImages.some(ref=>ref.deref()?.getAttribute('src')?.includes('page=1&')));
+   await warmReader.focus();for(let index=0;index<6;index++)await warm.keyboard.press('ArrowRight');await ready(6);
+   await warm.waitForTimeout(720);await settled();
+   assert(!(await warm.evaluate(()=>window.__warmStarts)).some(url=>Number(new URL(url,config.url).searchParams.get('page'))===2),'cancelled old neighbor must not start its old next-two prefetch');
+   assert((await warmerImages()).every(image=>[5,6,7,8].includes(Number(new URL(image.url,config.url).searchParams.get('page')))));
+   await warm.getByLabel('Reading layout').selectOption('vertical');assert.equal((await warmerImages()).length,0);
+   await warm.waitForTimeout(250);assert((await warmReader.locator('img').count())>0&&(await warmReader.locator('img').count())<13);
+   await warm.getByLabel('Reading layout').selectOption('paged');await exitChapter();
+   holdNeighbor=false;await warm.evaluate(()=>window.__largeWarmPages=true);
+   await warmDialog.getByRole('button',{name:'Chapter 2',exact:true}).click();await ready(0);
+   await warm.waitForTimeout(500);await settled();
+   const capped=await warmerImages();assert.equal(capped.length,1);
+   assert.equal(capped.reduce((sum,image)=>sum+image.width*image.height*4,0),31360000);
+   assert.deepEqual(requests.filter(request=>request.chapter==='The Quiet Valley/Chapter 2.cbz').map(request=>request.index),[0,1,2]);
+   report.prefetch.budgetProbe={method:'2800x2800 dimension override on detached previews; no corresponding pixel allocation',retainedImages:capped.length,estimatedDecodedBytes:31360000,limitBytes:32*1024*1024};
+   await warm.evaluate(()=>window.__largeWarmPages=false);
+   assert((await warmerImages()).every(image=>new URL(image.url,config.url).searchParams.get('path')==='The Quiet Valley/Chapter 2.cbz'));
+   await exitChapter();await warmDialog.getByRole('button',{name:'Chapter 10',exact:true}).click();await ready(0);
+   await warmReader.focus();for(let index=0;index<3;index++)await warm.keyboard.press('ArrowRight');await ready(3);
+   await warm.waitForTimeout(450);assert.equal(await warmReader.getByRole('alert').count(),0);
+   assert(requests.some(request=>request.chapter==='The Quiet Valley/Chapter 10.cbz'&&request.index===5));
+   assert(!requests.some(request=>request.chapter==='The Quiet Valley/Chapter 10.cbz'&&request.index===5&&request.representation==='webp'));
+   await warm.keyboard.press('ArrowRight');await ready(4);await warm.keyboard.press('ArrowRight');
+   await warm.getByRole('alert').filter({hasText:'Original page 6'}).waitFor();
+   await exitChapter();await warm.keyboard.press('Escape');
+   check('rapid turns abandon stale work; mode/chapter switches clear previews; adjacent failure stays silent until displayed');
+  }finally{
+   await warm.unrouteAll({behavior:'wait'});
+   await warmContext.tracing.stop({path:path.join(config.output,'prefetch-trace.zip')});await warmContext.close();
+  }
   assert.deepEqual(report.errors,[]);
   check('disable rejects Manga work and preserves source registration and rediscovery');
  }finally{fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));await context.tracing.stop({path:path.join(config.output,'trace.zip')});await browser.close();}
