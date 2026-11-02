@@ -54,7 +54,7 @@ def pages(source_id: str = Query(..., max_length=256), path: str = Query('', max
     try:
         target = serving.resolve_within_source(source.path, path, [config.SUITE_HOME])
         if kind == 'archive':
-            with engine.open_archive(target) as (_, entries):
+            with engine.open_archive(target, source_id=source_id) as (_, entries):
                 count = len(entries)
         else:
             count = len(engine.folder_pages(config.FILES_DB_PATH, source_id, path))
@@ -69,7 +69,7 @@ def pages(source_id: str = Query(..., max_length=256), path: str = Query('', max
 def page(source_id: str = Query(..., max_length=256), path: str = Query('', max_length=4096),
          kind: Literal['folder','archive'] = 'folder', page: int = Query(0, ge=0), cover: bool = False):
     source = find_chapter(source_id, path, kind)
-    # Bound simultaneous image decodes; no extraction, persistent cache or DB write.
+    # Bound simultaneous image decodes; the manifest cache holds only page names.
     with _render_slots:
         try:
             content = engine.read_page(source, path, kind, page, config.FILES_DB_PATH, [config.SUITE_HOME], cover)

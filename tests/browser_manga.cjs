@@ -20,6 +20,24 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   assert.equal((await api('/api/manga/library')).data.total,8);
   await page.getByRole('button',{name:'Open Keivotos menu'}).click();await page.locator('.app-drawer').getByRole('button',{name:'Manga',exact:true}).click();
   await page.waitForFunction(()=>document.querySelectorAll('.manga-tile img').length===8&&[...document.querySelectorAll('.manga-tile img')].every(i=>i.complete&&i.naturalWidth>0));
+  report.timings=await page.evaluate(async sourceId=>{
+   const measured={runtime:'Windows Edge via loopback',fixture:'generated folder PNGs and deflated CBZ',chapters:{},covers:performance.getEntriesByType('resource').filter(entry=>entry.name.includes('/api/manga/page?')&&entry.name.includes('cover=true')).map(entry=>({duration_ms:entry.duration,transfer_bytes:entry.transferSize}))};
+   for(const [kind,path] of [['folder','The Quiet Valley/Chapter 1'],['archive','The Quiet Valley/Chapter 2.cbz']]){
+    const parameters=new URLSearchParams({source_id:sourceId,path,kind});
+    const start=performance.now();await(await fetch('/api/manga/pages?'+parameters,{cache:'no-store'})).json();
+    const times={manifest_ms:performance.now()-start,first:[],turn:[],revisit:[]};
+    for(let sample=0;sample<3;sample++)for(const [name,page] of [['first',0],['turn',1],['revisit',0]]){
+     parameters.set('page',String(page));parameters.set('cover','false');
+     const started=performance.now();const response=await fetch('/api/manga/page?'+parameters,{cache:'no-store'});
+     if(!response.ok)throw new Error('Timing page failed: '+response.status);
+     const url=URL.createObjectURL(await response.blob());const image=new Image();
+     try{image.src=url;await image.decode();times[name].push(performance.now()-started);}
+     finally{URL.revokeObjectURL(url);}
+    }
+    measured.chapters[kind]=times;
+   }
+   return measured;
+  },add.data.sources.find(source=>source.role==='manga').source_id);
   await shot('manga-library');
   await page.getByLabel('Search manga').fill('quiet');await page.waitForTimeout(450);assert.equal(await page.locator('.manga-tile').count(),1);
   await page.getByLabel('Search manga').fill('');await page.waitForTimeout(450);

@@ -1,6 +1,8 @@
 """Local chapter discovery and bounded ZIP/image reads; never extract originals."""
 from contextlib import contextmanager
+from hashlib import sha256
 from io import BytesIO
+import os
 from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import stat
@@ -10,6 +12,7 @@ import zipfile
 
 from PIL import Image, ImageOps
 from files_base import index, serving
+from modules.manga.page_cache import file_identity, manifests
 
 IMAGES = {'jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'}
 ARCHIVES = {'zip', 'cbz'}
@@ -78,54 +81,104 @@ def folder_pages(db, source_id, chapter):
                  and str(PurePosixPath(r['relative_path']).parent) == (chapter or '.')]
     if len(pages) > MAX_ENTRIES:
         raise ValueError('Chapter has too many pages')
-    return sorted(pages, key=natural)
+    # Query the current indexed listing each time: a rescan must invalidate
+    # even when the directory name and all filesystem timestamps stay the same.
+    scope = ('folder', str(Path(db).resolve()), source_id, chapter)
+    revision = frozenset(pages)
+    cached = manifests.get(scope, revision)
+    if cached is None:
+        cached = tuple(sorted(pages, key=natural))
+        manifests.put(scope, revision, cached)
+    return list(cached)
+
+
+def _directory_identity(file):
+    # Bound the central directory BEFORE ZipFile allocates its member objects.
+    # ZIP64 and split archives are deliberately unsupported in this basic reader.
+    file.seek(0, 2)
+    size = file.tell()
+    file.seek(max(0, size - 65557))
+    tail = file.read(65557)
+    start = tail.rfind(b'PK\x05\x06')
+    if start < 0 or len(tail) - start < 22:
+        raise ValueError('Invalid ZIP directory')
+    _, disk, directory_disk, disk_count, count, directory_size, offset, comment = struct.unpack_from('<4s4H2LH', tail, start)
+    if (disk or directory_disk or disk_count != count or count > MAX_ENTRIES
+            or directory_size > 16 * 1024 * 1024 or offset == 0xffffffff
+            or start + 22 + comment != len(tail) or b'PK\x06\x07' in tail[max(0,start-20):start]):
+        raise ValueError('Unsupported or oversized ZIP directory')
+    # The actual directory ends at the EOCD, allowing the same prepended ZIP
+    # data that ZipFile supports. Hash it so restored mtimes cannot reuse an
+    # old validation for changed entry names, flags, sizes or checksums.
+    directory_start = size - len(tail) + start - directory_size
+    if directory_start < 0:
+        raise ValueError('Invalid ZIP directory')
+    file.seek(directory_start)
+    directory = file.read(directory_size)
+    if len(directory) != directory_size:
+        raise ValueError('Invalid ZIP directory')
+    return sha256(directory + tail[start:]).digest()
+
+
+def _validate_archive(archive):
+    infos = archive.infolist()
+    if len(infos) > MAX_ENTRIES:
+        raise ValueError('Too many archive entries')
+    names = set()
+    total = 0
+    pages = []
+    for info in infos:
+        name = info.filename
+        original_name = info.orig_filename
+        parts = name.rstrip('/').split('/')
+        mode = info.external_attr >> 16
+        if (not name or '\\' in original_name or '\x00' in original_name
+                or PurePosixPath(name).is_absolute() or PureWindowsPath(name).drive
+                or any(p in ('', '.', '..') for p in parts)
+                or stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR))
+                or name.casefold() in names or info.flag_bits & 1
+                or info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)):
+            raise ValueError('Unsafe or encrypted archive entry')
+        names.add(name.casefold())
+        total += info.file_size
+        if (info.file_size > MAX_PAGE_BYTES or total > MAX_TOTAL_BYTES
+                or info.file_size > max(1, info.compress_size) * 1000):
+            raise ValueError('Archive expansion limit exceeded')
+        if not info.is_dir() and PurePosixPath(name).suffix.lower().lstrip('.') in IMAGES:
+            pages.append(info)
+    return sorted(pages, key=lambda info: natural(info.filename))
+
+
+def _assert_unchanged(path, file, identity):
+    if (file_identity(os.fstat(file.fileno())) != identity
+            or file_identity(path.stat()) != identity or path.resolve() != path):
+        raise ValueError('Chapter changed while being read; reopen it')
 
 
 @contextmanager
-def open_archive(path):
-    # Bound the central directory BEFORE ZipFile allocates its member objects.
-    # ZIP64 and split archives are deliberately unsupported in this basic reader.
-    with Path(path).open('rb') as file:
-        file.seek(0, 2)
-        size = file.tell()
-        file.seek(max(0, size - 65557))
-        tail = file.read(65557)
-        start = tail.rfind(b'PK\x05\x06')
-        if start < 0 or len(tail) - start < 22:
-            raise ValueError('Invalid ZIP directory')
-        _, disk, directory_disk, disk_count, count, directory_size, offset, comment = struct.unpack_from('<4s4H2LH', tail, start)
-        if (disk or directory_disk or disk_count != count or count > MAX_ENTRIES
-                or directory_size > 16 * 1024 * 1024 or offset == 0xffffffff
-                or start + 22 + comment != len(tail) or b'PK\x06\x07' in tail[max(0,start-20):start]):
-            raise ValueError('Unsupported or oversized ZIP directory')
+def open_archive(path, source_id=None):
+    path = Path(path).absolute()
+    scope = ('archive', source_id, str(path))
+    with path.open('rb') as file:
+        identity = file_identity(os.fstat(file.fileno()))
+        directory = _directory_identity(file)
+        revision = (identity, directory, MAX_ENTRIES, MAX_PAGE_BYTES, MAX_TOTAL_BYTES)
+        cached = manifests.get(scope, revision) if source_id is not None else None
+        _assert_unchanged(path, file, identity)
         file.seek(0)
         with zipfile.ZipFile(file) as archive:
-            infos = archive.infolist()
-            if len(infos) > MAX_ENTRIES:
-                raise ValueError('Too many archive entries')
-            names = set()
-            total = 0
-            pages = []
-            for info in infos:
-                name = info.filename
-                original_name = info.orig_filename
-                parts = name.rstrip('/').split('/')
-                mode = info.external_attr >> 16
-                if (not name or '\\' in original_name or '\x00' in original_name
-                        or PurePosixPath(name).is_absolute() or PureWindowsPath(name).drive
-                        or any(p in ('', '.', '..') for p in parts)
-                        or stat.S_ISLNK(mode) or (stat.S_IFMT(mode) not in (0, stat.S_IFREG, stat.S_IFDIR))
-                        or name.casefold() in names or info.flag_bits & 1
-                        or info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)):
-                    raise ValueError('Unsafe or encrypted archive entry')
-                names.add(name.casefold())
-                total += info.file_size
-                if (info.file_size > MAX_PAGE_BYTES or total > MAX_TOTAL_BYTES
-                        or info.file_size > max(1, info.compress_size) * 1000):
-                    raise ValueError('Archive expansion limit exceeded')
-                if not info.is_dir() and PurePosixPath(name).suffix.lower().lstrip('.') in IMAGES:
-                    pages.append(info)
-            yield archive, sorted(pages, key=lambda info: natural(info.filename))
+            pages = _validate_archive(archive) if cached is None else [archive.getinfo(name) for name in cached]
+            _assert_unchanged(path, file, identity)
+            try:
+                yield archive, pages
+            finally:
+                try:
+                    _assert_unchanged(path, file, identity)
+                except (ValueError, OSError):
+                    manifests.discard(scope)
+                    raise
+            if cached is None and source_id is not None:
+                manifests.put(scope, revision, (info.filename for info in pages))
 
 
 def render_page(raw, cover=False):
@@ -145,7 +198,7 @@ def render_page(raw, cover=False):
 def read_page(source, chapter, kind, page, db, forbidden, cover=False):
     target = serving.resolve_within_source(source.path, chapter, forbidden)
     if kind == 'archive':
-        with open_archive(target) as (archive, pages):
+        with open_archive(target, source_id=source.source_id) as (archive, pages):
             if page >= len(pages):
                 raise IndexError('Page is unavailable')
             with archive.open(pages[page]) as stream:
@@ -156,7 +209,10 @@ def read_page(source, chapter, kind, page, db, forbidden, cover=False):
             raise IndexError('Page is unavailable')
         target = serving.resolve_served_file(source.path, pages[page], forbidden)
         with target.open('rb') as stream:
+            identity = file_identity(os.fstat(stream.fileno()))
+            _assert_unchanged(target, stream, identity)
             raw = stream.read(MAX_PAGE_BYTES + 1)
+            _assert_unchanged(target, stream, identity)
     if len(raw) > MAX_PAGE_BYTES:
         raise ValueError('Page exceeds reader limit')
     return render_page(raw, cover)
