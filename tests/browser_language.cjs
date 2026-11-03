@@ -251,6 +251,164 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   assert.deepEqual(remoteRequests,[]);
   await reopened.screenshot({path:path.join(config.output,'language-markdown-editor.png')});
   check('mixed Markdown round-trips unchanged; literal markers stay literal and raw HTML/remote images do not run');
+  // Deterministic clipboard seam: never inspect or overwrite the user's OS clipboard.
+  await reopened.evaluate(()=>{
+   window.__testClipboard={text:'',denyRead:false,denyWrite:false,delay:0};
+   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{
+    readText:async()=>{const state=window.__testClipboard;await new Promise(resolve=>setTimeout(resolve,state.delay));if(state.denyRead)throw new DOMException('Denied','NotAllowedError');return state.text;},
+    writeText:async text=>{const state=window.__testClipboard;await new Promise(resolve=>setTimeout(resolve,state.delay));if(state.denyWrite)throw new DOMException('Denied','NotAllowedError');state.text=text;}
+   }});
+  });
+  const textMenu=reopened.getByRole('menu',{name:'Markdown text actions'});
+  async function openTextMenu(){await formatted.press('Shift+F10');await textMenu.waitFor();}
+  await formatted.fill('alpha beta');
+  await formatted.press('Control+Home');
+  for(let index=0;index<5;index++)await formatted.press('Shift+ArrowRight');
+  const firstLine=await formatted.locator('.cm-line').first().boundingBox();
+  await reopened.mouse.click(firstLine.x+15,firstLine.y+10,{button:'right'});
+  await textMenu.waitFor();
+  await textMenu.getByRole('menuitem',{name:'Copy',exact:true}).click();
+  assert.equal(await reopened.evaluate(()=>window.__testClipboard.text),'alpha');
+  assert.equal(await editorText(formatted),'alpha beta');
+  await openTextMenu();
+  await textMenu.getByRole('menuitem',{name:'Cut',exact:true}).click();
+  assert.equal(await editorText(formatted),' beta');
+  await formatted.press('Control+z');
+  assert.equal(await editorText(formatted),'alpha beta');
+  await openTextMenu();
+  await textMenu.getByRole('menuitem',{name:'Paste',exact:true}).click();
+  assert.equal(await editorText(formatted),'alpha beta');
+  check('keyboard text menu retains selection; Copy is nonmutating and Cut deletes only copied text with one-step undo');
+
+  await formatted.press('Control+Home');
+  for(let index=0;index<5;index++)await formatted.press('Shift+ArrowRight');
+  await reopened.evaluate(()=>{window.__testClipboard.denyWrite=true;});
+  for(const kind of ['Copy','Cut']){
+   await openTextMenu();await textMenu.getByRole('menuitem',{name:kind,exact:true}).click();
+   await textMenu.getByRole('alert').waitFor();
+   assert.match(await textMenu.getByRole('alert').innerText(),/Clipboard access was blocked/);
+   assert.equal(await editorText(formatted),'alpha beta');
+   await textMenu.press('Escape');
+  }
+  await reopened.evaluate(()=>{window.__testClipboard.denyRead=true;});
+  await openTextMenu();await textMenu.getByRole('menuitem',{name:'Paste',exact:true}).click();
+  await textMenu.getByRole('alert').waitFor();
+  assert.match(await textMenu.getByRole('alert').innerText(),/Ctrl\+V/);
+  await textMenu.press('Escape');
+  assert.equal(await formatted.evaluate(node=>node.contains(document.activeElement)),true);
+  assert.equal(await editorText(formatted),'alpha beta');
+  await reopened.evaluate(()=>{Object.assign(window.__testClipboard,{denyRead:false,denyWrite:false,text:''});});
+  await formatted.press('ArrowRight');
+  await formatted.press('Control+s');await waitDisk('Welcome.md','alpha beta');
+  await openTextMenu();
+  assert.equal(await textMenu.getByRole('menuitem',{name:'Copy',exact:true}).isDisabled(),true);
+  assert.equal(await textMenu.getByRole('menuitem',{name:'Cut',exact:true}).isDisabled(),true);
+  await textMenu.getByRole('menuitem',{name:'Paste',exact:true}).click();
+  assert.equal(await reopened.getByRole('button',{name:'Save Welcome.md'}).count(),0);
+  check('denied clipboard never deletes content, exposes keyboard fallback and restores focus; empty Paste keeps a saved note clean');
+
+  const paste='한국어 \\| literal\n<script>window.__clipboardUnsafe=true</script>\n![image](https://example.invalid/clipboard.png)';
+  await reopened.evaluate(text=>{window.__testClipboard.text=text;},paste);
+  await formatted.press('Control+End');await openTextMenu();
+  await textMenu.getByRole('menuitem',{name:'Paste',exact:true}).click();
+  assert.equal(await editorText(formatted),'alpha beta'+paste);
+  assert.equal(await reopened.evaluate(()=>window.__clipboardUnsafe),undefined);
+  assert.deepEqual(remoteRequests,[]);
+  await formatted.press('Control+z');assert.equal(await editorText(formatted),'alpha beta');
+  check('Paste inserts exact plain Unicode/Markdown source, stays inert and can be undone without remote requests');
+
+  await formatted.press('Control+Home');
+  for(let index=0;index<5;index++)await formatted.press('Shift+ArrowRight');
+  await reopened.evaluate(()=>{window.__testClipboard.delay=450;});
+  await openTextMenu();await textMenu.getByRole('menuitem',{name:'Cut',exact:true}).click();
+  await reopened.getByRole('tab',{name:'Second.md',exact:true}).click();
+  await reopened.waitForTimeout(550);
+  assert.equal(await editorText(reopened.getByRole('textbox',{name:'Edit Second.md'})),'Folder save B');
+  await reopened.getByRole('tab',{name:'Welcome.md',exact:true}).click();
+  assert.equal(await editorText(formatted),'alpha beta');
+  await reopened.evaluate(()=>{window.__testClipboard.delay=0;});
+  check('switching notes during delayed Cut prevents late clipboard completion from deleting either note');
+
+  await formatted.fill('beforeafter');await formatted.press('Control+Home');
+  for(let index=0;index<6;index++)await formatted.press('ArrowRight');
+  await openTextMenu();
+  await textMenu.press('End');
+  assert.equal(await textMenu.getByRole('menuitem',{name:'Insert table'}).evaluate(node=>document.activeElement===node),true);
+  await reopened.keyboard.press('Enter');
+  const initial='before\n\n|  |  |\n| --- | --- |\n|  |  |\n\nafter';
+  assert.equal(await editorText(formatted),initial);
+  const addRow=reopened.getByRole('button',{name:'Add table row',exact:true});
+  const addColumn=reopened.getByRole('button',{name:'Add table column',exact:true});
+  await addRow.waitFor();await addColumn.waitFor();
+  await addRow.click();assert.equal(await editorText(formatted),initial.replace('|  |  |\n\nafter','|  |  |\n|  |  |\n\nafter'));
+  await formatted.press('Control+z');assert.equal(await editorText(formatted),initial);
+  await formatted.press('Control+y');
+  await addRow.focus();await addRow.press('Space');
+  await addColumn.focus();await addColumn.press('Enter');
+  await addColumn.click();
+  const grown='before\n\n|  |  |  |  |\n| --- | --- | --- | --- |\n|  |  |  |  |\n|  |  |  |  |\n|  |  |  |  |\n\nafter';
+  assert.equal(await editorText(formatted),grown);
+  await formatted.press('Control+z');
+  assert.equal(await editorText(formatted),grown.replaceAll('|  |  |  |  |','|  |  |  |').replace('| --- | --- | --- | --- |','| --- | --- | --- |'));
+  await formatted.press('Control+y');assert.equal(await editorText(formatted),grown);
+  await reopened.screenshot({path:path.join(config.output,'language-table-controls.png')});
+  check('Insert table preserves surrounding text at the caret; 2x2 grows one row/column per mouse or keyboard action with separate undo/redo');
+
+  async function replaceSource(text){await formatted.press('Control+a');await reopened.keyboard.insertText(text);}
+  const escapedTable='| Name | Meaning |\n| :--- | ---: |\n| escaped \\| pipe | 日本語 한국어 |';
+  await replaceSource(escapedTable);
+  await formatted.press('Control+Home');await formatted.press('ArrowDown');await formatted.press('ArrowDown');
+  await formatted.press('Home');for(let index=0;index<4;index++)await formatted.press('ArrowRight');
+  await addColumn.click();
+  await formatted.type('X');
+  const exactTable='| Name | Meaning |  |\n| :--- | ---: | --- |\n| esXcaped \\| pipe | 日本語 한국어 |  |';
+  assert.equal(await editorText(formatted),exactTable);
+  await addRow.click();
+  const savedTable=exactTable+'\n|  |  |  |';
+  await formatted.press('Control+s');await waitDisk('Welcome.md',savedTable);
+  await reopened.getByRole('tab',{name:'Second.md'}).click();
+  await reopened.getByRole('tab',{name:'Welcome.md'}).click();
+  assert.equal(await editorText(formatted),savedTable);
+  assert.equal(await reopened.getByRole('button',{name:'Save Welcome.md'}).count(),0);
+  check('table growth preserves cursor, alignment, escaped pipes and Unicode; explicit save/reopen matches exact Markdown bytes');
+
+  await replaceSource('A | B\n--- | ---\nx | y');await addColumn.waitFor();await addColumn.click();
+  assert.equal(await editorText(formatted),'A | B |  |\n--- | --- | --- |\nx | y |  |');
+  await addRow.click();
+  assert.equal(await editorText(formatted),'A | B |  |\n--- | --- | --- |\nx | y |  |\n|  |  |  |');
+  await replaceSource('| A | B |\n| --- | --- |\n| extra | cell | retained |');
+  assert.equal(await addColumn.isDisabled(),true);assert.equal(await addRow.isDisabled(),true);
+  assert.equal(await editorText(formatted),'| A | B |\n| --- | --- |\n| extra | cell | retained |');
+  await replaceSource('```md\n| A | B |\n| --- | --- |\n| x | y |\n```');
+  await formatted.press('Control+Home');await formatted.press('ArrowDown');
+  assert.equal(await addColumn.count(),0);assert.equal(await addRow.count(),0);
+  await openTextMenu();assert.equal(await textMenu.getByRole('menuitem',{name:'Insert table'}).isDisabled(),true);
+  await textMenu.press('Escape');
+  check('optional outer pipes expand correctly; ragged table cells are preserved and code-fenced tables stay literal');
+
+  await replaceSource('> | A | B |\n> | --- | --- |\n> | x | y |');
+  await addColumn.waitFor();await addColumn.click();await addRow.click();
+  assert.equal(await editorText(formatted),'> | A | B |  |\n> | --- | --- | --- |\n> | x | y |  |\n> |  |  |  |');
+  check('nested blockquote table growth preserves every Markdown prefix');
+
+  await reopened.setViewportSize({width:360,height:700});
+  const existingWidth=await reopened.evaluate(()=>document.documentElement.scrollWidth);
+  await replaceSource('| Very long heading | 説明 |\n| --- | --- |\n| '+('long '.repeat(24))+' | 漢字 |');
+  await addColumn.waitFor();await addColumn.focus();
+  await addColumn.press('Enter');
+  const bodyWidth=await reopened.evaluate(()=>document.documentElement.scrollWidth);
+  assert.ok(bodyWidth<=Math.max(360,existingWidth),`table introduced horizontal overflow: ${bodyWidth} versus ${existingWidth}`);
+  const buttonBounds=await addColumn.boundingBox();
+  assert.ok(buttonBounds.x>=0&&buttonBounds.x+buttonBounds.width<=360);
+  const bounds=await formatted.boundingBox();
+  assert.ok(bounds.x>=0&&bounds.x+bounds.width<=360);
+  report.compact={existingDocumentWidth:existingWidth,documentWidth:bodyWidth,editor:bounds,columnButton:buttonBounds};
+  await reopened.mouse.click(bounds.x+bounds.width-12,bounds.y+bounds.height-16,{button:'right'});
+  await textMenu.waitFor();const menuBounds=await textMenu.boundingBox();
+  assert.ok(menuBounds.x>=8&&menuBounds.y>=8&&menuBounds.x+menuBounds.width<=352&&menuBounds.y+menuBounds.height<=692);
+  await reopened.screenshot({path:path.join(config.output,'language-table-compact.png')});
+  await textMenu.press('Escape');
+  check('long tables retain line wrapping and keyboard controls; right-click menu fits a compact viewport and dismisses with Escape');
   assert.deepEqual(report.errors,[]);
  }finally{
   fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));
