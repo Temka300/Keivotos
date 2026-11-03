@@ -133,6 +133,26 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await assertPagedImageFits();
   await shot('manga-reader-paged');
   check('Paged shows one contained page; bottom/top clicks and keyboard move exactly one page');
+  await reader.focus();
+  for(const [key,count] of [['ArrowLeft',2],['ArrowUp',1],['PageUp',1],['ArrowDown',2],['PageDown',3],[' ',4]]){
+   await page.keyboard.press(key);assert.equal(await reader.locator('.page-counter').textContent(),count+' / 13');
+  }
+  for(let repeat=0;repeat<16;repeat++)await page.keyboard.down('ArrowRight');await page.keyboard.up('ArrowRight');
+  assert.equal(await reader.locator('.page-counter').textContent(),'13 / 13');
+  for(let repeat=0;repeat<16;repeat++)await page.keyboard.down('ArrowLeft');await page.keyboard.up('ArrowLeft');
+  assert.equal(await reader.locator('.page-counter').textContent(),'1 / 13');
+  await page.getByLabel('Reading layout').focus();await page.keyboard.press('ArrowDown');
+  assert.equal(await page.getByLabel('Reading layout').inputValue(),'vertical');assert.equal(await reader.locator('.page-counter').textContent(),'1 / 13');
+  await page.keyboard.press('ArrowUp');assert.equal(await page.getByLabel('Reading layout').inputValue(),'paged');
+  assert.equal(await reader.locator('.page-counter').textContent(),'1 / 13');
+  await page.mouse.click(700,750);assert.equal(await reader.locator('.page-counter').textContent(),'2 / 13');
+  await page.mouse.click(700,250);assert.equal(await reader.locator('.page-counter').textContent(),'1 / 13');
+  await page.keyboard.press('ArrowRight');assert.equal(await reader.locator('.page-counter').textContent(),'2 / 13');
+  await page.mouse.move(700,500);await page.mouse.down();await page.mouse.move(700,350,{steps:5});await page.mouse.up();
+  assert.equal(await reader.locator('.page-counter').textContent(),'2 / 13');
+  assert.equal(await reader.locator('.reader-controls').getAttribute('aria-hidden'),'false');
+  await reader.focus();await page.keyboard.press('ArrowRight');
+  check('all Paged keys and native repeat events clamp; focused layout arrows remain native, exact mouse zones turn once, and dragging does not toggle controls');
   await page.mouse.click(700,500);
   await page.waitForTimeout(230);
   assert.equal(await reader.locator('.reader-controls').evaluate(n=>getComputedStyle(n).opacity),'0');
@@ -157,6 +177,26 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.getByLabel('Reading layout').selectOption('vertical');
   await page.waitForTimeout(350);
   assert(await reader.evaluate(n=>n.scrollTop>0));
+  const scrollBeforeWheel=await reader.evaluate(node=>node.scrollTop);
+  await page.mouse.move(700,600);await page.mouse.wheel(0,1700);
+  await page.waitForFunction(before=>document.querySelector('.reader').scrollTop>before,scrollBeforeWheel);
+  async function assertVerticalCounter(){await page.waitForFunction(()=>{
+   const reader=document.querySelector('.reader'),bounds=reader.getBoundingClientRect(),center=bounds.top+bounds.height/2;
+   const current=[...reader.querySelectorAll('.page')].find(node=>{const rect=node.getBoundingClientRect();return rect.top<=center&&rect.bottom>center;});
+   return current&&reader.querySelector('.page-counter').textContent===(Number(current.dataset.page)+1)+' / 13';
+  });}
+  await assertVerticalCounter();
+  const scrollbar=await reader.evaluate(node=>{
+   const bounds=node.getBoundingClientRect(),size=bounds.width-node.clientWidth,thumb=node.clientHeight*node.clientHeight/node.scrollHeight;
+   return {size,x:bounds.right-size/2,y:bounds.top+node.scrollTop/(node.scrollHeight-node.clientHeight)*(node.clientHeight-thumb)+thumb/2,scroll:node.scrollTop};
+  });
+  if(scrollbar.size>0){
+   await page.mouse.move(scrollbar.x,scrollbar.y);await page.mouse.down();await page.mouse.move(scrollbar.x,scrollbar.y+180,{steps:8});await page.mouse.up();
+   await page.waitForFunction(before=>document.querySelector('.reader').scrollTop>before,scrollbar.scroll);await assertVerticalCounter();
+   report.navigation={scrollbarDrag:'native scrollbar drag passed'};
+  }else report.navigation={scrollbarDrag:'native browser exposes no scrollbar hit area; wheel verified'};
+  assert.equal(await reader.locator('.reader-controls').getAttribute('aria-hidden'),'false');
+  check('Vertical mouse wheel and available native scrollbar dragging scroll naturally, update the reading-center counter and keep controls visible');
   const width=await page.locator('.page[data-page="1"]').evaluate(n=>n.getBoundingClientRect().width);assert.equal(width,1000);
   await reader.evaluate(node=>{
    const target=node.querySelector('.page[data-page="5"]'),bounds=node.getBoundingClientRect(),rect=target.getBoundingClientRect();
@@ -210,6 +250,22 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await back.click();await page.keyboard.press('Escape');
   await context.unroute('**/api/manga/pages?*');
   check('chapter errors remain concise and preserve the route back to the library');
+  const pendingCount=async route=>{
+   if(new URL(route.request().url()).searchParams.get('path')!=='The Quiet Valley/Chapter 1'){await route.continue();return;}
+   const response=await route.fetch();await new Promise(resolve=>setTimeout(resolve,450));await route.fulfill({response});
+  };
+  await page.route('**/api/manga/pages?*',pendingCount);
+  try{
+   await tile.click();await dialog.getByRole('button',{name:'Chapter 1',exact:true}).click();
+   assert.equal(await reader.locator('.page-counter').textContent(),'— / —');
+   await page.keyboard.press('Escape');await reader.waitFor({state:'detached'});
+   assert(await dialog.getByRole('button',{name:'Chapter 1',exact:true}).evaluate(node=>node===document.activeElement));
+   await dialog.getByRole('button',{name:'Chapter 2',exact:true}).click();await assertPagedImageFits();
+   await page.waitForTimeout(550);assert.equal(await reader.locator('.page-counter').textContent(),'1 / 4');
+   assert((await reader.locator('img').getAttribute('src')).includes('Chapter+2.cbz'));
+   await back.click();await page.keyboard.press('Escape');
+  }finally{await page.unroute('**/api/manga/pages?*',pendingCount);}
+  check('Escape cancels delayed chapter counts, restores chapter focus and ignores their late response after opening another chapter');
   await tile.click();await dialog.getByRole('button',{name:'Chapter 1',exact:true}).click();await assertPagedImageFits();
   const previousUrl=await reader.locator('img').getAttribute('src');
   const coverFile=path.join(config.mediaLocal,'The Quiet Valley','Chapter 1','00-cover.png');
@@ -418,6 +474,36 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   }finally{
    await warm.unrouteAll({behavior:'wait'});
    await warmContext.tracing.stop({path:path.join(config.output,'prefetch-trace.zip')});await warmContext.close();
+  }
+  const corruptContext=await browser.newContext({viewport:{width:1440,height:1000}});
+  await corruptContext.tracing.start({screenshots:true,snapshots:true});
+  const corrupt=await corruptContext.newPage();corrupt.on('pageerror',error=>report.errors.push(error.message));
+  await corrupt.route('**/api/manga/page?*',async route=>{
+   const url=new URL(route.request().url());
+   if(url.searchParams.get('cover')==='false'&&url.searchParams.get('page')==='0'&&url.searchParams.get('representation')==='original'){
+    await route.fulfill({status:200,contentType:'image/png',headers:{'Cache-Control':'no-store'},body:'deliberately invalid generated image response'});
+   }else await route.continue();
+  });
+  try{
+   await corrupt.goto(config.url);await corrupt.getByRole('button',{name:'Open Keivotos menu'}).click();
+   await corrupt.locator('.app-drawer').getByRole('button',{name:'Manga',exact:true}).click();
+   await corrupt.getByRole('button',{name:'The Quiet Valley',exact:true}).click();
+   await corrupt.getByRole('dialog',{name:'The Quiet Valley chapters'}).getByRole('button',{name:'Chapter 2',exact:true}).click();
+   const failedReader=corrupt.getByRole('dialog',{name:'Manga reader'});
+   await failedReader.getByRole('alert').filter({hasText:'Original page 1'}).waitFor();
+   assert.equal(await failedReader.locator('.page-counter').textContent(),'1 / 4');
+   await failedReader.focus();await corrupt.keyboard.press('ArrowRight');
+   await corrupt.waitForFunction(()=>document.querySelector('.paged-page img')?.naturalWidth>0);
+   assert.equal(await failedReader.locator('.page-counter').textContent(),'2 / 4');assert.equal(await failedReader.getByRole('alert').count(),0);
+   await corrupt.keyboard.press('ArrowLeft');await failedReader.getByRole('alert').filter({hasText:'Original page 1'}).waitFor();
+   await corrupt.getByRole('button',{name:'Open converted page',exact:true}).focus();await corrupt.keyboard.press('Space');
+   await corrupt.waitForFunction(()=>document.querySelector('.paged-page img')?.naturalWidth>0);
+   assert.equal(await failedReader.locator('.page-counter').textContent(),'1 / 4');
+   assert((await failedReader.locator('img').getAttribute('src')).includes('representation=webp'));
+   await corrupt.keyboard.press('Escape');await failedReader.waitFor({state:'detached'});
+   check('a browser-rejected image keeps its page count, allows navigation away/back and accepts explicit conversion with Space without turning pages');
+  }finally{
+   await corruptContext.tracing.stop({path:path.join(config.output,'navigation-error-trace.zip')});await corruptContext.close();
   }
   assert.deepEqual(report.errors,[]);
   check('disable rejects Manga work and preserves source registration and rediscovery');
