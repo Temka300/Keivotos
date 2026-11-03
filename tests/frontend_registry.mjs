@@ -16,7 +16,9 @@ try {
     await fs.mkdir(project);
     await fs.cp(path.join(frontend, 'src'), path.join(project, 'src'), { recursive: true });
     await fs.symlink(path.join(frontend, 'node_modules'), path.join(project, 'node_modules'), 'dir');
-    if (mode === 'absent') await fs.rm(path.join(project, 'src/modules/danbooru'), { recursive: true });
+    if (mode === 'absent') {
+      for (const owner of ['danbooru','ost']) await fs.rm(path.join(project, 'src/modules', owner), { recursive: true });
+    }
     if (mode === 'additional') {
       const extra = path.join(project, 'src/modules/fixture');
       await fs.mkdir(extra);
@@ -57,8 +59,8 @@ ${mode !== 'absent' ? "export { activeCollectionId, selectedImageId, viewMode } 
     const { moduleUi, surfaceComponent, activateModule, activeModule } = registry;
     assert.equal(get(registry.startupModule), mode === 'additional' ? 'fixture' : 'last');
     assert.deepEqual(registry.settingsContributions.map(owner => owner.group.id),
-      mode === 'absent' ? ['general', 'files'] : mode === 'additional'
-        ? ['general', 'files', 'danbooru', 'fixture'] : ['general', 'files', 'danbooru']);
+      mode === 'absent' ? ['general', 'files', 'youtube'] : mode === 'additional'
+        ? ['general', 'files', 'danbooru', 'fixture', 'youtube'] : ['general', 'files', 'danbooru', 'youtube']);
     assert.equal(moduleUi('files').slug, 'files');
     assert.deepEqual(moduleUi('files').drawerActions, []);
     assert.equal(surfaceComponent('files').owner, 'FilesView.svelte');
@@ -71,9 +73,13 @@ ${mode !== 'absent' ? "export { activeCollectionId, selectedImageId, viewMode } 
       assert.deepEqual(moduleUi('danbooru').drawerActions, []);
       assert.strictEqual(surfaceComponent('danbooru'), surfaceComponent('files'));
       assert(!Object.keys(chunk.modules).some(id => id.includes('/danbooru/')));
+      assert.strictEqual(surfaceComponent('ost'), surfaceComponent('files'));
+      assert(!Object.keys(chunk.modules).some(id => id.includes('/ost/')));
       assert(!writes.includes('keivotos:image-size'), 'absent module must not initialize stores');
     } else {
       const { activeCollectionId, selectedImageId, viewMode } = registry;
+      assert.equal(surfaceComponent('ost').owner, 'OstSurface.svelte');
+      assert.equal(moduleUi('ost').slug, 'ost');
       activeCollectionId.set(123); selectedImageId.set(456); viewMode.set('tags');
       activateModule('danbooru');
       assert.equal(get(activeModule), 'danbooru');

@@ -35,6 +35,12 @@ class ModuleRegistryTests(unittest.TestCase):
         self.assertTrue(language.disableable)
         self.assertIsNotNone(language.adopt_hook)
         self.assertEqual(language.api_prefix, "/api/language")
+        ost = registry.require("ost")
+        self.assertTrue(ost.experimental)
+        self.assertTrue(ost.disableable)
+        self.assertIsNotNone(ost.adopt_hook)
+        self.assertEqual(ost.api_prefix, "/api/ost")
+        self.assertEqual(ost.database, files.database)
 
     def test_registry_rejects_duplicate_slugs(self) -> None:
         with tempfile.TemporaryDirectory(dir=ROOT / "tests") as temporary:
