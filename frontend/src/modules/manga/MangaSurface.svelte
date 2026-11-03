@@ -10,6 +10,8 @@
   let chapterLoading=false, chapterError='', readerError='', pageCount=0;
   let chapterRevision='', pageRevisions:string[]=[], converted=new Set<number>(), failedPage:number|null=null;
   let mode='paged', pageIndex=0, controlsVisible=true;
+  let verticalIndex=0,scrollFrame:number|null=null;
+  const pageNodes=new Map<number,HTMLElement>();
   const prefetch=createPagePrefetch();
   let loadedPage='';
   let dialog:HTMLDivElement, reader:HTMLDivElement;
@@ -64,7 +66,7 @@
     try{const result=await mangaApi.pages(selected,item,current.signal);if(!current.signal.aborted){chapterRevision=result.revision;pageRevisions=result.revisions;pageCount=result.count;}}
     catch(e){if(!current.signal.aborted)readerError=e instanceof Error?e.message:'Could not open chapter. See Logs.';}
   }
-  function clearPages(){prefetch.clear();loadedPage='';observer?.disconnect();observer=null;pageCount=0;chapterRevision='';pageRevisions=[];converted=new Set();failedPage=null;visible=new Set();}
+  function clearPages(){prefetch.clear();loadedPage='';cancelScrollFrame();verticalIndex=0;pageNodes.clear();observer?.disconnect();observer=null;pageCount=0;chapterRevision='';pageRevisions=[];converted=new Set();failedPage=null;visible=new Set();}
   async function back(){pageRequest?.abort();refreshRequest?.abort();clearPages();chapter=null;await tick();chapterFocus?.focus();}
   function pageUrl(index:number,revisions=pageRevisions,fallback=converted){return mangaApi.page(selected!,chapter!,index,false,revisions[index],fallback.has(index)?'webp':'original');}
   function warmPages(manga:Manga|null,item:Chapter|null,count:number,index:number,layout:string,revisions:string[],fallback:Set<number>,loaded:string){
@@ -121,22 +123,42 @@
     keys(event,reader,()=>void back());
   }
   function watchPage(node:HTMLElement,index:number){
+    pageNodes.set(index,node);
     if(!observer)observer=new IntersectionObserver(entries=>{
       const next=new Set(visible);
       for(const entry of entries){const n=Number((entry.target as HTMLElement).dataset.page);if(entry.isIntersecting)next.add(n);else next.delete(n);}
       visible=next;
+      trackVerticalPage();
     },{rootMargin:'100% 0px'});
     observer.observe(node);
-    return {destroy(){observer?.unobserve(node);}};
+    return {destroy(){observer?.unobserve(node);if(pageNodes.get(index)===node)pageNodes.delete(index);}};
   }
-  function dimensions(event:Event,index:number){const image=event.currentTarget as HTMLImageElement;ratios={...ratios,[index]:image.naturalWidth/image.naturalHeight};}
+  function dimensions(event:Event,index:number){const image=event.currentTarget as HTMLImageElement;ratios={...ratios,[index]:image.naturalWidth/image.naturalHeight};trackVerticalPage();}
+  function nearestPage(all=false){
+    const bounds=reader.getBoundingClientRect(),center=bounds.top+bounds.height/2;
+    let nearest=verticalIndex,distance=Infinity;
+    for(const index of all?pageNodes.keys():visible){
+      const node=pageNodes.get(index);if(!node)continue;
+      const rect=node.getBoundingClientRect();
+      if(rect.top<=center&&rect.bottom>center)return index;
+      const gap=Math.max(rect.top-center,center-rect.bottom,0);
+      if(gap<distance){nearest=index;distance=gap;}
+    }
+    return Math.max(0,Math.min(pageCount-1,nearest));
+  }
+  function cancelScrollFrame(){if(scrollFrame!==null)cancelAnimationFrame(scrollFrame);scrollFrame=null;}
+  function trackVerticalPage(){
+    if(mode!=='vertical'||!reader||!pageCount||scrollFrame!==null)return;
+    scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;if(mode==='vertical'&&reader&&pageCount)verticalIndex=nearestPage();});
+  }
   async function changeMode(){
     if(mode==='paged'){
-      const pages=[...reader.querySelectorAll<HTMLElement>('.page')];
-      if(pages.length)pageIndex=Number(pages.reduce((best,item)=>Math.abs(item.getBoundingClientRect().top-reader.clientHeight/2)<Math.abs(best.getBoundingClientRect().top-reader.clientHeight/2)?item:best).dataset.page)||0;
+      cancelScrollFrame();pageIndex=nearestPage(true);
       reader.scrollTo({top:0});
     }else{
+      verticalIndex=pageIndex;
       await tick();reader.querySelector<HTMLElement>(`.page[data-page="${pageIndex}"]`)?.scrollIntoView({block:'start'});
+      trackVerticalPage();
     }
   }
   function pointerDown(event:PointerEvent){pointerStart={x:event.clientX,y:event.clientY};pointerDragged=false;}
@@ -159,8 +181,10 @@
     const focus=()=>{if(!settingsSeen)void refreshSources();};window.addEventListener('focus',focus);
     return()=>{stopSettings();stopModules();window.removeEventListener('focus',focus);};
   });
-  onDestroy(()=>{prefetch.clear();clearTimeout(debounce);libraryRequest?.abort();detailRequest?.abort();pageRequest?.abort();refreshRequest?.abort();observer?.disconnect();});
+  onDestroy(()=>{prefetch.clear();cancelScrollFrame();clearTimeout(debounce);libraryRequest?.abort();detailRequest?.abort();pageRequest?.abort();refreshRequest?.abort();observer?.disconnect();});
 </script>
+
+<svelte:window on:resize={trackVerticalPage}/>
 
 <div class="manga-surface" inert={!!selected}>
   <header>
@@ -191,7 +215,10 @@
   <div class="scrim" inert={!!chapter} on:click={event=>{if(event.target===event.currentTarget)void close();}}>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
     <div class="chapter-dialog" role="dialog" aria-modal="true" aria-label={selected.name+' chapters'} tabindex="-1" bind:this={dialog} on:keydown={event=>keys(event,dialog,()=>void close())}>
-      <button class="back" aria-label="Back to manga" on:click={close}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+      <div class="chapter-heading">
+        <button class="back" aria-label="Back to manga" on:click={close}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+        <h2 class="series-title" title={selected.name}>{selected.name}</h2>
+      </div>
       <div class="chapter-cover"><img alt={selected.name} src={mangaApi.page(selected,selected.cover,0,true)} on:load={e=>(e.currentTarget as HTMLImageElement).style.visibility=''} on:error={e=>(e.currentTarget as HTMLImageElement).style.visibility='hidden'}/></div>
       <div class="chapter-list" aria-busy={chapterLoading}>
         {#if chapterLoading}<p class="muted">Loading…</p>{/if}
@@ -203,9 +230,13 @@
 {/if}
 {#if selected&&chapter}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex a11y_no_noninteractive_element_interactions -->
-  <div class="reader" class:vertical={mode==='vertical'} bind:this={reader} role="dialog" aria-label="Manga reader" aria-modal="true" tabindex="-1" on:keydown={readerKeys} on:pointerdown={pointerDown} on:pointermove={pointerMove} on:click={readerClick}>
+  <div class="reader" class:vertical={mode==='vertical'} bind:this={reader} role="dialog" aria-label="Manga reader" aria-modal="true" tabindex="-1" on:keydown={readerKeys} on:pointerdown={pointerDown} on:pointermove={pointerMove} on:click={readerClick} on:scroll={trackVerticalPage}>
     <div class="reader-controls" class:hidden={!controlsVisible} inert={!controlsVisible} aria-hidden={!controlsVisible}>
-      <button class="back" aria-label="Back to chapters" on:click={back}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+      <div class="reader-heading">
+        <button class="back" aria-label="Back to chapters" on:click={back}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5-7 7 7 7"/></svg></button>
+        <span class="series-title" title={selected.name}>{selected.name}</span>
+      </div>
+      <span class="page-counter" role="status" aria-live="off" aria-label={pageCount?`Page ${(mode==='vertical'?verticalIndex:pageIndex)+1} of ${pageCount}`:'Page count unavailable'}>{pageCount?`${(mode==='vertical'?verticalIndex:pageIndex)+1} / ${pageCount}`:'— / —'}</span>
       <select aria-label="Reading layout" bind:value={mode} on:change={changeMode}><option value="paged">Paged</option><option value="vertical">Vertical scroll</option></select>
     </div>
     {#if readerError}<div class="reader-error" role="alert">{readerError}
@@ -241,29 +272,34 @@
  svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
  .empty{text-align:center;color:#9292a5;padding:40px}.more{display:block;margin:24px auto;padding:8px 12px}
  .scrim{position:fixed;inset:0;z-index:110;display:grid;place-items:center;background:#000b;padding:24px}
- .chapter-dialog{position:relative;display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:32px;width:min(720px,100%);max-height:80dvh;padding:72px 32px 32px;background:#19191f;border-radius:14px;color:#eee}
+ .chapter-dialog{position:relative;display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:32px;width:min(720px,100%);max-height:80dvh;padding:88px 32px 32px;background:#19191f;border-radius:14px;color:#eee}
  .chapter-cover{aspect-ratio:2/3;background:#24242d;border-radius:6px;overflow:hidden;align-self:start}
  .chapter-cover img{width:100%;height:100%;object-fit:cover}
  .chapter-list{overflow:auto;min-height:0}.chapter-list button{display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left;padding:16px 12px;border-radius:6px;font-size:14px;gap:16px;overflow-wrap:anywhere}
  .chapter-list button:hover{background:#ffffff0b}.chapter-list span{font-size:23px;color:#888}
- .back{display:grid;place-items:center;width:40px;height:40px;border:0;background:transparent;border-radius:999px;color:#eee;transition:width .18s ease,background-color .18s ease}
+ .back{display:grid;place-items:center;flex-shrink:0;width:40px;height:40px;border:0;background:transparent;border-radius:999px;color:#eee;transition:width .18s ease,background-color .18s ease}
  .back:hover,.back:focus-visible{width:56px;background:#33333b}
- .chapter-dialog>.back{position:absolute;top:16px;left:16px}
- .reader{position:fixed;inset:0;z-index:120;overflow:hidden;overscroll-behavior:contain;background:#080808;color:#eee}
+ .chapter-heading{position:absolute;top:16px;left:16px;right:16px}
+ .chapter-heading,.reader-heading{display:flex;align-items:center;gap:8px;min-width:0;padding:6px;border:1px solid #0006;border-radius:16px;background:#0009;backdrop-filter:blur(6px)}
+ .series-title{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;min-width:0;overflow:hidden;overflow-wrap:anywhere;margin:0;font-size:14px;font-weight:500;line-height:1.35}
+ .reader{--reader-error-top:82px;position:fixed;inset:0;z-index:120;overflow:hidden;overscroll-behavior:contain;background:#080808;color:#eee}
  .reader.vertical{overflow-y:auto}
- .reader-controls{position:fixed;top:16px;left:16px;z-index:1;display:flex;align-items:center;gap:8px;transition:opacity .18s ease,transform .18s ease}
+ .reader-controls{position:fixed;top:16px;left:16px;right:16px;z-index:1;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:12px;pointer-events:none;transition:opacity .18s ease,transform .18s ease}
+ .reader-heading{justify-self:start;max-width:100%;pointer-events:auto}
+ .page-counter{grid-column:2;min-width:64px;padding:9px 12px;border:1px solid #0006;border-radius:14px;background:#0009;backdrop-filter:blur(6px);text-align:center;white-space:nowrap;font-size:14px;font-variant-numeric:tabular-nums;pointer-events:auto}
  .reader-controls.hidden{opacity:0;transform:translateY(-10px);pointer-events:none}
- .reader-controls select{border:0;border-radius:20px;background:#26262d;color:#ddd;padding:9px 12px;font-size:13px;cursor:pointer}
+ .reader-controls.hidden>*{pointer-events:none}
+ .reader-controls select{grid-column:3;justify-self:end;min-width:0;max-width:100%;border:1px solid #0006;border-radius:20px;background:#0009;color:#eee;padding:9px 12px;font-size:13px;cursor:pointer;pointer-events:auto}
  .paged-page{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
  .paged-page img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;image-orientation:from-image}
  .page{height:100dvh;display:flex;justify-content:center;align-items:center;width:100%;margin:0 auto}
  .page img{width:100%;height:100%;object-fit:contain;image-orientation:from-image}
  .vertical .page{height:auto;width:min(100%,1000px);aspect-ratio:var(--ratio)}
- .reader-error{position:fixed;left:50%;top:70px;transform:translateX(-50%);background:#26262d;padding:10px 16px;border-radius:8px;z-index:1;font-size:14px}
+ .reader-error{position:fixed;left:50%;top:var(--reader-error-top);transform:translateX(-50%);max-width:calc(100% - 32px);overflow-wrap:anywhere;background:#26262d;padding:10px 16px;border-radius:8px;z-index:1;font-size:14px}
  .reader-error button{display:block;margin-top:8px;text-decoration:underline}
  .muted{color:#9292a5}.loading{padding:80px 24px}
  button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
  :global(html[data-motion='reduced']) .back,:global(html[data-motion='reduced']) .reader-controls{transition:none}
  @media(prefers-reduced-motion:reduce){.back,.reader-controls{transition:none}}
- @media(max-width:560px){.chapter-dialog{grid-template-columns:minmax(0,110px) minmax(0,1fr);gap:16px;padding:64px 16px 16px}.scrim{padding:12px}.manga-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}}
+ @media(max-width:560px){.chapter-dialog{grid-template-columns:minmax(0,110px) minmax(0,1fr);gap:16px;padding:88px 16px 16px}.scrim{padding:12px}.manga-grid{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}.reader{--reader-error-top:128px}.reader-controls{gap:8px}.reader-heading{grid-column:1/-1;grid-row:2;justify-self:stretch}.page-counter,.reader-controls select{grid-row:1}.reader-controls select{padding:9px 8px;font-size:12px}}
 </style>
