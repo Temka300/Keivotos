@@ -257,3 +257,208 @@ def test_playback_diagnostics_only_accept_completed_available_jobs(local,caplog)
     with connect() as db:sources.update_source(db,source.source_id,visible=False)
     with pytest.raises(HTTPException):router.playback_error(payload)
     with pytest.raises(HTTPException):router.playback_error(router.YouTubePlaybackFailure(id='missing',reason='network'))
+
+
+def test_retry_replaces_failed_card_and_repeated_click_returns_same_attempt(local):
+    source,media,connect=local
+    first=jobs.create(URL,source.source_id)
+    jobs.update(first['id'],status='failed',title='Retry fixture')
+    replacement=router.retry(first['id'])
+    again=router.retry(first['id'])
+    assert again['id']==replacement['id']
+    assert router.library('Retry fixture',0,60)['total']==1
+    assert [row['id'] for row in router.library('',0,60)['items']]==[replacement['id']]
+    assert jobs.get(first['id'])['status']=='failed'
+
+
+def test_registration_failure_keeps_published_path_for_local_retry(local,monkeypatch):
+    source,media,connect=local
+    first=jobs.create(URL,source.source_id)
+    jobs.update(first['id'],status='downloading')
+    stage=media/'.keivotos/youtube'/first['id'];stage.mkdir(parents=True)
+    (stage/'video.mp4').write_bytes(b'preserved completed output')
+    with monkeypatch.context() as patch:
+        patch.setattr(jobs.index,'scan_source',lambda *a,**kw: (_ for _ in ()).throw(RuntimeError('fixture index failure')))
+        with pytest.raises(RuntimeError,match='fixture index failure'):
+            jobs.publish(first,stage,{'path':'video.mp4','title':'Published fixture'})
+    saved=jobs.get(first['id'])
+    assert saved['path']==f"YouTube/{first['id']}/video.mp4"
+    assert saved['failure_phase']=='integration'
+    assert (media/saved['path']).read_bytes()==b'preserved completed output'
+
+
+def test_additive_retry_migration_preserves_legacy_records_and_is_repeatable(tmp_path):
+    original=SCHEMA.replace(" retry_of TEXT NOT NULL DEFAULT '', superseded_by TEXT NOT NULL DEFAULT '',\n failure_phase TEXT NOT NULL DEFAULT '',\n",'')
+    path=tmp_path/'legacy.sqlite'
+    with sqlite3.connect(path) as db:
+        db.executescript(original)
+        db.execute("INSERT INTO youtube_downloads(id,url,source_id,root,video,audio,title,status,path) VALUES('old',?,'source','root','best','best','Saved','failed','YouTube/old/video.mp4')",(URL,))
+        before=db.execute('SELECT * FROM youtube_downloads').fetchone()
+        _publish(db);_publish(db)
+        names=[column[0] for column in db.execute('SELECT * FROM youtube_downloads').description]
+        after=dict(zip(names,db.execute('SELECT * FROM youtube_downloads').fetchone()))
+        assert tuple(after[name] for name in names if name not in ('retry_of','superseded_by','failure_phase'))==before
+        assert all(after[name]=='' for name in ('retry_of','superseded_by','failure_phase'))
+
+
+def test_concurrent_retries_search_pagination_and_restart_keep_one_current_attempt(local):
+    from concurrent.futures import ThreadPoolExecutor
+    source,media,connect=local
+    first=jobs.create(URL,source.source_id);jobs.update(first['id'],status='failed',title='100% retry fixture')
+    stage=media/'.keivotos/youtube'/first['id'];stage.mkdir(parents=True)
+    partial=stage/'unfinished.part';partial.write_bytes(b'preserved')
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        replacements=list(pool.map(lambda _:router.retry(first['id']),range(12)))
+    second=replacements[0]
+    assert {row['id'] for row in replacements}=={second['id']}
+    assert second['retry_of']==first['id'] and jobs.get(first['id'])['superseded_by']==second['id']
+    jobs.recover()  # Reopen fresh DB connections; never automatically resume.
+    assert jobs.get(second['id'])['status']=='interrupted'
+    third=router.retry(second['id'])
+    jobs.update(third['id'],status='complete')
+    assert router.retry(first['id'])['id']==third['id']
+    assert router.retry(second['id'])['id']==third['id']
+    with connect() as db:
+        for n in range(125):
+            db.execute("INSERT INTO youtube_downloads(id,url,source_id,root,video,audio,title,status) VALUES(?,?,?,?,?,?,?,'complete')",
+                       (f'fixture-{n:03}',URL,source.source_id,str(media),'best','best',f'Fixture {n}'))
+        db.commit()
+    rows=[row for offset in (0,60,120) for row in router.library('',offset,60)['items']]
+    assert len(rows)==len({row['id'] for row in rows})==126
+    assert not {first['id'],second['id']} & {row['id'] for row in rows}
+    assert router.library('%',0,60)['total']==1
+    assert router.library('%',0,60)['items'][0]['id']==third['id']
+    assert partial.read_bytes()==b'preserved'
+
+
+@pytest.mark.parametrize('reason',['tools','queue','source','running'])
+def test_rejected_retry_keeps_original_visible_and_unlinked(local,monkeypatch,reason):
+    from fastapi import HTTPException
+    source,media,connect=local
+    first=jobs.create(URL,source.source_id);jobs.update(first['id'],status='failed',title='Keep me')
+    if reason=='tools':monkeypatch.setattr(jobs,'dependencies',lambda:{'ready':False,'missing':['fixture']})
+    elif reason=='queue':
+        with jobs._lock:jobs._pending.extend(['preserved-pending']*20)
+    elif reason=='source':
+        with connect() as db:sources.update_source(db,source.source_id,visible=False)
+    else:jobs.create(URL,source.source_id)
+    with pytest.raises(HTTPException):router.retry(first['id'])
+    assert jobs.get(first['id'])['superseded_by']==''
+    assert any(row['id']==first['id'] for row in router.library('',0,60)['items'])
+    assert not list(media.iterdir())
+
+
+def run_until_terminal(job_id):
+    async def run():
+        task=asyncio.create_task(jobs.run_queue())
+        try:
+            for _ in range(250):
+                if jobs.get(job_id)['status'] in ('complete','failed'):return jobs.get(job_id)
+                await asyncio.sleep(.02)
+            pytest.fail('Local job did not finish')
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):await task
+    return asyncio.run(run())
+
+
+@pytest.mark.parametrize('failure',['index','annotation'])
+def test_published_file_registration_retry_never_runs_download_and_preserves_notes(local,monkeypatch,failure):
+    source,media,connect=local
+    first=jobs.create(URL,source.source_id)
+    async def publish_fixture(job):
+        stage=media/'.keivotos/youtube'/job['id'];stage.mkdir(parents=True)
+        (stage/'video.mp4').write_bytes(b'preserved published bytes')
+        (stage/'cover.png').write_bytes(b'preserved cover')
+        jobs.publish(job,stage,{'path':'video.mp4','thumbnail':'cover.png','title':'Published fixture'})
+    monkeypatch.setattr(jobs,'execute',publish_fixture)
+    with monkeypatch.context() as patch:
+        target=jobs.index if failure=='index' else jobs.annotations
+        symbol='scan_source' if failure=='index' else 'upsert_annotation'
+        def fail(*args,**kwargs):raise RuntimeError('fixture registration failure')
+        patch.setattr(target,symbol,fail)
+        saved=run_until_terminal(first['id'])
+    assert saved['status']=='failed' and saved['failure_phase']=='integration'
+    assert 'Video saved' in saved['error']
+    media_path=media/saved['path'];before={p.relative_to(media):p.read_bytes() for p in media.rglob('*') if p.is_file()}
+    with index.open_index(jobs.config.FILES_DB_PATH) as db:
+        index.scan_source(db,source.source_id,media)
+        digest=jobs.hashing.ensure_index_hash(db,media_path)
+    with connect() as db:
+        annotations.ensure_annotations_schema(db)
+        note=annotations.upsert_annotation(db,subject_kind='file',source_id=source.source_id,relative_path=saved['path'],content_hash=digest)
+        db.execute('INSERT INTO files_annotation_links(annotation_id,url,label,kind,position) VALUES(?,?,?,?,?)',
+                   (note.id,'https://example.org/preserved','Existing','source',0));db.commit()
+    monkeypatch.setattr(jobs,'execute',lambda *_:pytest.fail('Registration retry started a downloader'))
+    monkeypatch.setattr(jobs,'dependencies',lambda:pytest.fail('Registration retry requested download tools'))
+    second=router.retry(first['id']);assert second['path']==saved['path']
+    # Restart between acceptance and processing, then explicitly retry the interrupted repair.
+    jobs.recover();third=router.retry(second['id'])
+    complete=run_until_terminal(third['id'])
+    assert complete['status']=='complete' and complete['failure_phase']==''
+    assert complete['path']==saved['path']
+    assert {p.relative_to(media):p.read_bytes() for p in media.rglob('*') if p.is_file()}==before
+    assert not (media/'YouTube'/second['id']).exists() and not (media/'YouTube'/third['id']).exists()
+    with connect() as db:
+        links=db.execute('SELECT url FROM files_annotation_links WHERE annotation_id=? ORDER BY position',(note.id,)).fetchall()
+        assert [row['url'] for row in links]==['https://example.org/preserved',URL]
+    assert router.library('Published',0,60)['total']==1
+
+
+def test_legacy_published_output_reuses_only_the_original_folder(local,monkeypatch):
+    source,media,connect=local
+    first=jobs.create(URL,source.source_id);jobs.update(first['id'],status='failed',title='Legacy fixture')
+    folder=media/'YouTube'/first['id'];folder.mkdir(parents=True)
+    (folder/'video.mp4').write_bytes(b'legacy completed bytes')
+    (folder/'cover.webp').write_bytes(b'legacy cover')
+    monkeypatch.setattr(jobs,'execute',lambda *_:pytest.fail('Legacy published output was downloaded again'))
+    second=router.retry(first['id'])
+    assert second['path']==f"YouTube/{first['id']}/video.mp4"
+    assert run_until_terminal(second['id'])['status']=='complete'
+    assert jobs.get(first['id'])['path']=='' and jobs.get(first['id'])['status']=='failed'
+    assert len(list((media/'YouTube').iterdir()))==1
+
+
+@pytest.mark.parametrize('hazard',['ambiguous','empty','unsupported','symlink','nested','missing','foreign','changed-root'])
+def test_unsafe_published_output_refuses_retry_without_hiding_or_deleting(local,tmp_path,hazard):
+    from fastapi import HTTPException
+    source,media,connect=local
+    first=jobs.create(URL,source.source_id);jobs.update(first['id'],status='failed',title='Keep unsafe evidence')
+    folder=media/'YouTube'/first['id'];folder.mkdir(parents=True)
+    path=folder/'video.mp4';path.write_bytes(b'preserved media')
+    if hazard=='ambiguous':(folder/'another.mp4').write_bytes(b'also preserved')
+    elif hazard=='empty':path.write_bytes(b'')
+    elif hazard=='unsupported':path.rename(folder/'original.bin')
+    elif hazard=='symlink':
+        external=tmp_path/'external.mp4';external.write_bytes(b'preserved external')
+        path.unlink();path.symlink_to(external)
+    elif hazard=='nested':
+        with connect() as db:sources.register_source(db,folder)
+    elif hazard=='missing':jobs.update(first['id'],path=f"YouTube/{first['id']}/missing.mp4",failure_phase='integration')
+    elif hazard=='foreign':jobs.update(first['id'],path='YouTube/other-job/video.mp4',failure_phase='integration')
+    elif hazard=='changed-root':
+        elsewhere=tmp_path/'elsewhere';elsewhere.mkdir()
+        with connect() as db:db.execute('UPDATE files_sources SET path=? WHERE source_id=?',(str(elsewhere),source.source_id));db.commit()
+    before={p.relative_to(media):p.read_bytes() for p in media.rglob('*') if p.is_file()}
+    with pytest.raises(HTTPException):router.retry(first['id'])
+    assert jobs.get(first['id'])['superseded_by']==''
+    assert router.library('',0,60)['items'][0]['id']==first['id']
+    assert {p.relative_to(media):p.read_bytes() for p in media.rglob('*') if p.is_file()}==before
+
+
+def test_failed_retry_is_the_only_retryable_card_then_success_replaces_it(local,monkeypatch):
+    source,media,connect=local
+    first=jobs.create(URL,source.source_id);jobs.update(first['id'],status='failed',title='Download retry fixture')
+    async def fail(job):raise RuntimeError('fixture media download failure')
+    monkeypatch.setattr(jobs,'execute',fail)
+    second=router.retry(first['id']);failed=run_until_terminal(second['id'])
+    assert failed['status']=='failed' and failed['failure_phase']=='download'
+    assert [row['id'] for row in router.library('',0,60)['items']]==[second['id']]
+    async def success(job):
+        stage=media/'.keivotos/youtube'/job['id'];stage.mkdir(parents=True)
+        (stage/'video.mp4').write_bytes(b'completed on third attempt')
+        jobs.publish(job,stage,{'path':'video.mp4','title':'Download retry fixture'})
+    monkeypatch.setattr(jobs,'execute',success)
+    third=router.retry(second['id']);assert run_until_terminal(third['id'])['status']=='complete'
+    assert [row['id'] for row in router.library('',0,60)['items']]==[third['id']]
+    assert jobs.get(first['id'])['status']==jobs.get(second['id'])['status']=='failed'

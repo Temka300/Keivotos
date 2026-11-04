@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS youtube_downloads (
  title TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'queued',
  progress REAL NOT NULL DEFAULT 0, path TEXT NOT NULL DEFAULT '',
  thumbnail TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '',
+ retry_of TEXT NOT NULL DEFAULT '', superseded_by TEXT NOT NULL DEFAULT '',
+ failure_phase TEXT NOT NULL DEFAULT '',
  created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 '''
@@ -29,6 +31,11 @@ def _tasks():
 
 def _publish(connection):
     connection.executescript(SCHEMA)
+    columns={row[0] if not isinstance(row,dict) else row['name']
+             for row in connection.execute('SELECT name FROM pragma_table_info(\'youtube_downloads\')')}
+    for name in ('retry_of','superseded_by','failure_phase'):
+        if name not in columns:
+            connection.execute(f"ALTER TABLE youtube_downloads ADD COLUMN {name} TEXT NOT NULL DEFAULT ''")
     connection.commit()
 
 

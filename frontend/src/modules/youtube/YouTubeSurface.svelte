@@ -12,6 +12,7 @@
  let selected:Download|null=null,returnFocus:HTMLElement|null=null,navigating=false,navigationNotice='';
  let locationMenu:{x:number;y:number;label:string;sourceId:string|null;relativePath:string|null;anchor:HTMLElement;unavailableReason:string}|null=null;
  let locationMenuSerial=0;
+ let changing=new Set<string>();
  function openLocation(event:MouseEvent|KeyboardEvent,item:Download){
   event.preventDefault();event.stopPropagation();
   const current=event.currentTarget as HTMLElement;
@@ -69,7 +70,20 @@
  async function engine(){try{status=await youtubeApi.status();}catch(e){error=String(e);}}
  async function load(more=false,refresh=false){
    request?.abort();const current=new AbortController();request=current;loading=true;
-   try{const result=await youtubeApi.library(searchQuery,more?items.length:0,current.signal);if(!alive||current.signal.aborted)return;items=more?[...items,...result.items]:refresh?[...result.items,...items.slice(60).filter(item=>item.status!=='cancelled')]:result.items;total=result.total;}
+   const searched=searchQuery,target=refresh?Math.max(60,items.length):60;
+   try{
+    let offset=more?items.length:0,rows:Download[]=[],count=0;
+    do{
+     const result=await youtubeApi.library(searched,offset,current.signal,Math.min(120,target-rows.length));
+     if(!alive||current.signal.aborted)return;
+     rows.push(...result.items);count=result.total;offset+=result.items.length;
+     if(!result.items.length)break;
+    }while(!more&&refresh&&rows.length<target&&offset<count);
+    // Refresh the entire loaded prefix: retaining an old tail revives failures
+    // that another retry/cancellation has already removed from the server.
+    items=[...new Map((more?[...items,...rows]:rows).filter(row=>row.status!=='cancelled'&&!row.superseded_by).map(row=>[row.id,row])).values()];
+    total=count;
+   }
    catch(e){if(!current.signal.aborted&&alive)error=e instanceof Error?e.message:'Could not load downloads.';}
    finally{if(current===request)loading=false;}
  }
@@ -81,8 +95,21 @@
   finally{busy=false;}
  }
  async function action(item:Download,retry=false){
-  error='';try{const updated=await(retry?youtubeApi.retry(item.id):youtubeApi.cancel(item.id));items=retry?[updated,...items]:items.filter(row=>row.id!==updated.id);if(!retry)total=Math.max(0,total-1);await load();}
-  catch(e){error=e instanceof Error?e.message:'Could not update download.';}
+  if(changing.has(item.id))return;
+  changing=new Set(changing).add(item.id);error='';
+  try{
+   const updated=await(retry?youtubeApi.retry(item.id):youtubeApi.cancel(item.id));
+   if(!alive)return;
+   request?.abort();
+   const removed=items.filter(row=>row.id===item.id||row.id===updated.id).length;
+   items=items.filter(row=>row.id!==item.id&&row.id!==updated.id);
+   const visible=retry&&updated.status!=='cancelled'&&!updated.superseded_by&&updated.title.toLowerCase().includes(searchQuery.toLowerCase());
+   if(visible)items=[updated,...items];
+   total=Math.max(0,total-removed+(visible?1:0));
+   await load(false,true);
+  }
+  catch(e){if(alive)error=e instanceof Error?e.message:'Could not update download.';}
+  finally{changing=new Set([...changing].filter(id=>id!==item.id));}
  }
  async function poll(){if(!selected&&items.some(active))await load(false,true);if(alive)timer=setTimeout(poll,1000);}
  onMount(()=>{motion=document.documentElement.dataset.motion==='reduced'||window.matchMedia('(prefers-reduced-motion: reduce)').matches?0:200;void engine();void load();timer=setTimeout(poll,1000);});
@@ -117,8 +144,8 @@
        </button>
        {/if}
       {/if}
-      {#if active(item)}<button class="job-action" aria-label={`Cancel ${item.title||'download'}`} title="Cancel download" on:click={()=>action(item)}>×</button>
-      {:else if item.status!=='complete'}<button class="job-action" aria-label={`Retry ${item.title||'download'}`} title="Retry download" on:click={()=>action(item,true)}>↻</button>{/if}
+      {#if active(item)}<button class="job-action" disabled={changing.has(item.id)} aria-label={`Cancel ${item.title||'download'}`} title="Cancel download" on:click={()=>action(item)}>×</button>
+      {:else if item.status!=='complete'}<button class="job-action" disabled={changing.has(item.id)} aria-label={`Retry ${item.title||'download'}`} title="Retry download" on:click={()=>action(item,true)}>↻</button>{/if}
      </div>
      {#if active(item)}<div class="progress" role="progressbar" aria-label={item.title||'Download'} aria-valuenow={Math.round(item.progress)} aria-valuemin="0" aria-valuemax="100"><div class:pending={item.status==='queued'||item.status==='merging'} style={`width:${Math.max(2,item.progress)}%`}></div></div>{/if}
      <div class="download-title" title={item.title||'YouTube video'}>{item.title||'YouTube video'}</div>

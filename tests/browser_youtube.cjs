@@ -9,6 +9,15 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
  await context.tracing.start({screenshots:true,snapshots:true});
  const check=x=>{report.checks.push(x);console.log('PASS: '+x);};
  async function api(url,method='GET',body){return page.evaluate(async({url,method,body})=>{const r=await fetch(url,{method,headers:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()};},{url,method,body});}
+ async function libraryRow(predicate){
+  const deadline=Date.now()+15000;
+  while(Date.now()<deadline){
+   const response=await api('/api/youtube/library');assert.equal(response.status,200);
+   const row=response.data.items.find(predicate);if(row)return row;
+   await page.waitForTimeout(100);
+  }
+  throw new Error('Expected YouTube job state was not reached');
+ }
  const input=page.getByLabel('Search downloads or paste a YouTube URL');
  const url='https://www.youtube.com/watch?v=abcdefghijk';
  try{
@@ -76,7 +85,7 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await input.fill('https://youtu.be/lmnopqrstuv');await page.waitForTimeout(250);
   await page.screenshot({path:path.join(config.output,'youtube-downloading.png')});
   check('URL controls animate open and close; qualities default to Best; explicit Download creates a progress card');
-  await page.waitForFunction(async()=>{const data=await(await fetch('/api/youtube/library')).json();return data.items.some(x=>x.status==='complete');});
+  await libraryRow(x=>x.status==='complete');
   await page.waitForTimeout(1100);await input.fill('');await page.waitForTimeout(300);
   await page.waitForFunction(()=>document.querySelector('.thumbnail img')?.naturalWidth>0);
   await page.screenshot({path:path.join(config.output,'youtube-library.png')});
@@ -178,7 +187,7 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   assert.equal((await api('/api/video/library')).status,409);
   check('YouTube uses shared playback, seek, fullscreen, hover Back and focus return with Video disabled; no new tab');
   const second=(await api('/api/youtube/downloads','POST',{url:'https://youtu.be/lmnopqrstuv',video:'best',audio:'best'})).data;
-  await page.waitForFunction(async id=>{const data=await(await fetch('/api/youtube/library')).json();return data.items.some(x=>x.id===id&&x.status==='complete');},second.id);
+  await libraryRow(x=>x.id===second.id&&x.status==='complete');
   await page.reload();await input.waitFor();
   const tiles=page.locator('.play-download');await page.waitForFunction(()=>document.querySelectorAll('.play-download').length===2);
   await tiles.first().click();await page.waitForFunction(()=>document.querySelector('video')?.currentTime>0.1);
@@ -212,6 +221,89 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await api('/api/suite/modules/youtube/enable','POST');
   const restored=(await api('/api/youtube/library')).data.items;assert(restored.some(x=>x.status==='interrupted'));assert(restored.some(x=>x.status==='complete'));
   check('cancelled cards stay hidden after refresh and reload; retry remains possible, disable drains the queue and preserves completed media');
+
+  async function terminal(id,status){
+   return libraryRow(x=>x.id===id&&x.status===status);
+  }
+  async function replacementOf(id){
+   return libraryRow(x=>x.retry_of===id);
+  }
+  const failed=(await api('/api/youtube/downloads','POST',{url:'https://youtu.be/retryfailed'})).data;
+  await terminal(failed.id,'failed');await page.reload();await input.waitFor();
+  const originalCard=page.locator(`[data-job-id="${failed.id}"]`),retryButton=originalCard.getByRole('button',{name:/^Retry /});
+  await retryButton.waitFor();let retryCalls=0;
+  const retryPattern=`**/api/youtube/downloads/${failed.id}/retry`;
+  await page.route(retryPattern,async route=>{
+   retryCalls++;
+   if(retryCalls===1)return route.fulfill({status:400,json:{detail:'Fixture retry refused'}});
+   const response=await route.fetch();await page.waitForTimeout(350);await route.fulfill({response});
+  });
+  await retryButton.click();await page.getByRole('alert').filter({hasText:'Fixture retry refused'}).waitFor();
+  assert(await retryButton.isEnabled());assert.equal((await api('/api/youtube/library')).data.items.some(x=>x.id===failed.id),true);
+  await retryButton.evaluate(n=>{n.click();n.click();});
+  await page.waitForFunction(id=>document.querySelector(`[data-job-id="${id}"] button.job-action`)?.disabled,failed.id);
+  await originalCard.waitFor({state:'detached'});assert.equal(retryCalls,2);await page.unroute(retryPattern);
+  const replacement=await replacementOf(failed.id);
+  await terminal(replacement.id,'failed');
+  await page.locator(`[data-job-id="${replacement.id}"]`).getByRole('button',{name:/^Retry /}).click();
+  const successful=await replacementOf(replacement.id);
+  await terminal(successful.id,'complete');await page.reload();await input.fill('Retry failure fixture');
+  await page.waitForFunction(()=>document.querySelectorAll('.download-grid article').length===1&&!!document.querySelector('.play-download'));
+  assert.equal(await page.locator(`[data-job-id="${failed.id}"], [data-job-id="${replacement.id}"]`).count(),0);
+  for(const id of [failed.id,replacement.id])assert.equal(fs.readFileSync(path.join(config.mediaLocal,'.keivotos','youtube',id,'unfinished.part'),'utf8'),'preserved failed attempt');
+  await page.screenshot({path:path.join(config.output,'retry-success.png')});
+  check('rejected Retry retains its card; rapid double click submits once; failed replacement stays retryable; successful replacement alone survives reload/search; partial bytes retained');
+
+  const repair=(await api('/api/youtube/downloads','POST',{url:'https://youtu.be/repairvideo'})).data;
+  const saved=await terminal(repair.id,'failed');assert.equal(saved.failure_phase,'integration');assert(saved.path&&saved.error.includes('Video saved'));
+  const publishedFile=path.join(config.mediaLocal,...saved.path.split('/')),publishedBytes=fs.readFileSync(publishedFile);
+  const foldersBefore=fs.readdirSync(path.join(config.mediaLocal,'YouTube')).sort();
+  // Decode the retained MP4 before retrying: this is a working video whose origin registration failed.
+  await page.evaluate(async item=>{
+   const video=document.createElement('video'),url=new URL('/api/files/file',location.origin);
+   url.searchParams.set('source_id',item.source_id);url.searchParams.set('path',item.path);video.src=url.toString();video.muted=true;
+   document.body.append(video);try{await video.play();await new Promise(resolve=>setTimeout(resolve,150));if(video.currentTime<=0)throw new Error('Saved fixture did not play');}
+   finally{video.pause();video.removeAttribute('src');video.load();video.remove();}
+  },saved);
+  await page.reload();await input.fill('Registration recovery fixture');
+  const repairCard=page.locator(`[data-job-id="${repair.id}"]`);await repairCard.getByRole('button',{name:/^Retry /}).click();
+  const repaired=await replacementOf(repair.id);
+  const registered=await terminal(repaired.id,'complete');assert.equal(registered.path,saved.path);
+  assert.deepEqual(fs.readFileSync(publishedFile),publishedBytes);assert.deepEqual(fs.readdirSync(path.join(config.mediaLocal,'YouTube')).sort(),foldersBefore);
+  await repairCard.waitFor({state:'detached'});await page.locator(`[data-job-id="${repaired.id}"] .play-download`).click();
+  await page.waitForFunction(()=>document.querySelector('video')?.currentTime>0.1);await page.keyboard.press('Escape');
+  await page.reload();await input.fill('Registration recovery fixture');
+  await page.waitForFunction(()=>document.querySelectorAll('.download-grid article').length===1&&!!document.querySelector('.play-download'));
+  check('playable published MP4 with annotation failure is registered by Retry at the identical path/bytes, with no new output folder; completed playback/reload works');
+
+  const stale=(await api('/api/youtube/downloads','POST',{url:'https://youtu.be/stalefailed'})).data;
+  const staleItem=await terminal(stale.id,'failed');let accepted=null,holdNext=false,held=false,release;
+  const releaseStale=new Promise(resolve=>release=resolve);
+  const mockRows=Array.from({length:119},(_,i)=>({...staleItem,id:`pagination-${i}`,title:`Pagination fixture ${i}`,status:i===0?'downloading':'complete',path:'',thumbnail:'',error:'',retry_of:'',superseded_by:''}));
+  const libraryPattern='**/api/youtube/library?*';
+  await page.route(libraryPattern,async route=>{
+   const request=new URL(route.request().url());
+   if(request.searchParams.get('q')!=='Pagination fixture')return route.continue();
+   const rows=[...mockRows,accepted||staleItem],offset=Number(request.searchParams.get('offset')),limit=Number(request.searchParams.get('limit')||60);
+   const snapshot={items:rows.slice(offset,offset+limit),total:rows.length};
+   if(holdNext){holdNext=false;held=true;await releaseStale;}
+   await route.fulfill({json:snapshot});
+  });
+  await input.fill('Pagination fixture');await page.waitForFunction(()=>document.querySelectorAll('.download-grid article').length===60);
+  await page.getByRole('button',{name:'Load more',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('.download-grid article').length===120);
+  holdNext=true;await page.waitForFunction(()=>document.querySelector('.download-grid')?.getAttribute('aria-busy')==='true');
+  for(let i=0;i<50&&!held;i++)await page.waitForTimeout(20);assert(held);
+  const staleRetryPattern=`**/api/youtube/downloads/${stale.id}/retry`;
+  await page.route(staleRetryPattern,async route=>{const response=await route.fetch();accepted=await response.json();await route.fulfill({response});});
+  await page.locator(`[data-job-id="${stale.id}"]`).getByRole('button',{name:/^Retry /}).click();
+  await page.waitForFunction(id=>!document.querySelector(`[data-job-id="${id}"]`)&&document.querySelectorAll('.download-grid article').length===120,stale.id);
+  release();await page.waitForTimeout(1250);
+  assert.equal(await page.locator(`[data-job-id="${stale.id}"]`).count(),0);assert.equal(await page.locator(`[data-job-id="${accepted.id}"]`).count(),1);
+  await page.reload();await input.fill('Pagination fixture');await page.waitForFunction(()=>document.querySelectorAll('.download-grid article').length===60);
+  await page.getByRole('button',{name:'Load more',exact:true}).click();await page.locator(`[data-job-id="${accepted.id}"]`).waitFor();
+  assert.equal(await page.locator(`[data-job-id="${stale.id}"]`).count(),0);
+  await page.unroute(libraryPattern);await page.unroute(staleRetryPattern);await input.fill('');
+  check('timed delayed old poll cannot revive a retried second-page card; 120 loaded rows remain unique and reload/pagination keeps the replacement');
   await page.reload();await page.getByRole('button',{name:'Open Keivotos menu'}).click();await page.getByRole('button',{name:'Settings',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Settings',exact:true});
   await page.setViewportSize({width:1440,height:600});
