@@ -34,7 +34,7 @@ const report = {checks: [], errors: []};
  const section = name => dialog.getByRole('navigation',{name:'Settings sections'}).getByRole('button',{name,exact:true}).first();
  const check = text => { report.checks.push(text); console.log('PASS: '+text); };
  async function openModules() {
-  await page.getByRole('button',{name:'Open Keivotos menu',exact:true}).click();
+  if(!await page.locator('.app-drawer').count())await page.getByRole('button',{name:'Open Keivotos menu',exact:true}).click();
   await page.getByRole('button', {name:'Settings',exact:true}).click();
   await page.getByRole('navigation', {name:'Settings sections'}).getByRole('button', {name:'Modules',exact:true}).click();
   await dialog.waitFor();
@@ -134,13 +134,13 @@ const report = {checks: [], errors: []};
   await page.waitForFunction(()=>document.querySelector('[data-module-id="ost"] [role="switch"]')?.getAttribute('aria-checked')==='true');
   await page.getByRole('button',{name:'Close settings',exact:true}).click();
   await page.locator('.app-drawer').getByRole('button',{name:'OST',exact:true}).click();
-  await page.getByRole('button',{name:'Add OST folders in Settings'}).waitFor();
+  await page.getByText('Assign folders to the OST role in Settings → Files → Folders.',{exact:true}).waitFor();
   check('OST is optional, experimental and disabled by default; disabled routes/assignment are guarded and Advanced gates its switch');
 
   const registered=await ostRequest('/api/suite/folders/apply','POST',{folders:[{path:config.media,display_name:'OST discovery fixture',role:'files'}]});
   assert.equal(registered.status,200,JSON.stringify(registered));
   const ostSource=registered.data.sources.find(source=>source.display_name==='OST discovery fixture');
-  await page.getByRole('button',{name:'Add OST folders in Settings'}).click();
+  await openModules();await section('Folders').click();
   await dialog.getByRole('button',{name:'Manage folders…',exact:true}).click();
   const manager=page.getByRole('dialog',{name:'Manage folders',exact:true});
   const displayNames=manager.getByRole('textbox',{name:'Folder display name'});
@@ -168,7 +168,7 @@ const report = {checks: [], errors: []};
   await page.screenshot({path:path.join(config.output,'ost-sources.png')});
   check('native folder manager offers OST, assignment refreshes its surface, paginated natural discovery and shared audio ranges/storage work');
 
-  await page.getByRole('button',{name:'Manage OST folders'}).click();
+  await openModules();
   await section('Advanced').click();await page.getByRole('switch',{name:'Show experimental modules',exact:true}).click();
   await page.waitForFunction(async()=>!(await(await fetch('/api/diagnostics')).json()).show_experimental_modules);
   await section('Modules').click();assert.equal(await ostSwitch.count(),1);

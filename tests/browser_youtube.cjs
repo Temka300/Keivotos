@@ -152,6 +152,18 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   await page.getByLabel('Seek',{exact:true}).fill('1');
   await page.getByLabel('Seek',{exact:true}).dispatchEvent('input');
   await page.waitForFunction(()=>document.querySelector('video').currentTime>=0.9);
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Playback time"]')?.textContent==='0:01 / 0:04');
+  for(const width of [1440,360]){
+   await page.setViewportSize({width,height:1000});
+   const timerBox=await page.getByLabel('Playback time',{exact:true}).boundingBox(),volumeBox=await page.locator('.volume-control').boundingBox();
+   assert(timerBox.x>=volumeBox.x+volumeBox.width&&timerBox.x-volumeBox.x-volumeBox.width<16);
+   assert(Math.abs(timerBox.y+timerBox.height/2-volumeBox.y-volumeBox.height/2)<2);
+   assert(timerBox.x+timerBox.width<=width&&(await volume.boundingBox()).width>=40);
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   await page.screenshot({path:path.join(config.output,`youtube-playback-time-${width}.png`)});
+  }
+  await page.setViewportSize({width:1440,height:1000});
+  check('YouTube uses the same elapsed/duration display right of volume, updates after seeking and fits desktop/compact controls');
   assert(await page.getByRole('button',{name:'Previous video',exact:true}).isDisabled());
   assert(await page.getByRole('button',{name:'Next video',exact:true}).isDisabled());
   await page.getByRole('button',{name:'Fullscreen',exact:true}).click();

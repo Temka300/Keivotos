@@ -11,7 +11,7 @@ export const hideControlsSeconds = persistedWritable(
   normalizeHideControlsSeconds,
 );
 
-export type PlaybackOwner = 'video' | 'youtube';
+export type PlaybackOwner = 'video' | 'youtube' | 'ost';
 export type LoopMode = 'off' | 'all' | 'one';
 export function normalizeLoopMode(value: unknown): LoopMode {
   return value === 'all' || value === 'one' ? value : 'off';
@@ -20,6 +20,7 @@ export function normalizeLoopMode(value: unknown): LoopMode {
 const loopModes = {
   video: persistedWritable(persistentStorageKey('video-loop-mode'), 'off' as LoopMode, normalizeLoopMode),
   youtube: persistedWritable(persistentStorageKey('youtube-loop-mode'), 'off' as LoopMode, normalizeLoopMode),
+  ost: persistedWritable(persistentStorageKey('ost-loop-mode'), 'off' as LoopMode, normalizeLoopMode),
 };
 export function loopModeFor(owner: PlaybackOwner) { return loopModes[owner]; }
 
@@ -27,6 +28,7 @@ function normalizeAutoNext(value: unknown): boolean { return value === true; }
 const autoNextModes = {
   video: persistedWritable(persistentStorageKey('video-auto-next'), false, normalizeAutoNext),
   youtube: persistedWritable(persistentStorageKey('youtube-auto-next'), false, normalizeAutoNext),
+  ost: persistedWritable(persistentStorageKey('ost-auto-next'), true, normalizeAutoNext),
 };
 export function autoNextFor(owner: PlaybackOwner) { return autoNextModes[owner]; }
 
@@ -37,5 +39,6 @@ export function normalizeVolumePercent(value: unknown): number {
 const volumes = {
   video: persistedWritable(persistentStorageKey('video-volume-percent'), 100, normalizeVolumePercent),
   youtube: persistedWritable(persistentStorageKey('youtube-volume-percent'), 100, normalizeVolumePercent),
+  ost: persistedWritable(persistentStorageKey('ost-volume-percent'), 100, normalizeVolumePercent),
 };
 export function volumeFor(owner: PlaybackOwner) { return volumes[owner]; }

@@ -169,6 +169,34 @@ const config=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   assert.equal(await page.locator('.volume-icon').count(),1);
   await page.setViewportSize({width:1440,height:1000});
   check('Video volume maps 0/1/50/100 percent, follows native changes and keeps a usable narrow keyboard slider');
+  const time=page.getByLabel('Playback time',{exact:true});
+  await video.evaluate(node=>node.pause());
+  await page.getByLabel('Seek',{exact:true}).fill('2');await page.getByLabel('Seek',{exact:true}).dispatchEvent('input');
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Playback time"]')?.textContent==='0:02 / 0:04');
+  await video.evaluate(node=>{Object.defineProperty(node,'duration',{configurable:true,get:()=>1440});node.dispatchEvent(new Event('durationchange'));});
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Playback time"]')?.textContent==='0:02 / 24:00');
+  await page.screenshot({path:path.join(config.output,'player-playback-time-1440.png')});
+  await video.evaluate(node=>{Object.defineProperty(node,'duration',{configurable:true,get:()=>7200});Object.defineProperty(node,'currentTime',{configurable:true,get:()=>3661});node.dispatchEvent(new Event('durationchange'));node.dispatchEvent(new Event('timeupdate'));});
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Playback time"]')?.textContent==='1:01:01 / 2:00:00');
+  for(const width of [1440,720,360]){
+   await page.setViewportSize({width,height:1000});
+   const timerBox=await time.boundingBox(),volumeBox=await page.locator('.volume-control').boundingBox();
+   assert(timerBox.x>=volumeBox.x+volumeBox.width&&timerBox.x-volumeBox.x-volumeBox.width<16);
+   assert(Math.abs(timerBox.y+timerBox.height/2-volumeBox.y-volumeBox.height/2)<2);
+   assert(timerBox.x+timerBox.width<=width);
+   assert((await volumeInput.boundingBox()).width>=40);
+   for(const label of ['Previous video','Next video','Fullscreen']){
+    const box=await page.getByRole('button',{name:label,exact:true}).boundingBox();assert(box.x>=0&&box.x+box.width<=width);
+   }
+   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+   await page.screenshot({path:path.join(config.output,`player-hour-time-${width}.png`)});
+  }
+  await video.evaluate(node=>{delete node.currentTime;Object.defineProperty(node,'duration',{configurable:true,get:()=>Infinity});node.dispatchEvent(new Event('durationchange'));node.dispatchEvent(new Event('timeupdate'));});
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Playback time"]')?.textContent==='0:02 / 0:00');
+  await video.evaluate(node=>{delete node.duration;node.dispatchEvent(new Event('durationchange'));});
+  await page.waitForFunction(()=>document.querySelector('[aria-label="Playback time"]')?.textContent==='0:02 / 0:04');
+  await page.setViewportSize({width:1440,height:1000});
+  check('playback time follows real seeking, formats minutes/hours and unknown duration safely, sits right of volume and keeps all controls usable at 1440/720/360px');
   const backButton=page.getByRole('button',{name:'Back to videos'});
   await page.mouse.move(700,400);
   assert.equal(await backButton.innerText(),'');

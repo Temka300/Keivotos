@@ -32,6 +32,11 @@
   let autoNext=false,endBusy=false;
   let volume=100;
   const loopOrder:LoopMode[]=['off','all','one'];
+  function stamp(seconds:number){
+    const whole=Math.max(0,Math.floor(Number.isFinite(seconds)?seconds:0));
+    const minutes=Math.floor(whole/60),tail=String(whole%60).padStart(2,'0');
+    return minutes<60?`${minutes}:${tail}`:`${Math.floor(minutes/60)}:${String(minutes%60).padStart(2,'0')}:${tail}`;
+  }
   function cycleLoop(){loopModeFor(owner).set(loopOrder[(loopOrder.indexOf(loopMode)+1)%loopOrder.length]);reveal();}
   function toggleAutoNext(){autoNextFor(owner).set(!autoNext);reveal();}
   async function navigate(direction:-1|1){
@@ -186,9 +191,12 @@
         <button aria-label={playing ? 'Pause' : 'Play'} disabled={!!failure} on:click={togglePlay}><svg viewBox="0 0 24 24" aria-hidden="true">{#if playing}<path d="M8 5v14M16 5v14" />{:else}<path d="m7 4 13 8-13 8Z" />{/if}</svg></button>
         <button aria-label="Next video" disabled={navigating || !(hasNext||(loopMode==='all'&&canWrap))} on:click={() => navigate(1)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M5 5l11 7-11 7Z" /></svg></button>
         <VolumeControl value={volume} disabled={!!failure} onChange={setVolume}/>
-        <div class="auto-next"><SettingsSwitch label="Auto next" checked={autoNext} on:click={toggleAutoNext}/></div>
-        <button class="loop-button" class:off={loopMode==='off'} class:all={loopMode==='all'} class:one={loopMode==='one'} aria-label={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} title={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} aria-pressed={loopMode!=='off'} on:click={cycleLoop}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M3 11V9a4 4 0 0 1 4-4h13"/><path d="M7 22l-3-3 3-3"/><path d="M21 13v2a4 4 0 0 1-4 4H4"/></svg>{#if loopMode==='one'}<span class="loop-one-mark">1</span>{/if}</button>
-        <button class="fullscreen" aria-label="Fullscreen" on:click={fullscreen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" /></svg></button>
+        <span class="playback-time" aria-label="Playback time" title="Current time / total duration">{stamp(position)} / {stamp(duration)}</span>
+        <div class="secondary-controls">
+          <div class="auto-next"><SettingsSwitch label="Auto next" checked={autoNext} on:click={toggleAutoNext}/></div>
+          <button class="loop-button" class:off={loopMode==='off'} class:all={loopMode==='all'} class:one={loopMode==='one'} aria-label={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} title={loopMode==='one'?'Loop one':loopMode==='all'?'Loop all':'Loop off'} aria-pressed={loopMode!=='off'} on:click={cycleLoop}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l3 3-3 3"/><path d="M3 11V9a4 4 0 0 1 4-4h13"/><path d="M7 22l-3-3 3-3"/><path d="M21 13v2a4 4 0 0 1-4 4H4"/></svg>{#if loopMode==='one'}<span class="loop-one-mark">1</span>{/if}</button>
+          <button class="fullscreen" aria-label="Fullscreen" on:click={fullscreen}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" /></svg></button>
+        </div>
       </div>
     </div>
   </div>
@@ -201,10 +209,12 @@
  .player-controls{transition:opacity .18s ease}
  .video-viewer svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
  .player-controls{position:absolute;bottom:0;left:0;right:0;display:flex;flex-direction:column;gap:8px;background:linear-gradient(transparent,#000b);padding:32px 24px 16px}
- .control-row{display:flex;align-items:center;gap:12px}
- .player-controls button{display:grid;place-items:center;width:40px;height:40px;border:0;background:transparent;color:#eee;border-radius:50%;transition:background-color .15s ease}
+ .control-row{display:flex;flex-wrap:wrap;align-items:center;gap:12px}
+ .playback-time{flex:none;white-space:nowrap;color:#eee;font-size:12px;font-variant-numeric:tabular-nums}
+ .secondary-controls{margin-left:auto;display:flex;flex:none;align-items:center;gap:12px}
+ .player-controls button{display:grid;place-items:center;flex:none;width:40px;height:40px;border:0;background:transparent;color:#eee;border-radius:50%;transition:background-color .15s ease}
  .player-controls button:hover:not(:disabled){background:#ffffff20}
- .auto-next{margin-left:auto;display:flex;align-items:center}
+ .auto-next{display:flex;align-items:center}
  .auto-next :global(.settings-switch){width:38px;height:22px}
  .auto-next :global(.settings-switch span){width:16px;height:16px}
  .auto-next :global(.settings-switch.checked span){transform:translateX(16px)}
@@ -218,7 +228,7 @@
  .player-controls>input::-moz-range-track{height:3px;border:0;background:linear-gradient(to right,var(--accent) var(--progress),#ffffff55 var(--progress))}
  .player-controls>input::-webkit-slider-thumb{appearance:none;width:11px;height:11px;margin-top:-4px;border:0;border-radius:50%;background:var(--accent)}
  .player-controls>input::-moz-range-thumb{width:11px;height:11px;border:0;border-radius:50%;background:var(--accent)}
- @media(max-width:600px){.player-controls{padding-inline:12px}.control-row{gap:3px}.control-row button{width:32px;height:36px}}
+ @media(max-width:600px){.player-controls{padding-inline:12px}.control-row,.secondary-controls{gap:3px}.playback-time{font-size:11px}.control-row button{width:32px;height:36px}}
  @media(max-width:400px){.control-row button{width:28px}}
  :global(html[data-motion='reduced']) .back,:global(html[data-motion='reduced']) .player-controls,:global(html[data-motion='reduced']) .player-controls button{transition:none}
  @media(prefers-reduced-motion:reduce){.back,.player-controls,.player-controls button{transition:none}}

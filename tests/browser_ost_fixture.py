@@ -9,7 +9,7 @@ import wave
 from PIL import Image, ImageDraw, ImageFont
 
 
-def write_audio(path: Path):
+def write_audio(path: Path, seconds=4):
     path.parent.mkdir(parents=True, exist_ok=True)
     with wave.open(str(path), 'wb') as audio:
         audio.setnchannels(1)
@@ -18,7 +18,7 @@ def write_audio(path: Path):
         # A small generated tone is also suitable for later transport checks.
         period = b''.join(struct.pack('<h', int(2000 * math.sin(2 * math.pi * 440 * n / 8000)))
                           for n in range(8000))
-        audio.writeframes(period * 4)
+        audio.writeframes(period * seconds)
 
 
 def artwork(title, background='#263f59', accent='#83bedc'):
@@ -66,7 +66,7 @@ def seed_ost(media: Path):
     embedded.write_bytes(artwork('FIRST LIGHT', '#725034', '#edc68a'))
     embedded_audio(media / 'Album 2/00 - Opening.flac', embedded)
     for name in ('Track 2.wav', 'Track 10.wav', LONG_TRACK):
-        write_audio(media / 'Album 2' / name)
+        write_audio(media / 'Album 2' / name, seconds=20)
     write_audio(media / 'Album 2/Deep/曲 2.wav')
     (media / 'Album 10/folder.PNG').write_bytes(artwork('TEN', '#725034', '#edc68a'))
     write_audio(media / 'Album 10/Track 2.wav')
