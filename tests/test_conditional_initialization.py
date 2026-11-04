@@ -54,6 +54,7 @@ async def run():
             assert '/api/language/documents' not in app.openapi()['paths']
             assert '/api/ost/folders' not in app.openapi()['paths']
             assert '/api/ost/library' not in app.openapi()['paths']
+            assert '/api/ost/cover' not in app.openapi()['paths']
         import backup_bundle, zipfile
         created = backup_bundle.create_backup_bundle()
         manifest = backup_bundle.inspect_backup_bundle(Path(created['path']))

@@ -56,6 +56,7 @@ const report={checks:[],errors:[],requests:[]};
   const paths=(await (await context.request.get(config.url+'/openapi.json')).json()).paths;
   assert(!paths['/api/images']);assert(!paths['/api/danbooru/credentials']);assert(!paths['/api/language/documents']);assert(paths['/api/files/sources']);
   assert(!paths['/api/ost/folders']);assert(!paths['/api/ost/library']);
+  assert(!paths['/api/ost/cover']);
   assert.equal(await page.getByRole('switch',{name:'OST module',exact:true}).count(),0);
   assert(!report.requests.some(p=>p.startsWith('/api/ost')));
   assert(!report.requests.some(p=>p.startsWith('/api/danbooru')||p.startsWith('/api/language')||p==='/api/images'||p==='/api/tools'));

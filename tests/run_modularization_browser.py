@@ -42,7 +42,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--node', default=shutil.which('node'))
     parser.add_argument('--dist', type=Path, help='Prebuilt scratch frontend; skip the runner build')
-    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'language', 'module_locations', 'storage', 'absence'), default='modularization')
+    parser.add_argument('--script', choices=('modularization', 'backup', 'danbooru', 'settings', 'import', 'modules', 'settings_failures', 'appearance', 'video', 'manga', 'youtube', 'language', 'ost', 'module_locations', 'storage', 'absence'), default='modularization')
     parser.add_argument('--output', required=True, type=Path, help='New directory for logs, screenshots and timing report')
     args = parser.parse_args()
     if not args.node:
@@ -84,6 +84,9 @@ def main() -> int:
         if args.script == 'language':
             from browser_language_fixture import seed_language
             seed_language(base / 'media')
+        if args.script == 'ost':
+            from browser_ost_fixture import seed_ost
+            seed_ost(base / 'media')
         if args.script == 'module_locations':
             media = base / 'media'
             (media / 'Deep' / '子').mkdir(parents=True)

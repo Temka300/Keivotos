@@ -78,7 +78,12 @@ def test_role_visible_sources_natural_order_and_pagination(catalog):
         browse(source)
     assert error.value.status_code == 404
     ost.adopt(source.source_id)
-    assert router.folders() == [{'source_id': source.source_id, 'name': 'Soundtracks', 'available': True}]
+    roots = router.folders()
+    assert len(roots) == 1
+    assert {key: roots[0][key] for key in ('source_id', 'name', 'available')} == {
+        'source_id': source.source_id, 'name': 'Soundtracks', 'available': True}
+    assert roots[0]['path'] == str(media)
+    assert len(roots[0]['cover_version']) == 24
     result = browse(source)
     assert result['total'] == 9
     assert [item['name'] for item in result['items'][:2]] == ['Album 2', 'Album 10']
@@ -196,3 +201,136 @@ def test_storage_counts_shared_index_once_and_backup_contains_only_registry(cata
         snapshot.write_bytes(archive.read('databases/user.sqlite'))
     with sqlite3.connect(snapshot) as connection:
         assert connection.execute('SELECT role FROM files_sources WHERE source_id=?', (source.source_id,)).fetchone()[0] == 'ost'
+
+
+@pytest.fixture
+def art_cache(catalog, monkeypatch):
+    import thumbnails
+    monkeypatch.setattr(thumbnails, 'THUMB_DIR', config.SUITE_HOME / 'base/thumbnails')
+    monkeypatch.setattr(thumbnails, '_schedule_thumbnail_prune', lambda: None)
+    monkeypatch.setattr(thumbnails, '_file_md5', lambda _: (_ for _ in ()).throw(
+        AssertionError('OST must not hash the entire audio for a thumbnail')))
+    return catalog
+
+
+def rescan(source, media, db):
+    with index.open_index(db) as connection:
+        index.scan_source(connection, source.source_id, media)
+
+
+def cover_pixel(source, path=''):
+    from PIL import Image
+    response = router.cover(source.source_id, path, 300, None)
+    assert response.media_type == 'image/webp'
+    assert response.headers['cache-control'] == 'public, max-age=31536000, immutable'
+    with Image.open(response.path) as image:
+        return image.convert('RGB').getpixel((0, 0))
+
+
+def test_named_cover_order_case_insensitivity_and_corrupt_fallthrough(art_cache):
+    from PIL import Image
+    from tests.browser_ost_fixture import write_audio
+    source, _, media, db = art_cache
+    ost.adopt(source.source_id)
+    write_audio(media / 'sample.wav')
+    (media / 'cover.jpg').write_bytes(b'generated invalid picture')
+    Image.new('RGB', (40, 40), 'blue').save(media / 'COVER.PNG')
+    Image.new('RGB', (40, 40), 'green').save(media / 'folder.jpg')
+    Image.new('RGB', (40, 40), 'red').save(media / 'front.png')
+    rescan(source, media, db)
+    color = cover_pixel(source, 'sample.wav')
+    assert color[2] > 200 and color[0] < 20
+    assert cover_pixel(source) == color
+    # All candidates at a higher priority now fail, so the next name wins.
+    (media / 'COVER.PNG').write_bytes(b'generated corrupt replacement')
+    rescan(source, media, db)
+    assert cover_pixel(source, 'sample.wav')[1] > 100
+
+
+def test_embedded_art_wins_and_cached_repeat_skips_decoding(art_cache, monkeypatch):
+    from PIL import Image
+    import thumbnails
+    from tests.browser_ost_fixture import embedded_audio
+    source, _, media, db = art_cache
+    ost.adopt(source.source_id)
+    picture = media / 'embedded.png'
+    Image.new('RGB', (40, 40), 'orange').save(picture)
+    embedded_audio(media / 'embedded.flac', picture)
+    Image.new('RGB', (40, 40), 'blue').save(media / 'cover.jpg')
+    rescan(source, media, db)
+    original = {p.name: p.read_bytes() for p in media.iterdir() if p.is_file()}
+    color = cover_pixel(source, 'embedded.flac')
+    assert color[0] > 230 and 130 < color[1] < 190 and color[2] < 30
+    monkeypatch.setattr(thumbnails, '_audio_cover', lambda _: (_ for _ in ()).throw(
+        AssertionError('The repeated cover must use the existing cache')))
+    assert cover_pixel(source, 'embedded.flac') == color
+    assert original == {p.name: p.read_bytes() for p in media.iterdir() if p.is_file()}
+
+
+def test_cover_revision_changes_without_audio_reads_and_bounds_candidates(art_cache):
+    from PIL import Image
+    from tests.browser_ost_fixture import write_audio
+    source, _, media, db = art_cache
+    ost.adopt(source.source_id)
+    write_audio(media / 'sample.wav')
+    Image.new('RGB', (40, 40), 'blue').save(media / 'cover.jpg')
+    rescan(source, media, db)
+    before = next(item for item in browse(source)['items'] if item['name'] == 'sample.wav')['cover_version']
+    Image.new('RGB', (48, 48), 'red').save(media / 'cover.jpg')
+    # The source index's integer timestamps have not been refreshed.
+    with patch.object(Path, 'read_bytes', side_effect=AssertionError('Facts must not decode media')):
+        after = next(item for item in browse(source)['items'] if item['name'] == 'sample.wav')['cover_version']
+    assert before != after
+    assert cover_pixel(source, 'sample.wav')[0] > 220
+    for name in library.COVER_FILES:
+        Image.new('RGB', (40, 40), 'blue').save(media / name)
+    rescan(source, media, db)
+    with index.open_index(db) as connection:
+        paths = library.named_covers(connection, source, '', [])
+    assert len(paths) <= 12
+    assert [p.name.lower() for p in paths] == list(library.COVER_FILES)
+
+
+def test_cover_guards_roles_paths_nested_sources_and_linked_art(art_cache, tmp_path):
+    from PIL import Image
+    source, connect, media, db = art_cache
+    with pytest.raises(HTTPException) as error:
+        router.cover(source.source_id, '', 300, None)
+    assert error.value.status_code == 404
+    ost.adopt(source.source_id)
+    for path in ('../outside', '/outside', 'C:\\outside'):
+        with pytest.raises(HTTPException) as error:
+            router.cover(source.source_id, path, 300, None)
+        assert error.value.status_code == 400
+    with connect() as connection:
+        sources.register_source(connection, media / 'Album 2', 'Own source')
+    with pytest.raises(HTTPException) as error:
+        router.cover(source.source_id, 'Album 2', 300, None)
+    assert error.value.status_code == 403
+    outside = tmp_path / 'private.png'
+    Image.new('RGB', (40, 40), 'red').save(outside)
+    (media / 'folder.png').symlink_to(outside)
+    rescan(source, media, db)
+    with pytest.raises(HTTPException) as error:
+        router.cover(source.source_id, '', 300, None)
+    assert error.value.status_code == 404
+    with connect() as connection:
+        sources.update_source(connection, source.source_id, visible=False)
+    with pytest.raises(HTTPException) as error:
+        router.cover(source.source_id, '', 300, None)
+    assert error.value.status_code == 404
+    assert outside.is_file()
+
+
+def test_cover_does_not_borrow_from_parent_and_missing_art_is_a_deliberate_miss(art_cache):
+    from PIL import Image
+    from tests.browser_ost_fixture import write_audio
+    source, _, media, db = art_cache
+    ost.adopt(source.source_id)
+    Image.new('RGB', (40, 40), 'blue').save(media / 'cover.jpg')
+    write_audio(media / 'Album 2/曲 1.wav')
+    rescan(source, media, db)
+    for path in ('Album 2/曲 1.wav', 'Album 2', 'notes.md'):
+        with pytest.raises(HTTPException) as error:
+            router.cover(source.source_id, path, 300, None)
+        assert error.value.status_code == 404

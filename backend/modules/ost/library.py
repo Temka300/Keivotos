@@ -1,12 +1,17 @@
 """Paginated directory facts from Files; no decoding, tagging or media writes."""
+import hashlib
+import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 
 from files_base import index, serving, sources
 
 # Consume Files' closed audio MIME allowlist, rather than inventing codec support.
 AUDIO_EXTENSIONS = tuple(serving._INLINE_AUDIO)
+COVER_NAMES = ('cover', 'folder', 'front')
+COVER_EXTENSIONS = ('jpg', 'jpeg', 'png', 'webp')
+COVER_FILES = tuple(f'{name}.{ext}' for name in COVER_NAMES for ext in COVER_EXTENSIONS)
 
 
 def _natural(value: str):
@@ -32,6 +37,75 @@ def available(source, path, is_dir, forbidden):
         return target.is_dir() if is_dir else target.is_file()
     except (serving.ServeDenied, OSError, ValueError):
         return False
+
+
+def named_covers(connection, source, parent, forbidden):
+    """At most twelve same-folder candidates; index facts, then fresh guards."""
+    marks = ','.join('?' for _ in COVER_FILES)
+    priority = ' '.join(f'WHEN ? THEN {rank}' for rank in range(len(COVER_FILES)))
+    rows = connection.execute(
+        f'SELECT relative_path FROM files_index WHERE source_id=? AND parent=? '
+        f'AND available=1 AND is_dir=0 AND LOWER(name) IN ({marks}) '
+        f'ORDER BY CASE LOWER(name) {priority} END,name LIMIT ?',
+        [source.source_id, parent, *COVER_FILES, *COVER_FILES, len(COVER_FILES)]).fetchall()
+    candidates = []
+    for row in rows:
+        try:
+            target = serving.resolve_within_source(source.path, row['relative_path'], forbidden)
+            if target.is_file():
+                candidates.append(target)
+        except (serving.ServeDenied, OSError, ValueError):
+            continue
+    return candidates
+
+
+def cover_version(connection, source, path, is_dir, forbidden, folders=None):
+    """A cheap revision of the subject and its local fallback art; no decoding."""
+    folders = {} if folders is None else folders
+    try:
+        target = serving.resolve_within_source(source.path, path, forbidden)
+        stat = target.stat()
+        relative = target.relative_to(Path(source.path).resolve()).as_posix()
+        parent = relative if is_dir else str(PurePosixPath(relative).parent)
+        parent = '' if parent == '.' else parent
+        if parent not in folders:
+            facts = []
+            for candidate in named_covers(connection, source, parent, forbidden):
+                try:
+                    identity = candidate.stat()
+                    facts.append((str(candidate), identity.st_mtime_ns, identity.st_size))
+                except OSError:
+                    continue
+            folders[parent] = facts
+        facts = [path, stat.st_mtime_ns, stat.st_size, folders[parent]]
+        return hashlib.sha256(json.dumps(facts).encode()).hexdigest()[:24]
+    except (serving.ServeDenied, OSError, ValueError):
+        return 'unavailable'
+
+
+def cover_file(db, source, all_sources, suite_home, path, size):
+    """Reuse the thumbnail engine: embedded art, named local art, deliberate miss."""
+    from routers.files import _thumbnail_cache_key
+    from thumbnails import ensure_thumbnail
+
+    forbidden = forbidden_roots(source, all_sources, suite_home)
+    target = serving.resolve_within_source(source.path, path, forbidden)
+    is_dir = target.is_dir()
+    if not is_dir and (not target.is_file() or target.suffix.lower().lstrip('.') not in AUDIO_EXTENSIONS):
+        raise serving.ServeDenied(404, 'OST cover is unavailable')
+    relative = target.relative_to(Path(source.path).resolve()).as_posix()
+    parent = relative if is_dir else str(PurePosixPath(relative).parent)
+    parent = '' if parent == '.' else parent
+    with index.open_index(db) as connection:
+        candidates = ([] if is_dir else [target]) + named_covers(connection, source, parent, forbidden)
+    for candidate in candidates:
+        key = _thumbnail_cache_key(candidate)
+        if key is None:
+            continue
+        thumb = ensure_thumbnail(str(candidate), size, key)
+        if thumb is not None and thumb.is_file():
+            return thumb
+    raise serving.ServeDenied(404, 'OST cover is unavailable')
 
 
 def directory(db, source, all_sources, suite_home, parent, offset, limit):
@@ -64,9 +138,12 @@ def directory(db, source, all_sources, suite_home, parent, offset, limit):
             f'SELECT relative_path,name,ext,is_dir,size,mtime FROM files_index WHERE {where} '
             'ORDER BY is_dir DESC,name COLLATE ost_natural,relative_path LIMIT ? OFFSET ?',
             [*parameters, limit, offset]).fetchall()
-    items = [{'source_id': source.source_id, 'path': row['relative_path'],
-              'name': row['name'], 'ext': row['ext'], 'is_dir': bool(row['is_dir']),
-              'size': row['size'], 'mtime': row['mtime'],
-              'available': available(source, row['relative_path'], bool(row['is_dir']), forbidden)}
-             for row in rows]
+        folders = {}
+        items = [{'source_id': source.source_id, 'path': row['relative_path'],
+                  'name': row['name'], 'ext': row['ext'], 'is_dir': bool(row['is_dir']),
+                  'size': row['size'], 'mtime': row['mtime'],
+                  'available': available(source, row['relative_path'], bool(row['is_dir']), forbidden),
+                  'cover_version': cover_version(connection, source, row['relative_path'],
+                                                 bool(row['is_dir']), forbidden, folders)}
+                 for row in rows]
     return {'source_id': source.source_id, 'parent': relative, 'items': items, 'total': total}
