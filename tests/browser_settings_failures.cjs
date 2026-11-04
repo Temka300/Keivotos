@@ -41,6 +41,7 @@ const config = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
   await page.getByRole('switch',{name:'Show experimental modules',exact:true}).click();
   await page.waitForFunction(async()=>(await(await fetch('/api/diagnostics')).json()).show_experimental_modules);
   await section('Modules').click();await page.getByRole('switch',{name:'YouTube module',exact:true}).waitFor();
+  await dialog.getByRole('status').filter({hasText:'Loading modules…'}).waitFor({state:'hidden'});
   assert.equal(await page.getByRole('switch',{name:'YouTube module',exact:true}).isEnabled(),true);
   await page.waitForTimeout(300);await page.screenshot({path:path.join(config.output,'modules.png')});
   check('Advanced folder/log buttons are independent of preferences; experimental toggle reveals YouTube');

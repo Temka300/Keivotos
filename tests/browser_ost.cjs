@@ -200,7 +200,7 @@ const report={checks:[],errors:[],covers:[],audio:[],timings:{}};
   const childPath=config.media+'/Album 10';
   const second=await api('/api/suite/folders/apply','POST',{folders:[{path:childPath,display_name:'Soundtracks',role:'ost'}]});
   assert.equal(second.status,200,JSON.stringify(second));
-  const child=second.data.sources.find(value=>value.path===childPath);
+  const child=second.data.sources.find(value=>value.path.replaceAll('\\','/')===childPath.replaceAll('\\','/'));
   const outer=await api(`/api/ost/library?source_id=${owner.source_id}`);assert(!outer.data.items.some(item=>item.path==='Album 10'));
   await page.reload();await page.getByRole('list',{name:'OST folders'}).waitFor();
   assert.equal(await page.getByRole('button',{name:'Open OST folder Soundtracks',exact:true}).count(),2);
