@@ -188,7 +188,8 @@ def ensure_thumbnail(
     thumb_path = get_thumbnail_path(source_path, max_size, content_md5)
 
     if thumb_path.exists():
-        remove_legacy_thumbnail_cache(source_path, content_md5)
+        # A warm hit must not enumerate the whole cache. Obsolete derivatives
+        # are handled on misses and by explicit/optional startup maintenance.
         return thumb_path
 
     THUMB_DIR.mkdir(parents=True, exist_ok=True)

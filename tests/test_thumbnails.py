@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -8,6 +9,7 @@ import sys
 import unittest
 from contextlib import closing
 from pathlib import Path
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -65,6 +67,46 @@ class ThumbnailTests(unittest.TestCase):
         cleaned = thumbnails.cleanup_thumbnail_cache({content_md5})
         self.assertEqual(cleaned["removed"], 1)
         self.assertEqual(cleaned["tiers"], {"300": 1, "600": 1, "1200": 1})
+
+    def test_warm_thumbnail_never_scans_cache_or_reencodes(self) -> None:
+        source=self.root/'warm.png'
+        Image.new('RGB',(800,400),'blue').save(source)
+        key=hashlib.md5(source.read_bytes()).hexdigest()
+        cached=thumbnails.ensure_thumbnail(str(source),600,key)
+        stamp=cached.stat().st_mtime_ns;content=cached.read_bytes()
+        legacy=thumbnails.THUMB_DIR/f'{key}_v3.webp';legacy.write_bytes(b'old derivative')
+        with patch.object(thumbnails.os,'scandir',side_effect=AssertionError('Warm request enumerated cache')), \
+             patch.object(Image,'open',side_effect=AssertionError('Warm request decoded source')), \
+             patch.object(Image.Image,'save',side_effect=AssertionError('Warm request encoded thumbnail')):
+            for _ in range(10):
+                self.assertEqual(thumbnails.ensure_thumbnail(str(source),600,key),cached)
+        self.assertEqual(cached.stat().st_mtime_ns,stamp)
+        self.assertEqual(cached.read_bytes(),content)
+        # Legacy cleanup stays available outside the response's warm path.
+        self.assertTrue(legacy.exists())
+        self.assertEqual(thumbnails.cleanup_thumbnail_cache(None)['removed'],1)
+        self.assertTrue(cached.exists())
+
+    def test_warm_video_survives_fresh_interpreter_without_hash_scan_or_ffmpeg(self) -> None:
+        video=self.root/'saved.mp4';video.write_bytes(b'local output identity fixture')
+        key=hashlib.md5(video.read_bytes()).hexdigest()
+        cache=thumbnails.get_thumbnail_path(str(video),600,key)
+        cache.parent.mkdir(parents=True,exist_ok=True)
+        Image.new('RGB',(80,40),'green').save(cache,'WEBP')
+        stamp=cache.stat().st_mtime_ns
+        script='''import sys
+from pathlib import Path
+from unittest.mock import patch
+sys.path.insert(0,sys.argv[1])
+import thumbnails
+thumbnails.THUMB_DIR=Path(sys.argv[2])
+with patch.object(thumbnails.os,'scandir',side_effect=AssertionError('Directory scan')), patch.object(thumbnails,'_video_frame',side_effect=AssertionError('FFmpeg')), patch.object(thumbnails,'_file_md5',side_effect=AssertionError('Full media hash')):
+ result=thumbnails.ensure_thumbnail(sys.argv[3],600,sys.argv[4])
+ assert result==Path(sys.argv[5])
+'''
+        subprocess.run([sys.executable,'-c',script,str(ROOT/'backend'),str(thumbnails.THUMB_DIR),str(video),key,str(cache)],
+                       env={**os.environ,'KEIVOTOS_HOME':str(self.root/'fresh-profile')},check=True,timeout=30)
+        self.assertEqual(cache.stat().st_mtime_ns,stamp)
 
     def test_derived_cache_recovers_corruption_and_preserves_link_target(self) -> None:
         import io
