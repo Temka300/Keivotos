@@ -409,6 +409,117 @@ assert.match(config.home,/[/\\]keivotos-modularization-[^/\\]+[/\\]home$/);
   await reopened.screenshot({path:path.join(config.output,'language-table-compact.png')});
   await textMenu.press('Escape');
   check('long tables retain line wrapping and keyboard controls; right-click menu fits a compact viewport and dismisses with Escape');
+
+  // Requests belong to the folder/session that initiated them, even when a
+  // different folder has the same filename and starting content revision.
+  const racePage=await context.newPage();racePage.setDefaultTimeout(12000);
+  racePage.on('pageerror',error=>report.errors.push(error.message));
+  const notesA=config.mediaLocal||config.media,notesB=notesA+'-other';
+  const shared='Race shared.md',onlyA='Race A.md',onlyB='Race B.md',template='# Shared template\n';
+  fs.writeFileSync(path.join(notesA,shared),template,{flag:'wx'});
+  fs.writeFileSync(path.join(notesB,shared),template,{flag:'wx'});
+  fs.writeFileSync(path.join(notesA,onlyA),'Only A',{flag:'wx'});
+  fs.writeFileSync(path.join(notesB,onlyB),'Only B',{flag:'wx'});
+  await racePage.goto(config.url);
+  await racePage.getByRole('button',{name:'Open Keivotos menu'}).click();
+  await racePage.locator('.app-drawer').getByRole('button',{name:'Language',exact:true}).click();
+  const raceFolder=racePage.getByRole('combobox',{name:'Language folder',exact:true});
+  async function folderTo(id,visible){
+    await raceFolder.selectOption(id);
+    await racePage.getByRole('tab',{name:visible,exact:true}).waitFor();
+    assert.equal(await raceFolder.inputValue(),id);
+  }
+  async function hold(method,endpoint,owner,name){
+    let reached,release,completed,body;
+    const received=new Promise(resolve=>reached=resolve),unlocked=new Promise(resolve=>release=resolve),done=new Promise(resolve=>completed=resolve);
+    const handler=async route=>{
+      const request=route.request(),url=new URL(request.url());
+      const payload=method==='GET'?Object.fromEntries(url.searchParams):request.postDataJSON();
+      if(request.method()!==method||url.pathname!==endpoint||payload.source_id!==owner||(name&&payload.name!==name))return route.continue();
+      const response=await route.fetch();assert(response.ok(),await response.text());body=await response.json();
+      reached();await unlocked;await route.fulfill({response});completed();
+    };
+    await racePage.route('**/api/language/**',handler);
+    return {received,get body(){return body;},release:async()=>{
+      const delivered=racePage.waitForResponse(response=>response.request().method()===method&&new URL(response.url()).pathname===endpoint);
+      release();await done;await (await delivered).finished();
+      await racePage.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      await racePage.unroute('**/api/language/**',handler);
+    }};
+  }
+  async function saveRace(name,text,owner,folder){
+    const input=racePage.getByRole('textbox',{name:`Edit ${name}`,exact:true});
+    await input.fill(text);
+    const saving=racePage.waitForRequest(request=>request.method()==='PUT'&&new URL(request.url()).pathname==='/api/language/document');
+    await input.press('Control+s');const payload=(await saving).postDataJSON();
+    assert.equal(payload.source_id,owner);assert.equal(payload.name,name);
+    await racePage.getByRole('button',{name:`Save ${name}`,exact:true}).waitFor({state:'detached'});
+    assert.equal(fs.readFileSync(path.join(folder,name),'utf8'),text);
+  }
+
+  await folderTo(sourceId,onlyA);
+  let delayed=await hold('GET','/api/language/document',sourceId,shared);
+  await racePage.getByRole('tab',{name:shared,exact:true}).click();await delayed.received;
+  await folderTo(otherSourceId,onlyB);await delayed.release();
+  assert.equal(await racePage.getByRole('textbox',{name:`Edit ${shared}`,exact:true}).count(),0);
+  assert.equal(fs.readFileSync(path.join(notesA,shared),'utf8'),template);
+  assert.equal(fs.readFileSync(path.join(notesB,shared),'utf8'),template);
+  await racePage.getByRole('tab',{name:shared,exact:true}).click();
+  await saveRace(shared,'Explicit B edit',otherSourceId,notesB);
+  await folderTo(sourceId,onlyA);await racePage.getByRole('tab',{name:shared,exact:true}).click();
+  await saveRace(shared,'Explicit A edit',sourceId,notesA);
+  assert.equal(fs.readFileSync(path.join(notesB,shared),'utf8'),'Explicit B edit');
+  check('delayed cross-folder read cannot bind a note to another source; identical starting revisions save only after an explicit current-folder open');
+
+  await folderTo(otherSourceId,onlyB);
+  delayed=await hold('GET','/api/language/documents',sourceId);
+  await raceFolder.selectOption(sourceId);await delayed.received;
+  await folderTo(otherSourceId,onlyB);await delayed.release();
+  assert.equal(await racePage.getByRole('tab',{name:onlyA,exact:true}).count(),0);
+  assert.equal(await racePage.getByRole('tab',{name:onlyB,exact:true}).count(),1);
+  check('an older folder listing cannot replace the current folder tabs');
+
+  await folderTo(sourceId,onlyA);
+  delayed=await hold('POST','/api/language/documents',sourceId);
+  await racePage.getByRole('button',{name:'New Markdown file'}).click();await delayed.received;
+  const created=delayed.body.name;
+  assert.equal(fs.readFileSync(path.join(notesA,created),'utf8'),'');
+  fs.writeFileSync(path.join(notesB,created),'',{flag:'wx'});
+  await folderTo(otherSourceId,onlyB);await delayed.release();
+  assert.equal(await racePage.getByRole('textbox',{name:'Rename Markdown file'}).count(),0);
+  assert.equal(await racePage.getByRole('textbox',{name:`Edit ${created}`,exact:true}).count(),0);
+  await racePage.getByRole('tab',{name:created,exact:true}).click();
+  await saveRace(created,'Explicit B created-note edit',otherSourceId,notesB);
+  assert.equal(fs.readFileSync(path.join(notesA,created),'utf8'),'');
+  check('late create completion stays in its initiating folder and cannot open or rename a same-named note elsewhere');
+
+  delayed=await hold('POST','/api/language/document/rename',otherSourceId,created);
+  await racePage.getByRole('tab',{name:created,exact:true}).dblclick();
+  const raceRename=racePage.getByRole('textbox',{name:'Rename Markdown file'});
+  await raceRename.fill('Race renamed B');await raceRename.press('Enter');await delayed.received;
+  await folderTo(sourceId,onlyA);await delayed.release();
+  assert.equal(await racePage.getByRole('tab',{name:'Race renamed B.md',exact:true}).count(),0);
+  assert.equal(await racePage.getByRole('textbox').count(),0);
+  assert.equal(fs.readFileSync(path.join(notesB,'Race renamed B.md'),'utf8'),'Explicit B created-note edit');
+  assert.equal(fs.readFileSync(path.join(notesA,created),'utf8'),'');
+  check('an accepted rename finishes in its original folder without altering the new folder view');
+
+  delayed=await hold('GET','/api/language/document',sourceId,onlyA);
+  await racePage.getByRole('tab',{name:onlyA,exact:true}).click();await delayed.received;
+  await racePage.getByRole('tab',{name:shared,exact:true}).click();
+  await racePage.getByRole('textbox',{name:`Edit ${shared}`,exact:true}).waitFor();await delayed.release();
+  assert.equal(await racePage.getByRole('textbox',{name:`Edit ${onlyA}`,exact:true}).count(),0);
+  assert.equal(await editorText(racePage.getByRole('textbox',{name:`Edit ${shared}`,exact:true})),'Explicit A edit');
+  check('a late note read cannot steal the newer note selection within the same folder');
+
+  delayed=await hold('GET','/api/language/document',sourceId,onlyA);
+  await racePage.getByRole('tab',{name:onlyA,exact:true}).click();await delayed.received;
+  await racePage.getByRole('button',{name:`Close ${onlyA}`,exact:true}).click();await delayed.release();
+  assert.equal(await racePage.getByRole('tab',{name:onlyA,exact:true}).count(),0);
+  assert.equal(fs.readFileSync(path.join(notesA,onlyA),'utf8'),'Only A');
+  await racePage.screenshot({path:path.join(config.output,'language-folder-ownership.png')});
+  await racePage.close();
+  check('closing a pending note prevents late reopening while retaining the original file');
   assert.deepEqual(report.errors,[]);
  }finally{
   fs.writeFileSync(path.join(config.output,'report.json'),JSON.stringify(report,null,2));

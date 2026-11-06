@@ -25,7 +25,14 @@
   function locationKey(event:KeyboardEvent,name:string){if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')openLocation(event,name);}
   let pendingDecision:{description:string; resolve:(choice:Decision)=>void}|null=null;
   let saveQueue:Promise<boolean>=Promise.resolve(true);
+  let alive=true, folderEpoch=0, folderRequest=0, fileRequest=0, openRequest=0, openTarget='';
   $: active=tabs.find(tab=>tab.name===activeName);
+
+  function ownsFolder(owner:string,epoch:number){return alive&&sourceId===owner&&folderEpoch===epoch;}
+  function changeFolder(next:string){
+    sourceId=next;folderEpoch++;openRequest++;openTarget='';fileRequest++;
+    files=[];tabs=[];openNames=[];openSourceId='';activeName='';editingName='';renameBusy=false;locationMenu=null;
+  }
 
   function draftKey(folder:string,name:string){return `keivotos:language-draft:${folder}:${name}`;}
   function remember(tab:OpenNote){
@@ -60,18 +67,31 @@
     }catch{/* An invalid browser draft cannot replace the disk note. */}
   }
   async function loadFolders(){
+    let owner=sourceId, epoch=folderEpoch;
+    const request=++folderRequest;
     loading=true;error='';
     try{
-      folders=await languageApi.folders();
-      if(!folders.some(folder=>folder.source_id===sourceId))sourceId=folders[0]?.source_id??'';
+      const result=await languageApi.folders();
+      if(!ownsFolder(owner,epoch)||request!==folderRequest)return;
+      const next=result.some(folder=>folder.source_id===sourceId)?sourceId:result[0]?.source_id??'';
+      if(next!==sourceId){
+        if(!await guardTabs(tabs,'switch to an available Language folder'))return;
+        if(!ownsFolder(owner,epoch)||request!==folderRequest)return;
+        changeFolder(next);
+        owner=sourceId;epoch=folderEpoch;
+      }
+      folders=result;
       await loadFiles();
-    }catch(caught){error=caught instanceof Error?caught.message:'Could not load Language folders.';}
-    finally{loading=false;}
+    }catch(caught){if(ownsFolder(owner,epoch)&&request===folderRequest)error=caught instanceof Error?caught.message:'Could not load Language folders.';}
+    finally{if(alive&&request===folderRequest)loading=false;}
   }
   async function loadFiles(){
+    const owner=sourceId, epoch=folderEpoch, request=++fileRequest;
     if(!sourceId){files=[];openNames=[];openSourceId='';return;}
-    files=(await languageApi.files(sourceId)).files;
-    if(openSourceId!==sourceId){openNames=files.map(file=>file.name);openSourceId=sourceId;}
+    const result=await languageApi.files(owner);
+    if(!ownsFolder(owner,epoch)||request!==fileRequest)return;
+    files=result.files;
+    if(openSourceId!==owner){openNames=files.map(file=>file.name);openSourceId=owner;}
   }
   function saveTab(tab:OpenNote):Promise<boolean>{
     const source=tab.sourceId, name=tab.name, session=tab.sessionId;
@@ -136,77 +156,101 @@
     return true;
   }
   async function openDocument(name:string){
+    const owner=sourceId, epoch=folderEpoch, request=++openRequest;
+    openTarget=name;
     if(name===activeName)return true;
     error='';
-    let tab=tabs.find(item=>item.name===name);
+    let tab=tabs.find(item=>item.name===name&&item.sourceId===owner);
     if(!tab){
       try{
-        const result=await languageApi.read(sourceId,name);
-        tab={...result,sourceId,savedContent:result.content,sessionId:crypto.randomUUID().replaceAll('-',''),dirty:false,saving:false,error:''};
+        const result=await languageApi.read(owner,name);
+        if(!ownsFolder(owner,epoch)||request!==openRequest)return false;
+        tab={...result,sourceId:owner,savedContent:result.content,sessionId:crypto.randomUUID().replaceAll('-',''),dirty:false,saving:false,error:''};
         restoreDraft(tab);
         tabs=[...tabs,tab];
-      }catch(caught){error=caught instanceof Error?caught.message:'Could not open this note.';return false;}
+      }catch(caught){if(ownsFolder(owner,epoch)&&request===openRequest)error=caught instanceof Error?caught.message:'Could not open this note.';return false;}
     }
     if(!openNames.includes(name))openNames=[...openNames,name];
     activeName=name;
     return true;
   }
   async function closeTab(name:string){
+    const owner=sourceId, epoch=folderEpoch;
+    if(openTarget===name){openRequest++;openTarget='';}
     const tab=tabs.find(item=>item.name===name);
     if(tab&&!await guardTabs([tab],`close ${name}`))return;
-    const position=openNames.indexOf(name);
+    if(!ownsFolder(owner,epoch))return;
+    const currentName=tab?.name??name;
+    const position=openNames.indexOf(currentName);
     const next=openNames[position+1]??openNames[position-1]??'';
     tabs=tabs.filter(item=>item!==tab);
-    openNames=openNames.filter(item=>item!==name);
-    if(activeName===name){activeName='';if(next)await openDocument(next);}
+    openNames=openNames.filter(item=>item!==currentName);
+    if(activeName===currentName){activeName='';if(next)await openDocument(next);}
   }
   async function selectFolder(select:HTMLSelectElement){
+    const owner=sourceId, epoch=folderEpoch;
     const next=select.value;
     if(next===sourceId)return;
     if(!await guardTabs(tabs,`switch to another Language folder`)){select.value=sourceId;return;}
-    sourceId=next;tabs=[];openNames=[];openSourceId='';activeName='';editingName='';
-    try{await loadFiles();error='';}
-    catch(caught){error=caught instanceof Error?caught.message:'Could not list Language notes.';}
+    if(!ownsFolder(owner,epoch))return;
+    changeFolder(next);
+    const selectedEpoch=folderEpoch;
+    try{await loadFiles();if(ownsFolder(next,selectedEpoch))error='';}
+    catch(caught){if(ownsFolder(next,selectedEpoch))error=caught instanceof Error?caught.message:'Could not list Language notes.';}
   }
   async function beforeNavigate(slug:string){
     return slug==='language'||await guardTabs(tabs,'switch modules');
   }
   async function create(){
     if(!sourceId)return;
+    const owner=sourceId, epoch=folderEpoch, request=++openRequest;
+    openTarget='';
     error='';
     try{
-      const result=await languageApi.create(sourceId);
-      files=[...files,{name:result.name,size:0}].sort((a,b)=>a.name.localeCompare(b.name));
-      tabs=[...tabs,{...result,sourceId,savedContent:result.content,sessionId:crypto.randomUUID().replaceAll('-',''),dirty:false,saving:false,error:''}];
-      openNames=[...openNames,result.name];
+      const result=await languageApi.create(owner);
+      if(!ownsFolder(owner,epoch))return;
+      if(!files.some(file=>file.name===result.name))files=[...files,{name:result.name,size:0}].sort((a,b)=>a.name.localeCompare(b.name));
+      if(!tabs.some(tab=>tab.sourceId===owner&&tab.name===result.name))tabs=[...tabs,{...result,sourceId:owner,savedContent:result.content,sessionId:crypto.randomUUID().replaceAll('-',''),dirty:false,saving:false,error:''}];
+      if(!openNames.includes(result.name))openNames=[...openNames,result.name];
+      if(request!==openRequest)return;
       activeName=result.name;
       await startRename(result.name);
-    }catch(caught){error=caught instanceof Error?caught.message:'Could not create a note.';}
+    }catch(caught){if(ownsFolder(owner,epoch)&&request===openRequest)error=caught instanceof Error?caught.message:'Could not create a note.';}
   }
   async function startRename(name:string){
+    const owner=sourceId, epoch=folderEpoch;
     if(!await openDocument(name))return;
+    if(!ownsFolder(owner,epoch))return;
+    const request=openRequest;
     const tab=tabs.find(item=>item.name===name);
     if(tab&&!await guardTabs([tab],`rename ${name}`))return;
+    if(!ownsFolder(owner,epoch)||request!==openRequest)return;
     editingName=name;nameDraft=name.slice(0,-3);
     await tick();nameInput?.focus();nameInput?.select();
   }
   async function commitRename(){
     if(!editingName||renameBusy)return;
+    const owner=sourceId, epoch=folderEpoch;
     const oldName=editingName, nextName=`${nameDraft.trim()}.md`;
     if(nextName===oldName){editingName='';return;}
     await saveQueue;
+    if(!ownsFolder(owner,epoch))return;
     const tab=tabs.find(item=>item.name===oldName);
     if(!tab)return;
     if(!await guardTabs([tab],`rename ${oldName}`))return;
+    if(!ownsFolder(owner,epoch)||renameBusy)return;
     renameBusy=true;error='';
     try{
       const result=await languageApi.rename(tab.sourceId,oldName,nextName,tab.revision);
+      if(!ownsFolder(owner,epoch))return;
+      const wasActive=activeName===oldName;
       tab.name=result.name;
       files=files.map(file=>file.name===oldName?{...file,name:result.name}:file).sort((a,b)=>a.name.localeCompare(b.name));
       openNames=openNames.map(name=>name===oldName?result.name:name);
-      activeName=result.name;editingName='';tabs=[...tabs];
-    }catch(caught){error=caught instanceof Error?caught.message:'Could not rename this note.';}
-    finally{renameBusy=false;}
+      if(wasActive)activeName=result.name;
+      editingName='';tabs=[...tabs];
+    }catch(caught){if(ownsFolder(owner,epoch))error=caught instanceof Error?caught.message:'Could not rename this note.';}
+    finally{if(ownsFolder(owner,epoch))renameBusy=false;}
   }
   function input(content:string){
     if(!active)return;
@@ -231,6 +275,7 @@
   function foldersSettings(){settingsInitialSection.set('roots');settingsOpen.set(true);}
   onMount(()=>{window.addEventListener('beforeunload',beforeUnload);void loadFolders();});
   onDestroy(()=>{
+    alive=false;folderEpoch++;openRequest++;
     window.removeEventListener('beforeunload',beforeUnload);
     if(pendingDecision)decide('keep');
     for(const tab of tabs)if(tab.dirty)remember(tab);
