@@ -143,6 +143,40 @@ def rename_document(source: sources.Source, suite_home: Path, name: str,
         return {"name": new_name, "content": data.decode("utf-8"), "revision": revision}
 
 
+def _preserve_revision(history: Path, history_home: Path, previous: bytes) -> None:
+    if not history.parent.resolve().is_relative_to(history_home.resolve()):
+        raise DocumentError(403, "Markdown revision history is unavailable")
+    temporary: Path | None = None
+    try:
+        if history.exists() or history.is_symlink():
+            if history.is_symlink() or not history.is_file():
+                raise DocumentError(403, "Markdown revision history is unavailable")
+            return
+        history.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile("wb", dir=history.parent,
+                                         prefix=".keivotos-language-history-",
+                                         suffix=".tmp", delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(previous)
+            stream.flush()
+            os.fsync(stream.fileno())
+        # Publish complete bytes exclusively. Windows rename refuses an existing
+        # target; POSIX link supplies the same create-only guarantee.
+        if os.name == "nt":
+            temporary.rename(history)
+        else:
+            os.link(temporary, history)
+    except FileExistsError:
+        if history.is_symlink() or not history.is_file():
+            raise DocumentError(403, "Markdown revision history is unavailable")
+        # Another complete publication for this session already won.
+    except OSError as error:
+        raise DocumentError(422, "Could not preserve the previous Markdown revision") from error
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def save_document(source: sources.Source, suite_home: Path, history_home: Path,
                   name: str, content: str, revision: str, session_id: str) -> dict:
     if not _session.fullmatch(session_id):
@@ -162,21 +196,10 @@ def save_document(source: sources.Source, suite_home: Path, history_home: Path,
         if previous == fresh:
             return {"name": name, "content": content, "revision": revision}
         identity = hashlib.sha256(f"{source.source_id}\0{name}".encode()).hexdigest()
-        history = history_home / "revisions" / identity / f"{session_id}.md"
-        try:
-            if not history.parent.resolve().is_relative_to(history_home.resolve()):
-                raise DocumentError(403, "Markdown revision history is unavailable")
-            history.parent.mkdir(parents=True, exist_ok=True)
-            with history.open("xb") as archived:
-                archived.write(previous)
-                archived.flush()
-                os.fsync(archived.fileno())
-        except FileExistsError:
-            if history.is_symlink() or not history.is_file():
-                raise DocumentError(403, "Markdown revision history is unavailable")
-            # This session's pre-edit bytes were already preserved.
-        except OSError as error:
-            raise DocumentError(422, "Could not preserve the previous Markdown revision") from error
+        # Legacy direct writes may contain incomplete bytes. Retain them without
+        # treating their existence as evidence that a revision was preserved.
+        history = history_home / "revisions" / identity / "complete" / f"{session_id}.md"
+        _preserve_revision(history, history_home, previous)
         temporary: Path | None = None
         try:
             with tempfile.NamedTemporaryFile("wb", dir=root, prefix=".keivotos-language-",
